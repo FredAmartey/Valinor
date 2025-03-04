@@ -3,7 +3,6 @@ package audit
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -95,31 +94,9 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		defer rows.Close()
 
-		for rows.Next() {
-			var (
-				id, tid    uuid.UUID
-				uid, resID *uuid.UUID
-				action     string
-				resType    *string
-				metadata   json.RawMessage
-				source     string
-				createdAt  time.Time
-			)
-			if scanErr := rows.Scan(&id, &tid, &uid, &action, &resType, &resID, &metadata, &source, &createdAt); scanErr != nil {
-				slog.Warn("skipping audit event: scan error", "error", scanErr)
-				continue
-			}
-			events = append(events, map[string]any{
-				"id":            id,
-				"tenant_id":     tid,
-				"user_id":       uid,
-				"action":        action,
-				"resource_type": resType,
-				"resource_id":   resID,
-				"metadata":      metadata,
-				"source":        source,
-				"created_at":    createdAt,
-			})
+		events = scanEvents(rows)
+		if rowsErr := rows.Err(); rowsErr != nil {
+			return rowsErr
 		}
 		return nil
 	})

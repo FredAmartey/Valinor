@@ -93,6 +93,7 @@ export function Overview({
         <div>
           <h2 className="mb-3 text-sm font-medium text-zinc-900">Recent Activity</h2>
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
+            {/* Platform admin has hasTenant=false — activity feed shows empty state; Quick Stats is their primary panel */}
             <RecentEvents canReadAudit={canReadAudit} hasTenant={hasTenant} />
           </div>
         </div>
@@ -153,7 +154,7 @@ function buildStatCards({
     return [
       { label: "Running Agents", value: totalAgents, icon: <Robot size={20} /> },
       { label: "Unhealthy Agents", value: unhealthyAgents, icon: <Warning size={20} /> },
-      ...(canReadUsers ? [{ label: "Total Users", value: "\u2014" as string | number, icon: <Users size={20} /> }] : []),
+      { label: "Total Users", value: "\u2014" as string | number, icon: <Users size={20} /> },
       ...(canReadConnectors ? [{ label: "Active Channels", value: "\u2014" as string | number, icon: <ChatCircle size={20} /> }] : []),
     ]
   }
