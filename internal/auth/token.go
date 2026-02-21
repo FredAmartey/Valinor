@@ -10,14 +10,14 @@ import (
 
 type valinorClaims struct {
 	jwt.RegisteredClaims
-	UserID      string   `json:"uid"`
-	TenantID    string   `json:"tid"`
-	Email       string   `json:"email,omitempty"`
-	DisplayName string   `json:"name,omitempty"`
-	Roles       []string `json:"roles,omitempty"`
-	Departments []string `json:"depts,omitempty"`
-	TokenType   string   `json:"type"`
-	FamilyID    string   `json:"fid,omitempty"`
+	UserID          string   `json:"uid"`
+	TenantID        string   `json:"tid"`
+	Email           string   `json:"email,omitempty"`
+	DisplayName     string   `json:"name,omitempty"`
+	Roles           []string `json:"roles,omitempty"`
+	Departments     []string `json:"depts,omitempty"`
+	TokenType       string   `json:"type"`
+	FamilyID        string   `json:"fid,omitempty"`
 	Generation      int      `json:"gen,omitempty"`
 	IsPlatformAdmin bool     `json:"pa,omitempty"`
 }
@@ -57,13 +57,13 @@ func (s *TokenService) createToken(identity *Identity, tokenType string, expiryH
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(expiryHours) * time.Hour)),
 		},
-		UserID:      identity.UserID,
-		TenantID:    identity.TenantID,
-		Email:       identity.Email,
-		DisplayName: identity.DisplayName,
-		Roles:       identity.Roles,
-		Departments: identity.Departments,
-		TokenType:   tokenType,
+		UserID:          identity.UserID,
+		TenantID:        identity.TenantID,
+		Email:           identity.Email,
+		DisplayName:     identity.DisplayName,
+		Roles:           identity.Roles,
+		Departments:     identity.Departments,
+		TokenType:       tokenType,
 		FamilyID:        identity.FamilyID,
 		Generation:      identity.Generation,
 		IsPlatformAdmin: identity.IsPlatformAdmin,
@@ -94,13 +94,13 @@ func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
 	}
 
 	return &Identity{
-		UserID:      claims.UserID,
-		TenantID:    claims.TenantID,
-		Email:       claims.Email,
-		DisplayName: claims.DisplayName,
-		Roles:       claims.Roles,
-		Departments: claims.Departments,
-		TokenType:   claims.TokenType,
+		UserID:          claims.UserID,
+		TenantID:        claims.TenantID,
+		Email:           claims.Email,
+		DisplayName:     claims.DisplayName,
+		Roles:           claims.Roles,
+		Departments:     claims.Departments,
+		TokenType:       claims.TokenType,
 		FamilyID:        claims.FamilyID,
 		Generation:      claims.Generation,
 		IsPlatformAdmin: claims.IsPlatformAdmin,

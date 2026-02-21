@@ -20,10 +20,10 @@ import (
 
 // Dependencies holds all injected dependencies for the server.
 type Dependencies struct {
-	Pool        *pgxpool.Pool
-	Auth        *auth.TokenService
-	AuthHandler *auth.Handler
-	RBAC        *rbac.Evaluator
+	Pool          *pgxpool.Pool
+	Auth          *auth.TokenService
+	AuthHandler   *auth.Handler
+	RBAC          *rbac.Evaluator
 	TenantHandler *tenant.Handler
 	DevMode       bool
 	DevIdentity   *auth.Identity

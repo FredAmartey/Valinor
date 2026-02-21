@@ -148,14 +148,14 @@ func TestValidateSlug(t *testing.T) {
 		{"chelsea-fc", false},
 		{"abc", false},
 		{"a-b", false},
-		{"ab", true},           // too short
-		{"-abc", true},         // starts with hyphen
-		{"abc-", true},         // ends with hyphen
-		{"ABC", true},          // uppercase
-		{"a b", true},          // space
-		{"api", true},          // reserved
-		{"www", true},          // reserved
-		{"admin", true},        // reserved
+		{"ab", true},    // too short
+		{"-abc", true},  // starts with hyphen
+		{"abc-", true},  // ends with hyphen
+		{"ABC", true},   // uppercase
+		{"a b", true},   // space
+		{"api", true},   // reserved
+		{"www", true},   // reserved
+		{"admin", true}, // reserved
 	}
 
 	for _, tt := range tests {
