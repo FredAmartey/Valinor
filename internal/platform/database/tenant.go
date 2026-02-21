@@ -19,13 +19,19 @@ type Querier interface {
 
 // WithTenantConnection acquires a dedicated connection from the pool,
 // sets the Postgres session variable for RLS, then calls fn.
-// The connection is released back to the pool when fn returns.
+// The tenant context is reset before the connection is released back
+// to the pool, preventing cross-tenant data leaks via connection reuse.
 func WithTenantConnection(ctx context.Context, pool *pgxpool.Pool, tenantID string, fn func(ctx context.Context, q Querier) error) error {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("acquiring connection: %w", err)
 	}
-	defer conn.Release()
+	defer func() {
+		// Reset tenant context before returning connection to pool.
+		// Use background context since the request context may be canceled.
+		_, _ = conn.Exec(context.Background(), "SELECT set_config('app.current_tenant_id', '', false)")
+		conn.Release()
+	}()
 
 	// Set the tenant context for RLS policies
 	_, err = conn.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, false)", tenantID)
