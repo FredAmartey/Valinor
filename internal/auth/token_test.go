@@ -105,3 +105,40 @@ func TestTokenService_MalformedToken(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, auth.ErrTokenInvalid)
 }
+
+func TestTokenService_RefreshTokenWithFamilyClaims(t *testing.T) {
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+
+	identity := &auth.Identity{
+		UserID:     "user-123",
+		TenantID:   "tenant-456",
+		FamilyID:   "family-abc",
+		Generation: 3,
+	}
+
+	token, err := svc.CreateRefreshToken(identity)
+	require.NoError(t, err)
+
+	got, err := svc.ValidateToken(token)
+	require.NoError(t, err)
+	assert.Equal(t, "family-abc", got.FamilyID)
+	assert.Equal(t, 3, got.Generation)
+	assert.Equal(t, "refresh", got.TokenType)
+}
+
+func TestTokenService_LegacyTokenLacksFamilyClaims(t *testing.T) {
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+
+	identity := &auth.Identity{
+		UserID:   "user-123",
+		TenantID: "tenant-456",
+	}
+
+	token, err := svc.CreateRefreshToken(identity)
+	require.NoError(t, err)
+
+	got, err := svc.ValidateToken(token)
+	require.NoError(t, err)
+	assert.Empty(t, got.FamilyID)
+	assert.Equal(t, 0, got.Generation)
+}

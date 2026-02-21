@@ -10,6 +10,9 @@ var (
 	ErrUserNotFound   = errors.New("user not found")
 	ErrUnauthorized   = errors.New("unauthorized")
 	ErrTenantNotFound = errors.New("tenant not found")
+	ErrFamilyRevoked  = errors.New("token family revoked")
+	ErrTokenReuse     = errors.New("refresh token reuse detected")
+	ErrFamilyNotFound = errors.New("token family not found")
 )
 
 // Identity represents an authenticated user's claims.
@@ -21,4 +24,6 @@ type Identity struct {
 	Roles       []string `json:"roles"`
 	Departments []string `json:"departments"`
 	TokenType   string   `json:"token_type"` // "access" or "refresh"
+	FamilyID    string   `json:"family_id,omitempty"`
+	Generation  int      `json:"generation,omitempty"`
 }
