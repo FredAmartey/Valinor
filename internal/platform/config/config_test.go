@@ -32,3 +32,37 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	assert.Equal(t, 9090, cfg.Server.Port)
 	assert.Equal(t, "postgres://test:test@localhost:5432/valinor_test", cfg.Database.URL)
 }
+
+func TestLoad_AuthDefaults(t *testing.T) {
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.Equal(t, false, cfg.Auth.DevMode)
+	assert.Equal(t, "valinor", cfg.Auth.JWT.Issuer)
+	assert.Equal(t, 24, cfg.Auth.JWT.ExpiryHours)
+	assert.Equal(t, 168, cfg.Auth.JWT.RefreshExpiryHours)
+}
+
+func TestLoad_AuthEnvOverrides(t *testing.T) {
+	os.Setenv("VALINOR_AUTH_DEVMODE", "true")
+	os.Setenv("VALINOR_AUTH_OIDC_ISSUERURL", "https://accounts.google.com")
+	os.Setenv("VALINOR_AUTH_OIDC_CLIENTID", "test-client-id")
+	os.Setenv("VALINOR_AUTH_OIDC_CLIENTSECRET", "test-secret")
+	os.Setenv("VALINOR_AUTH_JWT_SIGNINGKEY", "super-secret-key-at-least-32-chars!!")
+	defer func() {
+		os.Unsetenv("VALINOR_AUTH_DEVMODE")
+		os.Unsetenv("VALINOR_AUTH_OIDC_ISSUERURL")
+		os.Unsetenv("VALINOR_AUTH_OIDC_CLIENTID")
+		os.Unsetenv("VALINOR_AUTH_OIDC_CLIENTSECRET")
+		os.Unsetenv("VALINOR_AUTH_JWT_SIGNINGKEY")
+	}()
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Auth.DevMode)
+	assert.Equal(t, "https://accounts.google.com", cfg.Auth.OIDC.IssuerURL)
+	assert.Equal(t, "test-client-id", cfg.Auth.OIDC.ClientID)
+	assert.Equal(t, "test-secret", cfg.Auth.OIDC.ClientSecret)
+	assert.Equal(t, "super-secret-key-at-least-32-chars!!", cfg.Auth.JWT.SigningKey)
+}
