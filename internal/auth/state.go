@@ -17,6 +17,7 @@ const (
 	stateMACLen   = 32
 	stateRawLen   = stateNonceLen + stateTimeLen + stateMACLen // 56
 	statePrefix   = "oidc-state:"
+	stateMaxSkew  = 30 * time.Second // tolerate small clock drift between replicas
 )
 
 // StateStore produces and validates HMAC-signed OIDC state tokens.
@@ -80,7 +81,11 @@ func (s *StateStore) Validate(state string) bool {
 		return false
 	}
 	issuedAt := time.Unix(int64(rawTS), 0)
-	return time.Since(issuedAt) <= s.ttl
+	age := time.Since(issuedAt)
+	if age < -stateMaxSkew {
+		return false // issued too far in the future (clock skew)
+	}
+	return age <= s.ttl
 }
 
 func (s *StateStore) sign(nonce, ts []byte) []byte {
