@@ -83,6 +83,21 @@ func TestTokenService_InvalidSignature(t *testing.T) {
 	assert.ErrorIs(t, err, auth.ErrTokenInvalid)
 }
 
+func TestTokenService_WrongIssuer(t *testing.T) {
+	key := "test-signing-key-must-be-32-chars!!"
+	svc1 := auth.NewTokenService(key, "valinor", 24, 168)
+	svc2 := auth.NewTokenService(key, "other-service", 24, 168)
+
+	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
+
+	token, err := svc1.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	_, err = svc2.ValidateToken(token)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, auth.ErrTokenInvalid)
+}
+
 func TestTokenService_MalformedToken(t *testing.T) {
 	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
 

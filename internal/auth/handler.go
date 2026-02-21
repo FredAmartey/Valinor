@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 )
@@ -16,16 +14,18 @@ type OIDCProvider interface {
 
 // Handler handles authentication HTTP endpoints.
 type Handler struct {
-	tokenSvc *TokenService
-	store    *Store
-	oidc     OIDCProvider
+	tokenSvc   *TokenService
+	store      *Store
+	oidc       OIDCProvider
+	stateStore *StateStore
 }
 
-func NewHandler(tokenSvc *TokenService, store *Store, oidc OIDCProvider) *Handler {
+func NewHandler(tokenSvc *TokenService, store *Store, oidc OIDCProvider, stateStore *StateStore) *Handler {
 	return &Handler{
-		tokenSvc: tokenSvc,
-		store:    store,
-		oidc:     oidc,
+		tokenSvc:   tokenSvc,
+		store:      store,
+		oidc:       oidc,
+		stateStore: stateStore,
 	}
 }
 
@@ -45,18 +45,73 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate state parameter (in production, store in session/cookie)
-	state := generateState()
-	url := h.oidc.AuthCodeURL(state)
+	state, err := h.stateStore.Generate()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to generate state",
+		})
+		return
+	}
 
+	// Set state cookie so we can validate it on callback
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    state,
+		Path:     "/auth/callback",
+		MaxAge:   600, // 10 minutes
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	url := h.oidc.AuthCodeURL(state)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 // HandleCallback processes the OIDC callback.
 func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	if h.oidc == nil || h.store == nil {
+	if h.oidc == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "OIDC not configured",
+		})
+		return
+	}
+
+	// Validate state parameter against cookie (CSRF protection — must happen first)
+	queryState := r.URL.Query().Get("state")
+	if queryState == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "missing state parameter",
+		})
+		return
+	}
+
+	cookie, err := r.Cookie("oidc_state")
+	if err != nil || cookie.Value != queryState {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid state parameter",
+		})
+		return
+	}
+
+	if !h.stateStore.Validate(queryState) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid state parameter",
+		})
+		return
+	}
+
+	// Clear state cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    "",
+		Path:     "/auth/callback",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	if h.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "user store not configured",
 		})
 		return
 	}
@@ -176,10 +231,4 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func generateState() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }

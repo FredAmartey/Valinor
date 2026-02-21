@@ -103,6 +103,9 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 		}
 		roles = append(roles, name)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating roles: %w", err)
+	}
 
 	// Get department IDs
 	deptRows, err := s.pool.Query(ctx,
@@ -121,6 +124,9 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 			return nil, fmt.Errorf("scanning department: %w", scanErr)
 		}
 		departments = append(departments, deptID)
+	}
+	if err := deptRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating departments: %w", err)
 	}
 
 	return &Identity{
