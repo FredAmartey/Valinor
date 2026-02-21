@@ -1,0 +1,13 @@
+DROP TABLE IF EXISTS audit_events_2026_03;
+DROP TABLE IF EXISTS audit_events_2026_02;
+DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS connectors;
+DROP TABLE IF EXISTS channel_links;
+DROP TABLE IF EXISTS agent_instances;
+DROP TABLE IF EXISTS resource_policies;
+DROP TABLE IF EXISTS user_roles;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS user_departments;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS departments;
+DROP TABLE IF EXISTS tenants;
