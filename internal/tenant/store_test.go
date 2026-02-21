@@ -2,6 +2,7 @@ package tenant_test
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"testing"
 
@@ -64,15 +65,15 @@ func setupTestDBWithRLS(t *testing.T) (ownerPool *database.Pool, rlsPool *databa
 	connStr := ownerPool.Config().ConnString()
 
 	// Create a non-superuser role that respects RLS
-	_, err := ownerPool.Exec(ctx, `
+	_, err := ownerPool.Exec(ctx, fmt.Sprintf(`
 		DO $$ BEGIN
 			IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'rls_user') THEN
-				CREATE ROLE rls_user LOGIN PASSWORD '` + testRLSPass + `';
+				CREATE ROLE rls_user LOGIN PASSWORD '%s';
 			END IF;
 		END $$;
 		GRANT USAGE ON SCHEMA public TO rls_user;
 		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO rls_user;
-	`)
+	`, testRLSPass))
 	require.NoError(t, err)
 
 	// Build connection string for rls_user
