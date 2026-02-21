@@ -201,6 +201,21 @@ func TestIntegration_RefreshTokenRotation(t *testing.T) {
 		assert.Equal(t, 1, newParsed.Generation)
 	})
 
+	t.Run("legacy token replay rejected after upgrade", func(t *testing.T) {
+		legacyToken, err := tokenSvc.CreateRefreshToken(identity)
+		require.NoError(t, err)
+
+		// First upgrade succeeds
+		code, resp := doRefresh(t, legacyToken)
+		require.Equal(t, http.StatusOK, code)
+		assert.NotEmpty(t, resp["refresh_token"])
+
+		// Replay of same legacy token is rejected
+		code2, resp2 := doRefresh(t, legacyToken)
+		assert.Equal(t, http.StatusUnauthorized, code2)
+		assert.Equal(t, "legacy token already upgraded", resp2["error"])
+	})
+
 	t.Run("normal rotation increments generation", func(t *testing.T) {
 		familyID, err := refreshStore.CreateFamilyAndReturnID(ctx, tenantID, userID)
 		require.NoError(t, err)

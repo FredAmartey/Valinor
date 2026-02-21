@@ -12,7 +12,8 @@ var (
 	ErrTenantNotFound = errors.New("tenant not found")
 	ErrFamilyRevoked  = errors.New("token family revoked")
 	ErrTokenReuse     = errors.New("refresh token reuse detected")
-	ErrFamilyNotFound = errors.New("token family not found")
+	ErrFamilyNotFound    = errors.New("token family not found")
+	ErrLegacyTokenReplay = errors.New("legacy token already upgraded")
 )
 
 // Identity represents an authenticated user's claims.

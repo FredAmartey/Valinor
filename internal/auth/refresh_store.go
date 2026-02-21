@@ -74,6 +74,39 @@ func (s *RefreshTokenStore) CreateFamilyAndReturnID(ctx context.Context, tenantI
 	return familyID, nil
 }
 
+// CreateFamilyForLegacyUpgrade creates a family and records the legacy
+// token's hash to prevent the same legacy token being upgraded again.
+func (s *RefreshTokenStore) CreateFamilyForLegacyUpgrade(ctx context.Context, tenantID, userID, legacyHash string) (string, error) {
+	var familyID string
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO refresh_token_families (tenant_id, user_id, current_generation, current_token_hash, legacy_token_hash)
+		 VALUES ($1, $2, 1, 'pending', $3)
+		 RETURNING id`,
+		tenantID, userID, legacyHash,
+	).Scan(&familyID)
+	if err != nil {
+		return "", fmt.Errorf("creating token family for legacy upgrade: %w", err)
+	}
+	return familyID, nil
+}
+
+// IsLegacyTokenUpgraded checks whether a legacy token (by hash) has
+// already been upgraded to a family-tracked token for this user.
+func (s *RefreshTokenStore) IsLegacyTokenUpgraded(ctx context.Context, userID, tenantID, legacyHash string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM refresh_token_families
+			WHERE user_id = $1 AND tenant_id = $2 AND legacy_token_hash = $3
+		)`,
+		userID, tenantID, legacyHash,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking legacy token upgrade: %w", err)
+	}
+	return exists, nil
+}
+
 // SetInitialTokenHash stores the real token hash for a newly created family.
 func (s *RefreshTokenStore) SetInitialTokenHash(ctx context.Context, familyID, tenantID, tokenHash string) error {
 	tag, err := s.pool.Exec(ctx,

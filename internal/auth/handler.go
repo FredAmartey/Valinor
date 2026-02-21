@@ -329,7 +329,7 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) rotateRefreshToken(ctx context.Context, identity *Identity, presentedJWT string) (*Identity, string, error) {
 	// Legacy token (no FamilyID): create a new family
 	if identity.FamilyID == "" {
-		return h.upgradeLegacyToken(ctx, identity)
+		return h.upgradeLegacyToken(ctx, identity, presentedJWT)
 	}
 
 	// Build new identity with incremented generation
@@ -354,9 +354,21 @@ func (h *Handler) rotateRefreshToken(ctx context.Context, identity *Identity, pr
 }
 
 // upgradeLegacyToken handles the transition from a stateless refresh
-// token (pre-rotation) to a family-tracked token.
-func (h *Handler) upgradeLegacyToken(ctx context.Context, identity *Identity) (*Identity, string, error) {
-	familyID, err := h.refreshStore.CreateFamilyAndReturnID(ctx, identity.TenantID, identity.UserID)
+// token (pre-rotation) to a family-tracked token. It records the legacy
+// token's hash to reject replay attempts of the same legacy JWT.
+func (h *Handler) upgradeLegacyToken(ctx context.Context, identity *Identity, presentedJWT string) (*Identity, string, error) {
+	legacyHash := HashToken(presentedJWT)
+
+	// Reject if this legacy token was already upgraded
+	upgraded, err := h.refreshStore.IsLegacyTokenUpgraded(ctx, identity.UserID, identity.TenantID, legacyHash)
+	if err != nil {
+		return nil, "", fmt.Errorf("checking legacy token upgrade: %w", err)
+	}
+	if upgraded {
+		return nil, "", ErrLegacyTokenReplay
+	}
+
+	familyID, err := h.refreshStore.CreateFamilyForLegacyUpgrade(ctx, identity.TenantID, identity.UserID, legacyHash)
 	if err != nil {
 		return nil, "", fmt.Errorf("upgrading legacy token: %w", err)
 	}
@@ -385,6 +397,8 @@ func classifyRotationError(err error) (int, string) {
 		return http.StatusUnauthorized, "token family revoked"
 	case errors.Is(err, ErrFamilyNotFound):
 		return http.StatusUnauthorized, "invalid token family"
+	case errors.Is(err, ErrLegacyTokenReplay):
+		return http.StatusUnauthorized, "legacy token already upgraded"
 	default:
 		return http.StatusInternalServerError, "token rotation failed"
 	}

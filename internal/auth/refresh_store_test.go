@@ -206,6 +206,36 @@ func TestRefreshTokenStore_GetFamily_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, auth.ErrFamilyNotFound)
 }
 
+func TestRefreshTokenStore_LegacyUpgrade_ReplayRejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := auth.NewRefreshTokenStore(pool)
+	tenantID, userID := createTestTenantAndUser(t, pool)
+
+	legacyHash := auth.HashToken("legacy-jwt")
+
+	// First upgrade succeeds
+	familyID, err := store.CreateFamilyForLegacyUpgrade(ctx, tenantID, userID, legacyHash)
+	require.NoError(t, err)
+	assert.NotEmpty(t, familyID)
+
+	// IsLegacyTokenUpgraded returns true
+	upgraded, err := store.IsLegacyTokenUpgraded(ctx, userID, tenantID, legacyHash)
+	require.NoError(t, err)
+	assert.True(t, upgraded)
+
+	// Different legacy token is not upgraded
+	upgraded2, err := store.IsLegacyTokenUpgraded(ctx, userID, tenantID, auth.HashToken("other-jwt"))
+	require.NoError(t, err)
+	assert.False(t, upgraded2)
+}
+
 func TestHashToken_Deterministic(t *testing.T) {
 	hash1 := auth.HashToken("same-input")
 	hash2 := auth.HashToken("same-input")
