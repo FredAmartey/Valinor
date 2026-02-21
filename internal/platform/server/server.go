@@ -14,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/valinor-ai/valinor/internal/tenant"
 )
 
 // Dependencies holds all injected dependencies for the server.
@@ -22,9 +23,10 @@ type Dependencies struct {
 	Auth        *auth.TokenService
 	AuthHandler *auth.Handler
 	RBAC        *rbac.Evaluator
-	DevMode     bool
-	DevIdentity *auth.Identity
-	Logger      *slog.Logger
+	TenantHandler *tenant.Handler
+	DevMode       bool
+	DevIdentity   *auth.Identity
+	Logger        *slog.Logger
 }
 
 type Server struct {
@@ -76,6 +78,19 @@ func New(addr string, deps Dependencies) *Server {
 			rbac.RequirePermission(deps.RBAC, "agents:read")(
 				http.HandlerFunc(s.handleListAgents),
 			),
+		)
+	}
+
+	// Platform admin routes (tenant provisioning)
+	if deps.TenantHandler != nil {
+		protectedMux.Handle("POST /api/v1/tenants",
+			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleCreate)),
+		)
+		protectedMux.Handle("GET /api/v1/tenants/{id}",
+			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleGet)),
+		)
+		protectedMux.Handle("GET /api/v1/tenants",
+			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleList)),
 		)
 	}
 
