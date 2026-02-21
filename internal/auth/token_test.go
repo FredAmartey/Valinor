@@ -126,6 +126,37 @@ func TestTokenService_RefreshTokenWithFamilyClaims(t *testing.T) {
 	assert.Equal(t, "refresh", got.TokenType)
 }
 
+func TestTokenService_PlatformAdminClaim(t *testing.T) {
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	identity := &auth.Identity{
+		UserID:          "admin-1",
+		Email:           "admin@valinor.com",
+		IsPlatformAdmin: true,
+	}
+
+	token, err := svc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	parsed, err := svc.ValidateToken(token)
+	require.NoError(t, err)
+	assert.True(t, parsed.IsPlatformAdmin)
+}
+
+func TestTokenService_NonPlatformAdminOmitsClaim(t *testing.T) {
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	identity := &auth.Identity{
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+	}
+
+	token, err := svc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	parsed, err := svc.ValidateToken(token)
+	require.NoError(t, err)
+	assert.False(t, parsed.IsPlatformAdmin)
+}
+
 func TestTokenService_LegacyTokenLacksFamilyClaims(t *testing.T) {
 	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
 

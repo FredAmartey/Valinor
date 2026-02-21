@@ -15,6 +15,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/server"
 	"github.com/valinor-ai/valinor/internal/platform/telemetry"
 	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/valinor-ai/valinor/internal/tenant"
 )
 
 func main() {
@@ -93,6 +94,13 @@ func run() error {
 		// OIDC provider wired when configured
 	})
 
+	// Tenant provisioning
+	var tenantHandler *tenant.Handler
+	if pool != nil {
+		tenantStore := tenant.NewStore(pool)
+		tenantHandler = tenant.NewHandler(tenantStore)
+	}
+
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)
 
@@ -124,13 +132,14 @@ func run() error {
 	// Create and start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := server.New(addr, server.Dependencies{
-		Pool:        pool,
-		Auth:        tokenSvc,
-		AuthHandler: authHandler,
-		RBAC:        rbacEngine,
-		DevMode:     cfg.Auth.DevMode,
-		DevIdentity: devIdentity,
-		Logger:      logger,
+		Pool:          pool,
+		Auth:          tokenSvc,
+		AuthHandler:   authHandler,
+		RBAC:          rbacEngine,
+		TenantHandler: tenantHandler,
+		DevMode:       cfg.Auth.DevMode,
+		DevIdentity:   devIdentity,
+		Logger:        logger,
 	})
 
 	// Graceful shutdown on SIGINT/SIGTERM

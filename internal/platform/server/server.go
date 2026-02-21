@@ -12,19 +12,22 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/valinor-ai/valinor/internal/tenant"
 )
 
 // Dependencies holds all injected dependencies for the server.
 type Dependencies struct {
-	Pool        *pgxpool.Pool
-	Auth        *auth.TokenService
-	AuthHandler *auth.Handler
-	RBAC        *rbac.Evaluator
-	DevMode     bool
-	DevIdentity *auth.Identity
-	Logger      *slog.Logger
+	Pool          *pgxpool.Pool
+	Auth          *auth.TokenService
+	AuthHandler   *auth.Handler
+	RBAC          *rbac.Evaluator
+	TenantHandler *tenant.Handler
+	DevMode       bool
+	DevIdentity   *auth.Identity
+	Logger        *slog.Logger
 }
 
 type Server struct {
@@ -76,6 +79,19 @@ func New(addr string, deps Dependencies) *Server {
 			rbac.RequirePermission(deps.RBAC, "agents:read")(
 				http.HandlerFunc(s.handleListAgents),
 			),
+		)
+	}
+
+	// Platform admin routes (tenant provisioning)
+	if deps.TenantHandler != nil {
+		protectedMux.Handle("POST /api/v1/tenants",
+			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleCreate)),
+		)
+		protectedMux.Handle("GET /api/v1/tenants/{id}",
+			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleGet)),
+		)
+		protectedMux.Handle("GET /api/v1/tenants",
+			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleList)),
 		)
 	}
 
@@ -158,8 +174,49 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
-	// Placeholder — will be replaced with real agent listing once the agents domain is built.
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "agents": []any{}})
+	if s.pool == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "database not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	type agentInstance struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+
+	var agents []agentInstance
+	err := database.WithTenantConnection(r.Context(), s.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		rows, queryErr := q.Query(ctx, "SELECT id, status FROM agent_instances")
+		if queryErr != nil {
+			return queryErr
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var a agentInstance
+			if scanErr := rows.Scan(&a.ID, &a.Status); scanErr != nil {
+				return scanErr
+			}
+			agents = append(agents, a)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list agents"})
+		return
+	}
+
+	if agents == nil {
+		agents = []agentInstance{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

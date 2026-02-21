@@ -193,6 +193,76 @@ func TestHandler_Callback_RejectsMissingState(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestHandler_Callback_PlatformAdminNoTenant(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a tenant for the platform admin user (they need to belong to one)
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Platform", "platform",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	// Create platform admin user
+	_, err = pool.Exec(ctx,
+		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer, is_platform_admin)
+		 VALUES ($1, $2, $3, $4, $5, true)`,
+		tenantID, "admin@valinor.com", "Admin", "google-admin", "https://accounts.google.com",
+	)
+	require.NoError(t, err)
+
+	tokenSvc := newTestTokenService()
+	stateStore := newTestStateStore()
+	store := auth.NewStore(pool)
+
+	oidcProvider := &mockOIDCProvider{
+		userInfo: &auth.OIDCUserInfo{
+			Issuer:  "https://accounts.google.com",
+			Subject: "google-admin",
+			Email:   "admin@valinor.com",
+			Name:    "Admin",
+		},
+	}
+
+	// No TenantResolver — simulates base domain access
+	handler := auth.NewHandler(auth.HandlerConfig{
+		TokenSvc:   tokenSvc,
+		Store:      store,
+		OIDC:       oidcProvider,
+		StateStore: stateStore,
+	})
+
+	state, err := stateStore.Generate()
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=authcode&state="+state, nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-oidc_state", Value: state})
+	w := httptest.NewRecorder()
+
+	handler.HandleCallback(w, req)
+
+	// Platform admin gets tokens even without tenant resolution
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]string
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp["access_token"])
+
+	// Verify the token has IsPlatformAdmin and empty TenantID
+	parsed, err := tokenSvc.ValidateToken(resp["access_token"])
+	require.NoError(t, err)
+	assert.True(t, parsed.IsPlatformAdmin)
+}
+
 func TestHandler_RefreshToken_OversizedBody(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()

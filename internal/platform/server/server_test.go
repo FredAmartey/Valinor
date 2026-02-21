@@ -80,7 +80,7 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	}, tokenSvc
 }
 
-func TestServer_Agents_WithPermission(t *testing.T) {
+func TestServer_Agents_WithPermission_NoDB(t *testing.T) {
 	deps, tokenSvc := newTestDeps()
 	srv := server.New(":0", deps)
 
@@ -98,7 +98,8 @@ func TestServer_Agents_WithPermission(t *testing.T) {
 
 	srv.Handler().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	// Without a database pool, handleListAgents returns 503
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 func TestServer_Agents_WithoutPermission(t *testing.T) {

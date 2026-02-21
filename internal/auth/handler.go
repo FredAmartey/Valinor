@@ -143,27 +143,35 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve tenant from subdomain
-	if h.tenantResolver == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"error": "tenant resolution not configured",
-		})
-		return
-	}
-	tenantID, err := h.tenantResolver.ResolveFromRequest(r.Context(), r)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "cannot resolve tenant",
-		})
-		return
-	}
-
-	// Exchange code for user info
+	// Exchange code for user info (must happen before tenant resolution
+	// so we can check for platform admin on the tenantless path)
 	userInfo, err := h.oidc.Exchange(r.Context(), code)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{
 			"error": "OIDC exchange failed",
 		})
+		return
+	}
+
+	// Resolve tenant from subdomain
+	var tenantID string
+	if h.tenantResolver != nil {
+		tid, resolveErr := h.tenantResolver.ResolveFromRequest(r.Context(), r)
+		if resolveErr != nil {
+			// No tenant resolved — check if this is a platform admin on the base domain
+			if h.tryPlatformAdminCallback(w, userInfo) {
+				return
+			}
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot resolve tenant"})
+			return
+		}
+		tenantID = tid
+	} else {
+		// No TenantResolver configured — check for platform admin via OIDC
+		if h.tryPlatformAdminCallback(w, userInfo) {
+			return
+		}
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "tenant resolution not configured"})
 		return
 	}
 
@@ -238,6 +246,41 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		"refresh_token": refreshToken,
 		"token_type":    "Bearer",
 	})
+}
+
+// tryPlatformAdminCallback checks if the OIDC user is a platform admin and,
+// if so, issues tokens without tenant scope. Returns true if it handled the response.
+func (h *Handler) tryPlatformAdminCallback(w http.ResponseWriter, userInfo *OIDCUserInfo) bool {
+	if h.store == nil {
+		return false
+	}
+
+	adminIdentity, err := h.store.LookupPlatformAdminByOIDC(context.Background(), userInfo.Issuer, userInfo.Subject)
+	if err != nil || adminIdentity == nil {
+		return false
+	}
+
+	// Clear tenant scope so platform-admin tokens are tenantless.
+	adminIdentity.TenantID = ""
+
+	accessToken, err := h.tokenSvc.CreateAccessToken(adminIdentity)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token creation failed"})
+		return true
+	}
+
+	refreshToken, err := h.tokenSvc.CreateRefreshToken(adminIdentity)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token creation failed"})
+		return true
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"token_type":    "Bearer",
+	})
+	return true
 }
 
 // HandleRefresh exchanges a refresh token for new access + refresh tokens.

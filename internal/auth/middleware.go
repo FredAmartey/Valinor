@@ -77,6 +77,24 @@ func MiddlewareWithDevMode(tokenSvc *TokenService, devIdentity *Identity) func(h
 	}
 }
 
+// RequirePlatformAdmin returns middleware that restricts access to platform admins.
+func RequirePlatformAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity := GetIdentity(r.Context())
+		if identity == nil {
+			writeAuthError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		if !identity.IsPlatformAdmin {
+			writeAuthError(w, http.StatusForbidden, "platform admin required")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // GetIdentity retrieves the authenticated identity from the request context.
 func GetIdentity(ctx context.Context) *Identity {
 	identity, _ := ctx.Value(identityContextKey{}).(*Identity)
