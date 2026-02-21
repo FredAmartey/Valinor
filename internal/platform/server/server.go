@@ -20,14 +20,17 @@ import (
 
 // Dependencies holds all injected dependencies for the server.
 type Dependencies struct {
-	Pool          *pgxpool.Pool
-	Auth          *auth.TokenService
-	AuthHandler   *auth.Handler
-	RBAC          *rbac.Evaluator
-	TenantHandler *tenant.Handler
-	DevMode       bool
-	DevIdentity   *auth.Identity
-	Logger        *slog.Logger
+	Pool              *pgxpool.Pool
+	Auth              *auth.TokenService
+	AuthHandler       *auth.Handler
+	RBAC              *rbac.Evaluator
+	TenantHandler     *tenant.Handler
+	DepartmentHandler *tenant.DepartmentHandler
+	UserHandler       *tenant.UserHandler
+	RoleHandler       *tenant.RoleHandler
+	DevMode           bool
+	DevIdentity       *auth.Identity
+	Logger            *slog.Logger
 }
 
 type Server struct {
@@ -92,6 +95,83 @@ func New(addr string, deps Dependencies) *Server {
 		)
 		protectedMux.Handle("GET /api/v1/tenants",
 			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleList)),
+		)
+	}
+
+	// Department routes (tenant-scoped, RBAC-protected)
+	if deps.DepartmentHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("POST /api/v1/departments",
+			rbac.RequirePermission(deps.RBAC, "departments:write")(
+				http.HandlerFunc(deps.DepartmentHandler.HandleCreate),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/departments/{id}",
+			rbac.RequirePermission(deps.RBAC, "departments:read")(
+				http.HandlerFunc(deps.DepartmentHandler.HandleGet),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/departments",
+			rbac.RequirePermission(deps.RBAC, "departments:read")(
+				http.HandlerFunc(deps.DepartmentHandler.HandleList),
+			),
+		)
+	}
+
+	// User routes (tenant-scoped, RBAC-protected)
+	if deps.UserHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("POST /api/v1/users",
+			rbac.RequirePermission(deps.RBAC, "users:write")(
+				http.HandlerFunc(deps.UserHandler.HandleCreate),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/users/{id}",
+			rbac.RequirePermission(deps.RBAC, "users:read")(
+				http.HandlerFunc(deps.UserHandler.HandleGet),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/users",
+			rbac.RequirePermission(deps.RBAC, "users:read")(
+				http.HandlerFunc(deps.UserHandler.HandleList),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/users/{id}/departments",
+			rbac.RequirePermission(deps.RBAC, "users:write")(
+				http.HandlerFunc(deps.UserHandler.HandleAddToDepartment),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/users/{id}/departments/{deptId}",
+			rbac.RequirePermission(deps.RBAC, "users:write")(
+				http.HandlerFunc(deps.UserHandler.HandleRemoveFromDepartment),
+			),
+		)
+	}
+
+	// Role routes (tenant-scoped, RBAC-protected)
+	if deps.RoleHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("POST /api/v1/roles",
+			rbac.RequirePermission(deps.RBAC, "users:manage")(
+				http.HandlerFunc(deps.RoleHandler.HandleCreate),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/roles",
+			rbac.RequirePermission(deps.RBAC, "users:read")(
+				http.HandlerFunc(deps.RoleHandler.HandleList),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/users/{id}/roles",
+			rbac.RequirePermission(deps.RBAC, "users:manage")(
+				http.HandlerFunc(deps.RoleHandler.HandleAssignRole),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/users/{id}/roles",
+			rbac.RequirePermission(deps.RBAC, "users:manage")(
+				http.HandlerFunc(deps.RoleHandler.HandleRemoveRole),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/users/{id}/roles",
+			rbac.RequirePermission(deps.RBAC, "users:read")(
+				http.HandlerFunc(deps.RoleHandler.HandleListUserRoles),
+			),
 		)
 	}
 

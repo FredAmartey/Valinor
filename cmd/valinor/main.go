@@ -101,6 +101,19 @@ func run() error {
 		tenantHandler = tenant.NewHandler(tenantStore)
 	}
 
+	// Department, user, and role management (tenant-scoped)
+	var deptHandler *tenant.DepartmentHandler
+	var userHandler *tenant.UserHandler
+	var roleHandler *tenant.RoleHandler
+	if pool != nil {
+		deptStore := tenant.NewDepartmentStore()
+		userMgmtStore := tenant.NewUserStore()
+		roleStore := tenant.NewRoleStore()
+		deptHandler = tenant.NewDepartmentHandler(pool, deptStore)
+		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
+		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
+	}
+
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)
 
@@ -132,14 +145,17 @@ func run() error {
 	// Create and start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := server.New(addr, server.Dependencies{
-		Pool:          pool,
-		Auth:          tokenSvc,
-		AuthHandler:   authHandler,
-		RBAC:          rbacEngine,
-		TenantHandler: tenantHandler,
-		DevMode:       cfg.Auth.DevMode,
-		DevIdentity:   devIdentity,
-		Logger:        logger,
+		Pool:              pool,
+		Auth:              tokenSvc,
+		AuthHandler:       authHandler,
+		RBAC:              rbacEngine,
+		TenantHandler:     tenantHandler,
+		DepartmentHandler: deptHandler,
+		UserHandler:       userHandler,
+		RoleHandler:       roleHandler,
+		DevMode:           cfg.Auth.DevMode,
+		DevIdentity:       devIdentity,
+		Logger:            logger,
 	})
 
 	// Graceful shutdown on SIGINT/SIGTERM
