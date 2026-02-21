@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -16,8 +17,8 @@ func Connect(ctx context.Context, databaseURL string, maxConns int) (*pgxpool.Po
 		return nil, fmt.Errorf("parsing database URL: %w", err)
 	}
 
-	if maxConns > 0 {
-		config.MaxConns = int32(maxConns)
+	if maxConns > 0 && maxConns <= math.MaxInt32 {
+		config.MaxConns = int32(maxConns) // #nosec G115 -- bounds checked above
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
