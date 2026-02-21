@@ -1,0 +1,12 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+database:
+  url: "postgres://valinor:valinor@localhost:5432/valinor?sslmode=disable"
+  max_conns: 25
+  migrations_path: "migrations"
+
+log:
+  level: "info"
+  format: "json"
