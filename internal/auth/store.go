@@ -37,7 +37,8 @@ func (s *Store) FindOrCreateByOIDC(ctx context.Context, info OIDCUserInfo, defau
 
 	if err == nil {
 		// User exists, fetch full identity
-		identity, err := s.GetIdentityWithRoles(ctx, userID)
+		var identity *Identity
+		identity, err = s.GetIdentityWithRoles(ctx, userID)
 		if err != nil {
 			return nil, false, fmt.Errorf("getting identity: %w", err)
 		}
@@ -97,8 +98,8 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 	var roles []string
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("scanning role: %w", err)
+		if scanErr := rows.Scan(&name); scanErr != nil {
+			return nil, fmt.Errorf("scanning role: %w", scanErr)
 		}
 		roles = append(roles, name)
 	}
@@ -116,8 +117,8 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 	var departments []string
 	for deptRows.Next() {
 		var deptID string
-		if err := deptRows.Scan(&deptID); err != nil {
-			return nil, fmt.Errorf("scanning department: %w", err)
+		if scanErr := deptRows.Scan(&deptID); scanErr != nil {
+			return nil, fmt.Errorf("scanning department: %w", scanErr)
 		}
 		departments = append(departments, deptID)
 	}

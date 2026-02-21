@@ -16,7 +16,7 @@ func RequirePermission(engine *Evaluator, permission string) func(http.Handler) 
 			if identity == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				json.NewEncoder(w).Encode(map[string]string{
+				_ = json.NewEncoder(w).Encode(map[string]string{
 					"error": "authentication required",
 				})
 				return
@@ -26,7 +26,7 @@ func RequirePermission(engine *Evaluator, permission string) func(http.Handler) 
 			if err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]string{
+				_ = json.NewEncoder(w).Encode(map[string]string{
 					"error": "authorization check failed",
 				})
 				return
@@ -35,7 +35,7 @@ func RequirePermission(engine *Evaluator, permission string) func(http.Handler) 
 			if !decision.Allowed {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
-				json.NewEncoder(w).Encode(map[string]string{
+				_ = json.NewEncoder(w).Encode(map[string]string{
 					"error":  "forbidden",
 					"reason": decision.Reason,
 				})

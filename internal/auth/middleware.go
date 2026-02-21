@@ -10,10 +10,9 @@ import (
 
 type identityContextKey struct{}
 
-// IdentityContextKey returns the context key used to store the identity.
-// Exported so other packages can set identity in context for testing.
-func IdentityContextKey() identityContextKey {
-	return identityContextKey{}
+// WithIdentity returns a new context with the given identity attached.
+func WithIdentity(ctx context.Context, identity *Identity) context.Context {
+	return context.WithValue(ctx, identityContextKey{}, identity)
 }
 
 // Middleware returns HTTP middleware that validates JWT access tokens.
@@ -101,5 +100,5 @@ func extractBearerToken(r *http.Request) (string, error) {
 func writeAuthError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

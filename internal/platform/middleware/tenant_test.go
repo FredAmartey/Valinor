@@ -1,7 +1,6 @@
 package middleware_test
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,11 +18,10 @@ func TestTenantContext_SetsContextValue(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx := context.WithValue(req.Context(), auth.IdentityContextKey(), &auth.Identity{
+	req = req.WithContext(auth.WithIdentity(req.Context(), &auth.Identity{
 		UserID:   "user-123",
 		TenantID: "tenant-456",
-	})
-	req = req.WithContext(ctx)
+	}))
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)

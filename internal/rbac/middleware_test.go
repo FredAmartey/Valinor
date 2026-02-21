@@ -1,7 +1,6 @@
 package rbac_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +13,7 @@ import (
 )
 
 func setIdentity(r *http.Request, identity *auth.Identity) *http.Request {
-	ctx := context.WithValue(r.Context(), auth.IdentityContextKey(), identity)
+	ctx := auth.WithIdentity(r.Context(), identity)
 	return r.WithContext(ctx)
 }
 

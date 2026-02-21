@@ -58,17 +58,17 @@ func Load(configPaths ...string) (*Config, error) {
 
 	// Defaults
 	_ = k.Load(confmap.Provider(map[string]interface{}{
-		"server.port":              8080,
-		"server.host":              "0.0.0.0",
-		"database.max_conns":       25,
-		"database.migrations_path": "migrations",
-		"log.level":                "info",
-		"log.format":               "json",
-		"auth.devmode":              false,
-		"auth.jwt.issuer":           "valinor",
-		"auth.jwt.expiryhours":      24,
+		"server.port":                 8080,
+		"server.host":                 "0.0.0.0",
+		"database.max_conns":          25,
+		"database.migrations_path":    "migrations",
+		"log.level":                   "info",
+		"log.format":                  "json",
+		"auth.devmode":                false,
+		"auth.jwt.issuer":             "valinor",
+		"auth.jwt.expiryhours":        24,
 		"auth.jwt.refreshexpiryhours": 168,
-		"auth.oidc.redirecturl":     "http://localhost:8080/auth/callback",
+		"auth.oidc.redirecturl":       "http://localhost:8080/auth/callback",
 	}, "."), nil)
 
 	// YAML file (optional)

@@ -41,7 +41,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 
 	cleanup := func() {
 		pool.Close()
-		container.Terminate(ctx)
+		_ = container.Terminate(ctx)
 	}
 
 	return pool, cleanup
