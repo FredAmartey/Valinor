@@ -11,35 +11,89 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/valinor-ai/valinor/internal/rbac"
 )
 
-type Server struct {
-	httpServer *http.Server
-	mux        *http.ServeMux
-	pool       *pgxpool.Pool
+// Dependencies holds all injected dependencies for the server.
+type Dependencies struct {
+	Pool        *pgxpool.Pool
+	Auth        *auth.TokenService
+	AuthHandler *auth.Handler
+	RBAC        *rbac.Evaluator
+	DevMode     bool
+	DevIdentity *auth.Identity
+	Logger      *slog.Logger
 }
 
-func New(addr string, pool *pgxpool.Pool) *Server {
-	mux := http.NewServeMux()
+type Server struct {
+	httpServer   *http.Server
+	protectedMux *http.ServeMux
+	pool         *pgxpool.Pool
+	handler      http.Handler
+}
+
+func New(addr string, deps Dependencies) *Server {
+	// Protected routes mux — wrapped with auth middleware
+	protectedMux := http.NewServeMux()
+
+	// Build protected handler with middleware chain
+	var protectedHandler http.Handler = protectedMux
+	protectedHandler = middleware.TenantContext(protectedHandler)
+	if deps.Auth != nil {
+		if deps.DevMode && deps.DevIdentity != nil {
+			protectedHandler = auth.MiddlewareWithDevMode(deps.Auth, deps.DevIdentity)(protectedHandler)
+		} else {
+			protectedHandler = auth.Middleware(deps.Auth)(protectedHandler)
+		}
+	}
+
+	// Top-level mux: public routes + protected catch-all
+	topMux := http.NewServeMux()
 
 	s := &Server{
 		httpServer: &http.Server{
 			Addr:         addr,
-			Handler:      mux,
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
-		mux:  mux,
-		pool: pool,
+		protectedMux: protectedMux,
+		pool:         deps.Pool,
 	}
 
-	s.registerRoutes()
+	// Public routes (no auth required)
+	topMux.HandleFunc("GET /healthz", s.handleHealth)
+	topMux.HandleFunc("GET /readyz", s.handleReadiness)
+	if deps.AuthHandler != nil {
+		deps.AuthHandler.RegisterRoutes(topMux)
+	}
+
+	// All other routes go through auth middleware
+	topMux.Handle("/", protectedHandler)
+
+	// Wrap top-level mux with observability middleware
+	var handler http.Handler = topMux
+	if deps.Logger != nil {
+		handler = middleware.Logging(deps.Logger)(handler)
+	}
+	handler = middleware.RequestID(handler)
+
+	s.handler = handler
+	s.httpServer.Handler = handler
 	return s
 }
 
+// Handler returns the full middleware-wrapped handler chain (for testing).
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return s.handler
+}
+
+// ProtectedMux returns the mux for authenticated routes.
+// Use this to register routes that require authentication.
+func (s *Server) ProtectedMux() *http.ServeMux {
+	return s.protectedMux
 }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -68,11 +122,6 @@ func (s *Server) Start(ctx context.Context) error {
 		defer cancel()
 		return s.httpServer.Shutdown(shutdownCtx)
 	}
-}
-
-func (s *Server) registerRoutes() {
-	s.mux.HandleFunc("GET /healthz", s.handleHealth)
-	s.mux.HandleFunc("GET /readyz", s.handleReadiness)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

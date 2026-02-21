@@ -8,10 +8,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/server"
 	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/valinor-ai/valinor/internal/rbac"
 )
 
 func main() {
@@ -33,7 +35,7 @@ func run() error {
 	telemetry.SetDefault(logger)
 
 	slog.Info("valinor starting",
-		"version", "0.1.0",
+		"version", "0.2.0",
 		"port", cfg.Server.Port,
 	)
 
@@ -59,14 +61,65 @@ func run() error {
 		}
 	}
 
+	// Auth
+	tokenSvc := auth.NewTokenService(
+		cfg.Auth.JWT.SigningKey,
+		cfg.Auth.JWT.Issuer,
+		cfg.Auth.JWT.ExpiryHours,
+		cfg.Auth.JWT.RefreshExpiryHours,
+	)
+
+	var authStore *auth.Store
+	if pool != nil {
+		authStore = auth.NewStore(pool)
+	}
+
+	authHandler := auth.NewHandler(tokenSvc, authStore, nil) // OIDC provider wired when configured
+
+	// RBAC
+	rbacEngine := rbac.NewEvaluator(nil)
+
+	// Register default system roles
+	rbacEngine.RegisterRole("org_admin", []string{"*"})
+	rbacEngine.RegisterRole("dept_head", []string{
+		"agents:read", "agents:write", "agents:message",
+		"users:read", "users:write",
+		"departments:read",
+	})
+	rbacEngine.RegisterRole("standard_user", []string{
+		"agents:read", "agents:message",
+	})
+	rbacEngine.RegisterRole("read_only", []string{
+		"agents:read",
+	})
+
+	// Dev mode identity
+	var devIdentity *auth.Identity
+	if cfg.Auth.DevMode {
+		slog.Warn("running in dev mode — authentication bypassed with 'Bearer dev'")
+		devIdentity = &auth.Identity{
+			UserID:   "dev-user",
+			TenantID: "dev-tenant",
+			Roles:    []string{"org_admin"},
+		}
+	}
+
 	// Create and start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	srv := server.New(addr, pool)
+	srv := server.New(addr, server.Dependencies{
+		Pool:        pool,
+		Auth:        tokenSvc,
+		AuthHandler: authHandler,
+		RBAC:        rbacEngine,
+		DevMode:     cfg.Auth.DevMode,
+		DevIdentity: devIdentity,
+		Logger:      logger,
+	})
 
 	// Graceful shutdown on SIGINT/SIGTERM
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	slog.Info("server ready", "addr", addr)
+	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)
 	return srv.Start(ctx)
 }

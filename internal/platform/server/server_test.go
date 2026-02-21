@@ -13,7 +13,7 @@ import (
 )
 
 func TestServer_HealthCheck(t *testing.T) {
-	srv := server.New(":0", nil) // nil db pool for unit test
+	srv := server.New(":0", server.Dependencies{})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -29,7 +29,7 @@ func TestServer_HealthCheck(t *testing.T) {
 }
 
 func TestServer_ReadinessCheck_NoDB(t *testing.T) {
-	srv := server.New(":0", nil)
+	srv := server.New(":0", server.Dependencies{})
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	w := httptest.NewRecorder()
@@ -40,7 +40,7 @@ func TestServer_ReadinessCheck_NoDB(t *testing.T) {
 }
 
 func TestServer_NotFound(t *testing.T) {
-	srv := server.New(":0", nil)
+	srv := server.New(":0", server.Dependencies{})
 
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
 	w := httptest.NewRecorder()
@@ -51,7 +51,7 @@ func TestServer_NotFound(t *testing.T) {
 }
 
 func TestServer_StartStop(t *testing.T) {
-	srv := server.New("127.0.0.1:0", nil)
+	srv := server.New("127.0.0.1:0", server.Dependencies{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 
