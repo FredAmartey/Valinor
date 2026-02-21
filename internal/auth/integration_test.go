@@ -105,8 +105,7 @@ func TestIntegration_AuthRBACFlow(t *testing.T) {
 
 	// Test 4: Refresh token flow
 	t.Run("refresh token produces new tokens", func(t *testing.T) {
-		stateStore := auth.NewStateStore(10 * time.Minute)
-		defer stateStore.Stop()
+		stateStore := auth.NewStateStore([]byte("integration-test-key-must-be-32!!"), 10*time.Minute)
 		handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, Store: store, StateStore: stateStore})
 
 		body := `{"refresh_token":"` + refreshToken + `"}`

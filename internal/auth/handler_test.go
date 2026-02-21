@@ -30,13 +30,12 @@ func (m *mockOIDCProvider) Exchange(_ context.Context, _ string) (*auth.OIDCUser
 }
 
 func newTestStateStore() *auth.StateStore {
-	return auth.NewStateStore(10 * time.Minute)
+	return auth.NewStateStore([]byte("test-signing-key-must-be-32-chars!!"), 10*time.Minute)
 }
 
 func TestHandler_RefreshToken(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	identity := &auth.Identity{
@@ -69,7 +68,6 @@ func TestHandler_RefreshToken(t *testing.T) {
 func TestHandler_RefreshToken_InvalidToken(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	body := `{"refresh_token":"invalid-token"}`
@@ -85,7 +83,6 @@ func TestHandler_RefreshToken_InvalidToken(t *testing.T) {
 func TestHandler_RefreshToken_AccessTokenRejected(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
@@ -104,7 +101,6 @@ func TestHandler_RefreshToken_AccessTokenRejected(t *testing.T) {
 
 func TestHandler_Login_SetsStateCookie(t *testing.T) {
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 
 	oidcProvider := &mockOIDCProvider{authURL: "https://accounts.google.com/o/oauth2/auth"}
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: oidcProvider, StateStore: stateStore})
@@ -136,7 +132,6 @@ func TestHandler_Login_SetsStateCookie(t *testing.T) {
 
 func TestHandler_Callback_ValidatesState(t *testing.T) {
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 
 	oidcProvider := &mockOIDCProvider{
 		userInfo: &auth.OIDCUserInfo{
@@ -170,7 +165,6 @@ func TestHandler_Callback_ValidatesState(t *testing.T) {
 
 func TestHandler_Callback_RejectsMismatchedState(t *testing.T) {
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: &mockOIDCProvider{}, StateStore: stateStore})
 
@@ -188,7 +182,6 @@ func TestHandler_Callback_RejectsMismatchedState(t *testing.T) {
 
 func TestHandler_Callback_RejectsMissingState(t *testing.T) {
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: &mockOIDCProvider{}, StateStore: stateStore})
 
@@ -203,7 +196,6 @@ func TestHandler_Callback_RejectsMissingState(t *testing.T) {
 func TestHandler_RefreshToken_OversizedBody(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
-	defer stateStore.Stop()
 	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	// 11 KB body exceeds the 10 KB limit
