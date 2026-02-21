@@ -98,8 +98,8 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 		}
 		roles = append(roles, name)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating roles: %w", err)
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterating roles: %w", rowsErr)
 	}
 
 	// Get department IDs
@@ -120,8 +120,8 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 		}
 		departments = append(departments, deptID)
 	}
-	if err := deptRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating departments: %w", err)
+	if deptRowsErr := deptRows.Err(); deptRowsErr != nil {
+		return nil, fmt.Errorf("iterating departments: %w", deptRowsErr)
 	}
 
 	return &Identity{

@@ -71,6 +71,7 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/auth/callback",
 		MaxAge:   600, // 10 minutes
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -118,6 +119,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/auth/callback",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
 	})
 
 	if h.store == nil {

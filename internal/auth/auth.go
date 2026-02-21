@@ -5,9 +5,9 @@ import (
 )
 
 var (
-	ErrTokenExpired = errors.New("token expired")
-	ErrTokenInvalid = errors.New("token invalid")
-	ErrUserNotFound = errors.New("user not found")
+	ErrTokenExpired   = errors.New("token expired")
+	ErrTokenInvalid   = errors.New("token invalid")
+	ErrUserNotFound   = errors.New("user not found")
 	ErrUnauthorized   = errors.New("unauthorized")
 	ErrTenantNotFound = errors.New("tenant not found")
 )

@@ -24,9 +24,9 @@ func TestWithTenantConnection_SetsVariable(t *testing.T) {
 
 	err = database.WithTenantConnection(ctx, pool, "test-tenant-123", func(ctx context.Context, q database.Querier) error {
 		var tenantID string
-		err := q.QueryRow(ctx, "SELECT current_setting('app.current_tenant_id')").Scan(&tenantID)
-		if err != nil {
-			return err
+		scanErr := q.QueryRow(ctx, "SELECT current_setting('app.current_tenant_id')").Scan(&tenantID)
+		if scanErr != nil {
+			return scanErr
 		}
 		assert.Equal(t, "test-tenant-123", tenantID)
 		return nil
