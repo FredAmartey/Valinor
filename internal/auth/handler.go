@@ -64,11 +64,12 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set state cookie so we can validate it on callback
+	// Set state cookie so we can validate it on callback.
+	// __Host- prefix enforces Secure, no Domain, Path=/.
 	http.SetCookie(w, &http.Cookie{
-		Name:     "oidc_state",
+		Name:     "__Host-oidc_state",
 		Value:    state,
-		Path:     "/auth/callback",
+		Path:     "/",
 		MaxAge:   600, // 10 minutes
 		HttpOnly: true,
 		Secure:   true,
@@ -97,7 +98,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie, err := r.Cookie("oidc_state")
+	cookie, err := r.Cookie("__Host-oidc_state")
 	if err != nil || cookie.Value != queryState {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "invalid state parameter",
@@ -114,9 +115,9 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Clear state cookie
 	http.SetCookie(w, &http.Cookie{
-		Name:     "oidc_state",
+		Name:     "__Host-oidc_state",
 		Value:    "",
-		Path:     "/auth/callback",
+		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   true,
@@ -138,15 +139,18 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve tenant from subdomain
-	var tenantID string
-	if h.tenantResolver != nil {
-		tenantID, err = h.tenantResolver.ResolveFromRequest(r.Context(), r)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "cannot resolve tenant",
-			})
-			return
-		}
+	if h.tenantResolver == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "tenant resolution not configured",
+		})
+		return
+	}
+	tenantID, err := h.tenantResolver.ResolveFromRequest(r.Context(), r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "cannot resolve tenant",
+		})
+		return
 	}
 
 	// Exchange code for user info

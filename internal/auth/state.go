@@ -10,10 +10,11 @@ import (
 
 // StateStore is an in-memory store for OIDC state parameters with TTL cleanup.
 type StateStore struct {
-	mu     sync.Mutex
-	states map[string]time.Time
-	ttl    time.Duration
-	stopCh chan struct{}
+	mu       sync.Mutex
+	states   map[string]time.Time
+	ttl      time.Duration
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewStateStore creates a new state store with the given TTL and starts
@@ -57,13 +58,13 @@ func (s *StateStore) Validate(state string) bool {
 	return time.Now().Before(expiry)
 }
 
-// Stop halts the background cleanup goroutine.
+// Stop halts the background cleanup goroutine. Safe to call multiple times.
 func (s *StateStore) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(func() { close(s.stopCh) })
 }
 
 func (s *StateStore) cleanup() {
-	ticker := time.NewTicker(s.ttl)
+	ticker := time.NewTicker(s.ttl / 2)
 	defer ticker.Stop()
 	for {
 		select {

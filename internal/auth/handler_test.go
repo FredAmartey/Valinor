@@ -120,7 +120,7 @@ func TestHandler_Login_SetsStateCookie(t *testing.T) {
 	cookies := w.Result().Cookies()
 	var stateCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == "oidc_state" {
+		if c.Name == "__Host-oidc_state" {
 			stateCookie = c
 			break
 		}
@@ -152,14 +152,20 @@ func TestHandler_Callback_ValidatesState(t *testing.T) {
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=authcode&state="+state, nil)
-	req.AddCookie(&http.Cookie{Name: "oidc_state", Value: state})
+	req.AddCookie(&http.Cookie{Name: "__Host-oidc_state", Value: state})
 	w := httptest.NewRecorder()
 
 	handler.HandleCallback(w, req)
 
-	// Will fail at store.FindOrCreateByOIDC (store is nil) but state validation passes
-	// The important thing is we get past state checks (not 400)
-	assert.NotEqual(t, http.StatusBadRequest, w.Code)
+	// State validation passes → handler proceeds past state checks.
+	// Hits 503 because store is nil (no DB in unit test).
+	// The key assertion: NOT 400, proving state was accepted.
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]string
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "user store not configured", resp["error"])
 }
 
 func TestHandler_Callback_RejectsMismatchedState(t *testing.T) {
@@ -172,7 +178,7 @@ func TestHandler_Callback_RejectsMismatchedState(t *testing.T) {
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=authcode&state="+state, nil)
-	req.AddCookie(&http.Cookie{Name: "oidc_state", Value: "different-state"})
+	req.AddCookie(&http.Cookie{Name: "__Host-oidc_state", Value: "different-state"})
 	w := httptest.NewRecorder()
 
 	handler.HandleCallback(w, req)

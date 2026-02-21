@@ -159,7 +159,7 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	// Placeholder — will be replaced with real agent listing once the agents domain is built.
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "agents": "[]"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "agents": []any{}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
