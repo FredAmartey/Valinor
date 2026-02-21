@@ -199,6 +199,11 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleRefresh exchanges a refresh token for new access + refresh tokens.
+//
+// TODO(security): Refresh tokens are stateless JWTs with no revocation.
+// A compromised refresh token remains valid until expiry. Implement
+// token family rotation: store a token family ID in the DB, rotate on
+// each refresh, and revoke the entire family on reuse detection.
 func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<10) // 10 KB limit
 

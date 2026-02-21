@@ -10,7 +10,12 @@ import (
 type tenantContextKey struct{}
 
 // TenantContext extracts the tenant ID from the authenticated identity
-// and sets it in the request context for RLS and downstream use.
+// and sets it in the request context for downstream use.
+//
+// NOTE: This middleware only sets the Go context value. To activate
+// Postgres Row Level Security, business handlers must call
+// database.WithTenantConnection() which runs
+// SET app.current_tenant_id on the database connection.
 func TenantContext(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity := auth.GetIdentity(r.Context())
