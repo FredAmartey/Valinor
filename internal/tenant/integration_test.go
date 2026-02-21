@@ -34,7 +34,7 @@ func TestEndToEnd_TenantOrgSetup(t *testing.T) {
 	roleHandler := tenant.NewRoleHandler(rlsPool, roleStore, userStore)
 
 	// Wire up server with RBAC
-	tokenSvc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "test", 24, 168)
+	tokenSvc := auth.NewTokenService(testSigningKey, "test", 24, 168) //nolint:gosec // test-only key
 	rbacEngine := rbac.NewEvaluator(nil)
 	rbacEngine.RegisterRole("org_admin", []string{"*"})
 

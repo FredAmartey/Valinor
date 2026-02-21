@@ -14,6 +14,9 @@ import (
 	"github.com/valinor-ai/valinor/internal/tenant"
 )
 
+// testSigningKey is a dummy key used only in tests — not a real secret.
+const testSigningKey = "test-signing-key-must-be-32-chars!!" //nolint:gosec
+
 func setupTestDB(t *testing.T) (*database.Pool, func()) {
 	t.Helper()
 	ctx := context.Background()
