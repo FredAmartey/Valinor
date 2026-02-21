@@ -20,9 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: securego/gosec@v2.22.4
+      - uses: actions/setup-go@v5
         with:
-          args: ./...
+          go-version-file: go.mod
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
+
+      - name: Run gosec
+        run: gosec ./...
 
   semgrep:
     runs-on: ubuntu-latest

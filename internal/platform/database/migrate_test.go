@@ -2,12 +2,30 @@ package database_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
+
+func findProjectRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find project root (no go.mod found)")
+		}
+		dir = parent
+	}
+}
 
 func TestRunMigrations(t *testing.T) {
 	if testing.Short() {
@@ -17,7 +35,9 @@ func TestRunMigrations(t *testing.T) {
 	connStr, cleanup := setupPostgres(t)
 	defer cleanup()
 
-	err := database.RunMigrations(connStr, "file:///Users/fred/Documents/Valinor/.worktrees/phase1-foundation/migrations")
+	root := findProjectRoot(t)
+	migrationsPath := "file://" + filepath.Join(root, "migrations")
+	err := database.RunMigrations(connStr, migrationsPath)
 	require.NoError(t, err)
 
 	// Verify tables exist by connecting and querying
