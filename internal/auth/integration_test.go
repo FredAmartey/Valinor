@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -104,7 +105,9 @@ func TestIntegration_AuthRBACFlow(t *testing.T) {
 
 	// Test 4: Refresh token flow
 	t.Run("refresh token produces new tokens", func(t *testing.T) {
-		handler := auth.NewHandler(tokenSvc, store, nil)
+		stateStore := auth.NewStateStore(10 * time.Minute)
+		defer stateStore.Stop()
+		handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, Store: store, StateStore: stateStore})
 
 		body := `{"refresh_token":"` + refreshToken + `"}`
 		req := httptest.NewRequest(http.MethodPost, "/auth/token/refresh", strings.NewReader(body))

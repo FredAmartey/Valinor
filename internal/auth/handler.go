@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 )
@@ -14,18 +12,31 @@ type OIDCProvider interface {
 	Exchange(ctx context.Context, code string) (*OIDCUserInfo, error)
 }
 
-// Handler handles authentication HTTP endpoints.
-type Handler struct {
-	tokenSvc *TokenService
-	store    *Store
-	oidc     OIDCProvider
+// HandlerConfig holds dependencies for the auth Handler.
+type HandlerConfig struct {
+	TokenSvc       *TokenService
+	Store          *Store
+	OIDC           OIDCProvider
+	StateStore     *StateStore
+	TenantResolver *TenantResolver
 }
 
-func NewHandler(tokenSvc *TokenService, store *Store, oidc OIDCProvider) *Handler {
+// Handler handles authentication HTTP endpoints.
+type Handler struct {
+	tokenSvc       *TokenService
+	store          *Store
+	oidc           OIDCProvider
+	stateStore     *StateStore
+	tenantResolver *TenantResolver
+}
+
+func NewHandler(cfg HandlerConfig) *Handler {
 	return &Handler{
-		tokenSvc: tokenSvc,
-		store:    store,
-		oidc:     oidc,
+		tokenSvc:       cfg.TokenSvc,
+		store:          cfg.Store,
+		oidc:           cfg.OIDC,
+		stateStore:     cfg.StateStore,
+		tenantResolver: cfg.TenantResolver,
 	}
 }
 
@@ -45,18 +56,76 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate state parameter (in production, store in session/cookie)
-	state := generateState()
-	url := h.oidc.AuthCodeURL(state)
+	state, err := h.stateStore.Generate()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to generate state",
+		})
+		return
+	}
 
+	// Set state cookie so we can validate it on callback.
+	// __Host- prefix enforces Secure, no Domain, Path=/.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "__Host-oidc_state",
+		Value:    state,
+		Path:     "/",
+		MaxAge:   600, // 10 minutes
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	url := h.oidc.AuthCodeURL(state)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 // HandleCallback processes the OIDC callback.
 func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	if h.oidc == nil || h.store == nil {
+	if h.oidc == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "OIDC not configured",
+		})
+		return
+	}
+
+	// Validate state parameter against cookie (CSRF protection — must happen first)
+	queryState := r.URL.Query().Get("state")
+	if queryState == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "missing state parameter",
+		})
+		return
+	}
+
+	cookie, err := r.Cookie("__Host-oidc_state")
+	if err != nil || cookie.Value != queryState {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid state parameter",
+		})
+		return
+	}
+
+	if !h.stateStore.Validate(queryState) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid state parameter",
+		})
+		return
+	}
+
+	// Clear state cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "__Host-oidc_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+	})
+
+	if h.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "user store not configured",
 		})
 		return
 	}
@@ -65,6 +134,21 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if code == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "missing code parameter",
+		})
+		return
+	}
+
+	// Resolve tenant from subdomain
+	if h.tenantResolver == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "tenant resolution not configured",
+		})
+		return
+	}
+	tenantID, err := h.tenantResolver.ResolveFromRequest(r.Context(), r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "cannot resolve tenant",
 		})
 		return
 	}
@@ -79,7 +163,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find or create user
-	identity, _, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, "")
+	identity, _, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, tenantID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "user lookup failed",
@@ -121,7 +205,14 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleRefresh exchanges a refresh token for new access + refresh tokens.
+//
+// TODO(security): Refresh tokens are stateless JWTs with no revocation.
+// A compromised refresh token remains valid until expiry. Implement
+// token family rotation: store a token family ID in the DB, rotate on
+// each refresh, and revoke the entire family on reuse detection.
 func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10) // 10 KB limit
+
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -172,14 +263,8 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func generateState() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }

@@ -70,6 +70,15 @@ func New(addr string, deps Dependencies) *Server {
 		deps.AuthHandler.RegisterRoutes(topMux)
 	}
 
+	// Wire RBAC-protected routes
+	if deps.RBAC != nil {
+		protectedMux.Handle("GET /api/v1/agents",
+			rbac.RequirePermission(deps.RBAC, "agents:read")(
+				http.HandlerFunc(s.handleListAgents),
+			),
+		)
+	}
+
 	// All other routes go through auth middleware
 	topMux.Handle("/", protectedHandler)
 
@@ -148,7 +157,12 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
+	// Placeholder — will be replaced with real agent listing once the agents domain is built.
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "agents": []any{}})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)

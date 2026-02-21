@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/config"
@@ -74,7 +75,21 @@ func run() error {
 		authStore = auth.NewStore(pool)
 	}
 
-	authHandler := auth.NewHandler(tokenSvc, authStore, nil) // OIDC provider wired when configured
+	stateStore := auth.NewStateStore(10 * time.Minute)
+	defer stateStore.Stop()
+
+	var tenantResolver *auth.TenantResolver
+	if pool != nil {
+		tenantResolver = auth.NewTenantResolver(pool, cfg.Server.BaseDomain)
+	}
+
+	authHandler := auth.NewHandler(auth.HandlerConfig{
+		TokenSvc:       tokenSvc,
+		Store:          authStore,
+		StateStore:     stateStore,
+		TenantResolver: tenantResolver,
+		// OIDC provider wired when configured
+	})
 
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)

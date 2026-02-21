@@ -68,12 +68,12 @@ func (s *TokenService) createToken(identity *Identity, tokenType string, expiryH
 }
 
 func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &valinorClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &valinorClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.signingKey, nil
-	})
+	}, jwt.WithIssuer(s.issuer))
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
