@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -42,8 +43,12 @@ func (s *StateStore) Generate() (string, error) {
 		return "", fmt.Errorf("generating state nonce: %w", err)
 	}
 
+	now := time.Now().Unix()
+	if now < 0 {
+		return "", fmt.Errorf("system clock before Unix epoch")
+	}
 	ts := make([]byte, stateTimeLen)
-	binary.BigEndian.PutUint64(ts, uint64(time.Now().Unix()))
+	binary.BigEndian.PutUint64(ts, uint64(now))
 
 	sig := s.sign(nonce, ts)
 
@@ -70,7 +75,11 @@ func (s *StateStore) Validate(state string) bool {
 		return false
 	}
 
-	issuedAt := time.Unix(int64(binary.BigEndian.Uint64(ts)), 0)
+	rawTS := binary.BigEndian.Uint64(ts)
+	if rawTS > math.MaxInt64 {
+		return false
+	}
+	issuedAt := time.Unix(int64(rawTS), 0)
 	return time.Since(issuedAt) <= s.ttl
 }
 
