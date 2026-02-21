@@ -26,5 +26,6 @@ type Identity struct {
 	Departments []string `json:"departments"`
 	TokenType   string   `json:"token_type"` // "access" or "refresh"
 	FamilyID    string   `json:"family_id,omitempty"`
-	Generation  int      `json:"generation,omitempty"`
+	Generation      int      `json:"generation,omitempty"`
+	IsPlatformAdmin bool     `json:"is_platform_admin,omitempty"`
 }

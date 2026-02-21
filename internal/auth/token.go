@@ -18,7 +18,8 @@ type valinorClaims struct {
 	Departments []string `json:"depts,omitempty"`
 	TokenType   string   `json:"type"`
 	FamilyID    string   `json:"fid,omitempty"`
-	Generation  int      `json:"gen,omitempty"`
+	Generation      int      `json:"gen,omitempty"`
+	IsPlatformAdmin bool     `json:"pa,omitempty"`
 }
 
 // TokenService handles JWT creation and validation.
@@ -63,8 +64,9 @@ func (s *TokenService) createToken(identity *Identity, tokenType string, expiryH
 		Roles:       identity.Roles,
 		Departments: identity.Departments,
 		TokenType:   tokenType,
-		FamilyID:    identity.FamilyID,
-		Generation:  identity.Generation,
+		FamilyID:        identity.FamilyID,
+		Generation:      identity.Generation,
+		IsPlatformAdmin: identity.IsPlatformAdmin,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -99,7 +101,8 @@ func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
 		Roles:       claims.Roles,
 		Departments: claims.Departments,
 		TokenType:   claims.TokenType,
-		FamilyID:    claims.FamilyID,
-		Generation:  claims.Generation,
+		FamilyID:        claims.FamilyID,
+		Generation:      claims.Generation,
+		IsPlatformAdmin: claims.IsPlatformAdmin,
 	}, nil
 }
