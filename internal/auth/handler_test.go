@@ -193,3 +193,20 @@ func TestHandler_Callback_RejectsMissingState(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestHandler_RefreshToken_OversizedBody(t *testing.T) {
+	tokenSvc := newTestTokenService()
+	stateStore := newTestStateStore()
+	defer stateStore.Stop()
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
+
+	// 11 KB body exceeds the 10 KB limit
+	body := strings.Repeat("x", 11<<10)
+	req := httptest.NewRequest(http.MethodPost, "/auth/token/refresh", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleRefresh(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

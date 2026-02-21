@@ -26,7 +26,7 @@ func TestLogging_CapturesRequest(t *testing.T) {
 
 	handler.ServeHTTP(w, req)
 
-	var entry map[string]interface{}
+	var entry map[string]any
 	err := json.Unmarshal(buf.Bytes(), &entry)
 	require.NoError(t, err)
 

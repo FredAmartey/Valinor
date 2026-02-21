@@ -58,7 +58,7 @@ func Load(configPaths ...string) (*Config, error) {
 	k := koanf.New(".")
 
 	// Defaults
-	_ = k.Load(confmap.Provider(map[string]interface{}{
+	_ = k.Load(confmap.Provider(map[string]any{
 		"server.port":                 8080,
 		"server.host":                 "0.0.0.0",
 		"server.base_domain":          "localhost",

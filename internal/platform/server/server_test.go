@@ -22,7 +22,7 @@ func TestServer_HealthCheck(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var body map[string]interface{}
+	var body map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &body)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", body["status"])

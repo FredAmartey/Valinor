@@ -200,6 +200,8 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 // HandleRefresh exchanges a refresh token for new access + refresh tokens.
 func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10) // 10 KB limit
+
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -250,7 +252,7 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)

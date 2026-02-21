@@ -16,7 +16,7 @@ func TestNewLogger_JSON(t *testing.T) {
 
 	logger.Info("test message", "key", "value")
 
-	var entry map[string]interface{}
+	var entry map[string]any
 	err := json.Unmarshal(buf.Bytes(), &entry)
 	require.NoError(t, err)
 
