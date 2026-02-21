@@ -128,6 +128,45 @@ func seedTwoTenants(t *testing.T, superConnStr string) (tenantA, tenantB string)
 		tenantB)
 	require.NoError(t, err)
 
+	// Look up IDs needed for junction tables
+	var userAID, userBID string
+	err = pool.QueryRow(ctx, "SELECT id FROM users WHERE tenant_id = $1", tenantA).Scan(&userAID)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx, "SELECT id FROM users WHERE tenant_id = $1", tenantB).Scan(&userBID)
+	require.NoError(t, err)
+
+	var roleAID, roleBID string
+	err = pool.QueryRow(ctx, "SELECT id FROM roles WHERE tenant_id = $1", tenantA).Scan(&roleAID)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx, "SELECT id FROM roles WHERE tenant_id = $1", tenantB).Scan(&roleBID)
+	require.NoError(t, err)
+
+	var deptAID, deptBID string
+	err = pool.QueryRow(ctx, "SELECT id FROM departments WHERE tenant_id = $1", tenantA).Scan(&deptAID)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx, "SELECT id FROM departments WHERE tenant_id = $1", tenantB).Scan(&deptBID)
+	require.NoError(t, err)
+
+	// user_roles
+	_, err = pool.Exec(ctx,
+		"INSERT INTO user_roles (user_id, role_id, scope_type, scope_id) VALUES ($1, $2, 'org', $3)",
+		userAID, roleAID, tenantA)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		"INSERT INTO user_roles (user_id, role_id, scope_type, scope_id) VALUES ($1, $2, 'org', $3)",
+		userBID, roleBID, tenantB)
+	require.NoError(t, err)
+
+	// user_departments
+	_, err = pool.Exec(ctx,
+		"INSERT INTO user_departments (user_id, department_id) VALUES ($1, $2)",
+		userAID, deptAID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		"INSERT INTO user_departments (user_id, department_id) VALUES ($1, $2)",
+		userBID, deptBID)
+	require.NoError(t, err)
+
 	return tenantA, tenantB
 }
 
@@ -152,7 +191,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	// Tables with tenant_id-based RLS policies
-	tables := []string{"users", "departments", "roles", "agent_instances", "connectors", "resource_policies"}
+	tables := []string{"users", "departments", "roles", "agent_instances", "connectors", "resource_policies", "user_roles", "user_departments"}
 
 	for _, table := range tables {
 		t.Run(table+"_tenant_a_sees_only_own", func(t *testing.T) {
