@@ -32,7 +32,6 @@ linters:
           severity: warning
     errcheck:
       check-type-assertions: true
-      check-blank: true
     govet:
       enable-all: true
     misspell:

@@ -32,7 +32,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-		container.Terminate(ctx)
+		_ = container.Terminate(ctx)
 	}
 
 	return connStr, cleanup
