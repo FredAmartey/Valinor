@@ -111,7 +111,7 @@ func run() error {
 		roleStore := tenant.NewRoleStore()
 		deptHandler = tenant.NewDepartmentHandler(pool, deptStore)
 		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
-		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore)
+		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
 	}
 
 	// RBAC

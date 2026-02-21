@@ -52,6 +52,27 @@ func (s *RoleStore) Create(ctx context.Context, q database.Querier, name string,
 	return &role, nil
 }
 
+// GetByID retrieves a role by ID. RLS ensures tenant isolation.
+func (s *RoleStore) GetByID(ctx context.Context, q database.Querier, id string) (*Role, error) {
+	var role Role
+	var permBytes []byte
+	err := q.QueryRow(ctx,
+		`SELECT id, tenant_id, name, permissions, is_system, created_at
+		 FROM roles WHERE id = $1`,
+		id,
+	).Scan(&role.ID, &role.TenantID, &role.Name, &permBytes, &role.IsSystem, &role.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrRoleNotFound
+		}
+		return nil, fmt.Errorf("getting role: %w", err)
+	}
+	if err := json.Unmarshal(permBytes, &role.Permissions); err != nil {
+		return nil, fmt.Errorf("unmarshaling permissions: %w", err)
+	}
+	return &role, nil
+}
+
 // List returns all roles visible through RLS (current tenant).
 func (s *RoleStore) List(ctx context.Context, q database.Querier) ([]Role, error) {
 	rows, err := q.Query(ctx,

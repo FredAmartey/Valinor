@@ -31,7 +31,7 @@ func TestEndToEnd_TenantOrgSetup(t *testing.T) {
 	tenantHandler := tenant.NewHandler(tenantStore)
 	deptHandler := tenant.NewDepartmentHandler(rlsPool, deptStore)
 	userHandler := tenant.NewUserHandler(rlsPool, userStore, deptStore)
-	roleHandler := tenant.NewRoleHandler(rlsPool, roleStore, userStore)
+	roleHandler := tenant.NewRoleHandler(rlsPool, roleStore, userStore, deptStore)
 
 	// Wire up server with RBAC
 	tokenSvc := auth.NewTokenService(testSigningKey, "test", 24, 168) //nolint:gosec // test-only key

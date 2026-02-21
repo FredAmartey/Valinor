@@ -14,8 +14,10 @@ import (
 	"github.com/valinor-ai/valinor/internal/tenant"
 )
 
-// testSigningKey is a dummy key used only in tests — not a real secret.
+// Test-only credentials — not real secrets.
 const testSigningKey = "test-signing-key-must-be-32-chars!!" //nolint:gosec
+const testRLSUser = "rls_user"                               //nolint:gosec
+const testRLSPass = "rls_pass"                               //nolint:gosec
 
 func setupTestDB(t *testing.T) (*database.Pool, func()) {
 	t.Helper()
@@ -65,7 +67,7 @@ func setupTestDBWithRLS(t *testing.T) (ownerPool *database.Pool, rlsPool *databa
 	_, err := ownerPool.Exec(ctx, `
 		DO $$ BEGIN
 			IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'rls_user') THEN
-				CREATE ROLE rls_user LOGIN PASSWORD 'rls_pass';
+				CREATE ROLE rls_user LOGIN PASSWORD '` + testRLSPass + `';
 			END IF;
 		END $$;
 		GRANT USAGE ON SCHEMA public TO rls_user;
@@ -76,7 +78,7 @@ func setupTestDBWithRLS(t *testing.T) (ownerPool *database.Pool, rlsPool *databa
 	// Build connection string for rls_user
 	u, err := url.Parse(connStr)
 	require.NoError(t, err)
-	u.User = url.UserPassword("rls_user", "rls_pass")
+	u.User = url.UserPassword(testRLSUser, testRLSPass)
 	rlsConnStr := u.String()
 
 	pool, err := database.Connect(ctx, rlsConnStr, 5)

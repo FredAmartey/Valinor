@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,11 +17,12 @@ type RoleHandler struct {
 	pool      *pgxpool.Pool
 	store     *RoleStore
 	userStore *UserStore
+	deptStore *DepartmentStore
 }
 
 // NewRoleHandler creates a new role handler.
-func NewRoleHandler(pool *pgxpool.Pool, store *RoleStore, userStore *UserStore) *RoleHandler {
-	return &RoleHandler{pool: pool, store: store, userStore: userStore}
+func NewRoleHandler(pool *pgxpool.Pool, store *RoleStore, userStore *UserStore, deptStore *DepartmentStore) *RoleHandler {
+	return &RoleHandler{pool: pool, store: store, userStore: userStore, deptStore: deptStore}
 }
 
 // HandleCreate creates a new role within the authenticated tenant.
@@ -129,11 +131,29 @@ func (h *RoleHandler) HandleAssignRole(w http.ResponseWriter, r *http.Request) {
 		if _, getErr := h.userStore.GetByID(ctx, q, userID); getErr != nil {
 			return getErr
 		}
+		// Verify role exists in this tenant (RLS enforced)
+		if _, getErr := h.store.GetByID(ctx, q, req.RoleID); getErr != nil {
+			return getErr
+		}
+		// Verify scope_id references a valid entity in this tenant
+		if req.ScopeType == "department" {
+			if _, getErr := h.deptStore.GetByID(ctx, q, req.ScopeID); getErr != nil {
+				return fmt.Errorf("invalid scope: %w", getErr)
+			}
+		}
 		return h.store.AssignToUser(ctx, q, userID, req.RoleID, req.ScopeType, req.ScopeID)
 	})
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			return
+		}
+		if errors.Is(err, ErrRoleNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "role not found"})
+			return
+		}
+		if errors.Is(err, ErrDepartmentNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "department not found"})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role assignment failed"})

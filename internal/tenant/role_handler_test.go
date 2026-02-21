@@ -26,7 +26,7 @@ func TestRoleHandler(t *testing.T) {
 	ten, err := tenantStore.Create(ctx, "Role Handler Org", "role-handler-org")
 	require.NoError(t, err)
 
-	handler := tenant.NewRoleHandler(rlsPool, tenant.NewRoleStore(), tenant.NewUserStore())
+	handler := tenant.NewRoleHandler(rlsPool, tenant.NewRoleStore(), tenant.NewUserStore(), tenant.NewDepartmentStore())
 
 	t.Run("Create", func(t *testing.T) {
 		body := `{"name": "viewer", "permissions": ["agents:read"]}`
