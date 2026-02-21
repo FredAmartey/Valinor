@@ -124,3 +124,51 @@ func TestAuthMiddleware_DevModeAPIKey(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+func TestRequirePlatformAdmin_Allows(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	identity := &auth.Identity{
+		UserID:          "admin-1",
+		IsPlatformAdmin: true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(auth.WithIdentity(req.Context(), identity))
+	w := httptest.NewRecorder()
+
+	auth.RequirePlatformAdmin(inner).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRequirePlatformAdmin_DeniesNonAdmin(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	identity := &auth.Identity{
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(auth.WithIdentity(req.Context(), identity))
+	w := httptest.NewRecorder()
+
+	auth.RequirePlatformAdmin(inner).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestRequirePlatformAdmin_DeniesNoIdentity(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	auth.RequirePlatformAdmin(inner).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
