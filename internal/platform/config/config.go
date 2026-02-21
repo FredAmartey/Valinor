@@ -36,7 +36,7 @@ func Load(configPaths ...string) (*Config, error) {
 	k := koanf.New(".")
 
 	// Defaults
-	k.Load(confmap.Provider(map[string]interface{}{
+	_ = k.Load(confmap.Provider(map[string]interface{}{
 		"server.port":              8080,
 		"server.host":              "0.0.0.0",
 		"database.max_conns":       25,
@@ -55,7 +55,7 @@ func Load(configPaths ...string) (*Config, error) {
 
 	// Environment variables override everything
 	// VALINOR_SERVER_PORT -> server.port
-	k.Load(env.Provider("VALINOR_", ".", func(s string) string {
+	_ = k.Load(env.Provider("VALINOR_", ".", func(s string) string {
 		return strings.Replace(
 			strings.ToLower(strings.TrimPrefix(s, "VALINOR_")),
 			"_", ".", -1,
