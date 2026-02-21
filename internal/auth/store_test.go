@@ -183,3 +183,35 @@ func TestStore_GetIdentityWithRoles(t *testing.T) {
 	assert.Contains(t, identity.Roles, "standard_user")
 	assert.Contains(t, identity.Departments, deptID)
 }
+
+func TestStore_GetIdentityWithRoles_PlatformAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := auth.NewStore(pool)
+
+	// Create tenant and platform admin user
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Platform", "platform",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var userID string
+	err = pool.QueryRow(ctx,
+		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer, is_platform_admin)
+		 VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
+		tenantID, "admin@valinor.com", "Admin", "google-admin", "https://accounts.google.com",
+	).Scan(&userID)
+	require.NoError(t, err)
+
+	identity, err := store.GetIdentityWithRoles(ctx, userID)
+	require.NoError(t, err)
+	assert.True(t, identity.IsPlatformAdmin)
+}

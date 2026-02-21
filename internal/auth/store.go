@@ -67,10 +67,11 @@ func (s *Store) FindOrCreateByOIDC(ctx context.Context, info OIDCUserInfo, defau
 func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Identity, error) {
 	// Get user base info
 	var tenantID, email, displayName string
+	var isPlatformAdmin bool
 	err := s.pool.QueryRow(ctx,
-		"SELECT tenant_id, email, COALESCE(display_name, '') FROM users WHERE id = $1",
+		"SELECT tenant_id, email, COALESCE(display_name, ''), is_platform_admin FROM users WHERE id = $1",
 		userID,
-	).Scan(&tenantID, &email, &displayName)
+	).Scan(&tenantID, &email, &displayName, &isPlatformAdmin)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrUserNotFound
@@ -125,12 +126,13 @@ func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Ident
 	}
 
 	return &Identity{
-		UserID:      userID,
-		TenantID:    tenantID,
-		Email:       email,
-		DisplayName: displayName,
-		Roles:       roles,
-		Departments: departments,
-		TokenType:   "access",
+		UserID:          userID,
+		TenantID:        tenantID,
+		Email:           email,
+		DisplayName:     displayName,
+		Roles:           roles,
+		Departments:     departments,
+		TokenType:       "access",
+		IsPlatformAdmin: isPlatformAdmin,
 	}, nil
 }
