@@ -23,7 +23,7 @@ type Tenant struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])?$`)
+var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 
 var reservedSlugs = map[string]bool{
 	"api": true, "app": true, "www": true, "admin": true,

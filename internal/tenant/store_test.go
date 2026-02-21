@@ -148,7 +148,8 @@ func TestValidateSlug(t *testing.T) {
 		{"chelsea-fc", false},
 		{"abc", false},
 		{"a-b", false},
-		{"ab", true},    // too short
+		{"ab", true},    // too short (2 chars)
+		{"a", true},     // too short (1 char)
 		{"-abc", true},  // starts with hyphen
 		{"abc-", true},  // ends with hyphen
 		{"ABC", true},   // uppercase

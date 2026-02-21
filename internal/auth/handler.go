@@ -260,6 +260,9 @@ func (h *Handler) tryPlatformAdminCallback(w http.ResponseWriter, userInfo *OIDC
 		return false
 	}
 
+	// Clear tenant scope so platform-admin tokens are tenantless.
+	adminIdentity.TenantID = ""
+
 	accessToken, err := h.tokenSvc.CreateAccessToken(adminIdentity)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token creation failed"})
