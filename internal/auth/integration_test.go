@@ -107,7 +107,7 @@ func TestIntegration_AuthRBACFlow(t *testing.T) {
 	t.Run("refresh token produces new tokens", func(t *testing.T) {
 		stateStore := auth.NewStateStore(10 * time.Minute)
 		defer stateStore.Stop()
-		handler := auth.NewHandler(tokenSvc, store, nil, stateStore)
+		handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, Store: store, StateStore: stateStore})
 
 		body := `{"refresh_token":"` + refreshToken + `"}`
 		req := httptest.NewRequest(http.MethodPost, "/auth/token/refresh", strings.NewReader(body))

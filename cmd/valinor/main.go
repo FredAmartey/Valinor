@@ -78,7 +78,18 @@ func run() error {
 	stateStore := auth.NewStateStore(10 * time.Minute)
 	defer stateStore.Stop()
 
-	authHandler := auth.NewHandler(tokenSvc, authStore, nil, stateStore) // OIDC provider wired when configured
+	var tenantResolver *auth.TenantResolver
+	if pool != nil {
+		tenantResolver = auth.NewTenantResolver(pool, cfg.Server.BaseDomain)
+	}
+
+	authHandler := auth.NewHandler(auth.HandlerConfig{
+		TokenSvc:       tokenSvc,
+		Store:          authStore,
+		StateStore:     stateStore,
+		TenantResolver: tenantResolver,
+		// OIDC provider wired when configured
+	})
 
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)

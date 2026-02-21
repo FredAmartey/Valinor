@@ -12,20 +12,31 @@ type OIDCProvider interface {
 	Exchange(ctx context.Context, code string) (*OIDCUserInfo, error)
 }
 
-// Handler handles authentication HTTP endpoints.
-type Handler struct {
-	tokenSvc   *TokenService
-	store      *Store
-	oidc       OIDCProvider
-	stateStore *StateStore
+// HandlerConfig holds dependencies for the auth Handler.
+type HandlerConfig struct {
+	TokenSvc       *TokenService
+	Store          *Store
+	OIDC           OIDCProvider
+	StateStore     *StateStore
+	TenantResolver *TenantResolver
 }
 
-func NewHandler(tokenSvc *TokenService, store *Store, oidc OIDCProvider, stateStore *StateStore) *Handler {
+// Handler handles authentication HTTP endpoints.
+type Handler struct {
+	tokenSvc       *TokenService
+	store          *Store
+	oidc           OIDCProvider
+	stateStore     *StateStore
+	tenantResolver *TenantResolver
+}
+
+func NewHandler(cfg HandlerConfig) *Handler {
 	return &Handler{
-		tokenSvc:   tokenSvc,
-		store:      store,
-		oidc:       oidc,
-		stateStore: stateStore,
+		tokenSvc:       cfg.TokenSvc,
+		store:          cfg.Store,
+		oidc:           cfg.OIDC,
+		stateStore:     cfg.StateStore,
+		tenantResolver: cfg.TenantResolver,
 	}
 }
 
@@ -124,6 +135,18 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve tenant from subdomain
+	var tenantID string
+	if h.tenantResolver != nil {
+		tenantID, err = h.tenantResolver.ResolveFromRequest(r.Context(), r)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "cannot resolve tenant",
+			})
+			return
+		}
+	}
+
 	// Exchange code for user info
 	userInfo, err := h.oidc.Exchange(r.Context(), code)
 	if err != nil {
@@ -134,7 +157,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find or create user
-	identity, _, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, "")
+	identity, _, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, tenantID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "user lookup failed",

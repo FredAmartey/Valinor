@@ -38,8 +38,9 @@ type JWTConfig struct {
 }
 
 type ServerConfig struct {
-	Host string `koanf:"host"`
-	Port int    `koanf:"port"`
+	Host       string `koanf:"host"`
+	Port       int    `koanf:"port"`
+	BaseDomain string `koanf:"base_domain"`
 }
 
 type DatabaseConfig struct {
@@ -60,6 +61,7 @@ func Load(configPaths ...string) (*Config, error) {
 	_ = k.Load(confmap.Provider(map[string]interface{}{
 		"server.port":                 8080,
 		"server.host":                 "0.0.0.0",
+		"server.base_domain":          "localhost",
 		"database.max_conns":          25,
 		"database.migrations_path":    "migrations",
 		"log.level":                   "info",

@@ -37,7 +37,7 @@ func TestHandler_RefreshToken(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
 	defer stateStore.Stop()
-	handler := auth.NewHandler(tokenSvc, nil, nil, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	identity := &auth.Identity{
 		UserID:   "user-123",
@@ -70,7 +70,7 @@ func TestHandler_RefreshToken_InvalidToken(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
 	defer stateStore.Stop()
-	handler := auth.NewHandler(tokenSvc, nil, nil, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	body := `{"refresh_token":"invalid-token"}`
 	req := httptest.NewRequest(http.MethodPost, "/auth/token/refresh", strings.NewReader(body))
@@ -86,7 +86,7 @@ func TestHandler_RefreshToken_AccessTokenRejected(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
 	defer stateStore.Stop()
-	handler := auth.NewHandler(tokenSvc, nil, nil, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: tokenSvc, StateStore: stateStore})
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
 	accessToken, err := tokenSvc.CreateAccessToken(identity)
@@ -107,7 +107,7 @@ func TestHandler_Login_SetsStateCookie(t *testing.T) {
 	defer stateStore.Stop()
 
 	oidcProvider := &mockOIDCProvider{authURL: "https://accounts.google.com/o/oauth2/auth"}
-	handler := auth.NewHandler(newTestTokenService(), nil, oidcProvider, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: oidcProvider, StateStore: stateStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
 	w := httptest.NewRecorder()
@@ -146,7 +146,7 @@ func TestHandler_Callback_ValidatesState(t *testing.T) {
 			Name:    "Scout A",
 		},
 	}
-	handler := auth.NewHandler(newTestTokenService(), nil, oidcProvider, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: oidcProvider, StateStore: stateStore})
 
 	state, err := stateStore.Generate()
 	require.NoError(t, err)
@@ -166,7 +166,7 @@ func TestHandler_Callback_RejectsMismatchedState(t *testing.T) {
 	stateStore := newTestStateStore()
 	defer stateStore.Stop()
 
-	handler := auth.NewHandler(newTestTokenService(), nil, &mockOIDCProvider{}, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: &mockOIDCProvider{}, StateStore: stateStore})
 
 	state, err := stateStore.Generate()
 	require.NoError(t, err)
@@ -184,7 +184,7 @@ func TestHandler_Callback_RejectsMissingState(t *testing.T) {
 	stateStore := newTestStateStore()
 	defer stateStore.Stop()
 
-	handler := auth.NewHandler(newTestTokenService(), nil, &mockOIDCProvider{}, stateStore)
+	handler := auth.NewHandler(auth.HandlerConfig{TokenSvc: newTestTokenService(), OIDC: &mockOIDCProvider{}, StateStore: stateStore})
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=authcode", nil)
 	w := httptest.NewRecorder()
