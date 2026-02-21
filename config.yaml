@@ -10,3 +10,16 @@ database:
 log:
   level: "info"
   format: "json"
+
+auth:
+  devmode: true  # Set to false in production
+  oidc:
+    issuerurl: ""
+    clientid: ""
+    clientsecret: ""
+    redirecturl: "http://localhost:8080/auth/callback"
+  jwt:
+    signingkey: "dev-signing-key-change-in-production-must-be-32-chars"
+    issuer: "valinor"
+    expiryhours: 24
+    refreshexpiryhours: 168

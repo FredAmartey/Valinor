@@ -14,6 +14,27 @@ type Config struct {
 	Server   ServerConfig   `koanf:"server"`
 	Database DatabaseConfig `koanf:"database"`
 	Log      LogConfig      `koanf:"log"`
+	Auth     AuthConfig     `koanf:"auth"`
+}
+
+type AuthConfig struct {
+	DevMode bool       `koanf:"devmode"`
+	OIDC    OIDCConfig `koanf:"oidc"`
+	JWT     JWTConfig  `koanf:"jwt"`
+}
+
+type OIDCConfig struct {
+	IssuerURL    string `koanf:"issuerurl"`
+	ClientID     string `koanf:"clientid"`
+	ClientSecret string `koanf:"clientsecret"`
+	RedirectURL  string `koanf:"redirecturl"`
+}
+
+type JWTConfig struct {
+	SigningKey         string `koanf:"signingkey"`
+	Issuer             string `koanf:"issuer"`
+	ExpiryHours        int    `koanf:"expiryhours"`
+	RefreshExpiryHours int    `koanf:"refreshexpiryhours"`
 }
 
 type ServerConfig struct {
@@ -43,6 +64,11 @@ func Load(configPaths ...string) (*Config, error) {
 		"database.migrations_path": "migrations",
 		"log.level":                "info",
 		"log.format":               "json",
+		"auth.devmode":              false,
+		"auth.jwt.issuer":           "valinor",
+		"auth.jwt.expiryhours":      24,
+		"auth.jwt.refreshexpiryhours": 168,
+		"auth.oidc.redirecturl":     "http://localhost:8080/auth/callback",
 	}, "."), nil)
 
 	// YAML file (optional)
