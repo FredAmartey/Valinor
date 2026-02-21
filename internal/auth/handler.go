@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 )
 
@@ -16,6 +18,7 @@ type OIDCProvider interface {
 type HandlerConfig struct {
 	TokenSvc       *TokenService
 	Store          *Store
+	RefreshStore   *RefreshTokenStore
 	OIDC           OIDCProvider
 	StateStore     *StateStore
 	TenantResolver *TenantResolver
@@ -25,6 +28,7 @@ type HandlerConfig struct {
 type Handler struct {
 	tokenSvc       *TokenService
 	store          *Store
+	refreshStore   *RefreshTokenStore
 	oidc           OIDCProvider
 	stateStore     *StateStore
 	tenantResolver *TenantResolver
@@ -34,6 +38,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 	return &Handler{
 		tokenSvc:       cfg.TokenSvc,
 		store:          cfg.Store,
+		refreshStore:   cfg.RefreshStore,
 		oidc:           cfg.OIDC,
 		stateStore:     cfg.StateStore,
 		tenantResolver: cfg.TenantResolver,
@@ -180,7 +185,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue tokens
+	// Issue access token
 	accessToken, err := h.tokenSvc.CreateAccessToken(fullIdentity)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -189,12 +194,43 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := h.tokenSvc.CreateRefreshToken(fullIdentity)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "token creation failed",
-		})
-		return
+	// Issue refresh token — with family tracking if store is available
+	var refreshToken string
+	if h.refreshStore != nil {
+		familyID, famErr := h.refreshStore.CreateFamilyAndReturnID(r.Context(), fullIdentity.TenantID, fullIdentity.UserID)
+		if famErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "token family creation failed",
+			})
+			return
+		}
+
+		refreshIdentity := *fullIdentity
+		refreshIdentity.FamilyID = familyID
+		refreshIdentity.Generation = 1
+
+		refreshToken, err = h.tokenSvc.CreateRefreshToken(&refreshIdentity)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "token creation failed",
+			})
+			return
+		}
+
+		if hashErr := h.refreshStore.SetInitialTokenHash(r.Context(), familyID, fullIdentity.TenantID, HashToken(refreshToken)); hashErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "token family initialization failed",
+			})
+			return
+		}
+	} else {
+		refreshToken, err = h.tokenSvc.CreateRefreshToken(fullIdentity)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "token creation failed",
+			})
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -205,11 +241,9 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleRefresh exchanges a refresh token for new access + refresh tokens.
-//
-// TODO(security): Refresh tokens are stateless JWTs with no revocation.
-// A compromised refresh token remains valid until expiry. Implement
-// token family rotation: store a token family ID in the DB, rotate on
-// each refresh, and revoke the entire family on reuse detection.
+// When a RefreshTokenStore is available, this implements RFC 6819 §5.2.2.3
+// token family rotation with reuse detection. Legacy tokens (without family
+// claims) are automatically upgraded on first refresh.
 func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<10) // 10 KB limit
 
@@ -223,7 +257,7 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate refresh token
+	// Validate refresh token (JWT signature + expiry)
 	identity, err := h.tokenSvc.ValidateToken(req.RefreshToken)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{
@@ -239,7 +273,32 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue new tokens
+	// If refresh store is available, perform family rotation
+	if h.refreshStore != nil {
+		newIdentity, newRefreshJWT, rotateErr := h.rotateRefreshToken(r.Context(), identity, req.RefreshToken)
+		if rotateErr != nil {
+			status, msg := classifyRotationError(rotateErr)
+			writeJSON(w, status, map[string]string{"error": msg})
+			return
+		}
+
+		accessToken, accessErr := h.tokenSvc.CreateAccessToken(newIdentity)
+		if accessErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "token creation failed",
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{
+			"access_token":  accessToken,
+			"refresh_token": newRefreshJWT,
+			"token_type":    "Bearer",
+		})
+		return
+	}
+
+	// Fallback: stateless mode (no DB / dev mode)
 	accessToken, err := h.tokenSvc.CreateAccessToken(identity)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -261,6 +320,88 @@ func (h *Handler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		"refresh_token": refreshToken,
 		"token_type":    "Bearer",
 	})
+}
+
+// rotateRefreshToken handles the full rotation flow:
+// 1. If legacy token (no FamilyID), upgrade to family-tracked token
+// 2. Create new refresh JWT with incremented generation
+// 3. Atomic DB rotation (validate old hash, store new hash)
+func (h *Handler) rotateRefreshToken(ctx context.Context, identity *Identity, presentedJWT string) (*Identity, string, error) {
+	// Legacy token (no FamilyID): create a new family
+	if identity.FamilyID == "" {
+		return h.upgradeLegacyToken(ctx, identity, presentedJWT)
+	}
+
+	// Build new identity with incremented generation
+	newIdentity := *identity
+	newIdentity.Generation = identity.Generation + 1
+
+	// Create the new refresh JWT so we can hash it
+	newRefreshJWT, err := h.tokenSvc.CreateRefreshToken(&newIdentity)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating rotated refresh token: %w", err)
+	}
+
+	// Atomic rotation: validate presented token + store new hash
+	presentedHash := HashToken(presentedJWT)
+	newHash := HashToken(newRefreshJWT)
+	_, err = h.refreshStore.RotateToken(ctx, identity.FamilyID, identity.TenantID, presentedHash, identity.Generation, newHash)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return &newIdentity, newRefreshJWT, nil
+}
+
+// upgradeLegacyToken handles the transition from a stateless refresh
+// token (pre-rotation) to a family-tracked token. It records the legacy
+// token's hash to reject replay attempts of the same legacy JWT.
+func (h *Handler) upgradeLegacyToken(ctx context.Context, identity *Identity, presentedJWT string) (*Identity, string, error) {
+	legacyHash := HashToken(presentedJWT)
+
+	// Reject if this legacy token was already upgraded
+	upgraded, err := h.refreshStore.IsLegacyTokenUpgraded(ctx, identity.UserID, identity.TenantID, legacyHash)
+	if err != nil {
+		return nil, "", fmt.Errorf("checking legacy token upgrade: %w", err)
+	}
+	if upgraded {
+		return nil, "", ErrLegacyTokenReplay
+	}
+
+	familyID, err := h.refreshStore.CreateFamilyForLegacyUpgrade(ctx, identity.TenantID, identity.UserID, legacyHash)
+	if err != nil {
+		return nil, "", fmt.Errorf("upgrading legacy token: %w", err)
+	}
+
+	newIdentity := *identity
+	newIdentity.FamilyID = familyID
+	newIdentity.Generation = 1
+
+	newRefreshJWT, err := h.tokenSvc.CreateRefreshToken(&newIdentity)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating refresh token for legacy upgrade: %w", err)
+	}
+
+	if hashErr := h.refreshStore.SetInitialTokenHash(ctx, familyID, identity.TenantID, HashToken(newRefreshJWT)); hashErr != nil {
+		return nil, "", fmt.Errorf("setting hash for legacy upgrade: %w", hashErr)
+	}
+
+	return &newIdentity, newRefreshJWT, nil
+}
+
+func classifyRotationError(err error) (int, string) {
+	switch {
+	case errors.Is(err, ErrTokenReuse):
+		return http.StatusUnauthorized, "token reuse detected"
+	case errors.Is(err, ErrFamilyRevoked):
+		return http.StatusUnauthorized, "token family revoked"
+	case errors.Is(err, ErrFamilyNotFound):
+		return http.StatusUnauthorized, "invalid token family"
+	case errors.Is(err, ErrLegacyTokenReplay):
+		return http.StatusUnauthorized, "legacy token already upgraded"
+	default:
+		return http.StatusInternalServerError, "token rotation failed"
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

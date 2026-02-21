@@ -71,8 +71,10 @@ func run() error {
 	)
 
 	var authStore *auth.Store
+	var refreshStore *auth.RefreshTokenStore
 	if pool != nil {
 		authStore = auth.NewStore(pool)
+		refreshStore = auth.NewRefreshTokenStore(pool)
 	}
 
 	stateStore := auth.NewStateStore([]byte(cfg.Auth.JWT.SigningKey), 10*time.Minute)
@@ -85,6 +87,7 @@ func run() error {
 	authHandler := auth.NewHandler(auth.HandlerConfig{
 		TokenSvc:       tokenSvc,
 		Store:          authStore,
+		RefreshStore:   refreshStore,
 		StateStore:     stateStore,
 		TenantResolver: tenantResolver,
 		// OIDC provider wired when configured
