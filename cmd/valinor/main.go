@@ -75,8 +75,7 @@ func run() error {
 		authStore = auth.NewStore(pool)
 	}
 
-	stateStore := auth.NewStateStore(10 * time.Minute)
-	defer stateStore.Stop()
+	stateStore := auth.NewStateStore([]byte(cfg.Auth.JWT.SigningKey), 10*time.Minute)
 
 	var tenantResolver *auth.TenantResolver
 	if pool != nil {

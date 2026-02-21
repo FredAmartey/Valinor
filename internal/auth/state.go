@@ -1,84 +1,83 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 )
 
-// StateStore is an in-memory store for OIDC state parameters with TTL cleanup.
+const (
+	stateNonceLen = 16
+	stateTimeLen  = 8
+	stateMACLen   = 32
+	stateRawLen   = stateNonceLen + stateTimeLen + stateMACLen // 56
+	statePrefix   = "oidc-state:"
+)
+
+// StateStore produces and validates HMAC-signed OIDC state tokens.
+// Tokens are stateless — no server-side storage or background goroutines.
+// This allows state validation to work across multiple replicas.
 type StateStore struct {
-	mu       sync.Mutex
-	states   map[string]time.Time
-	ttl      time.Duration
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	signingKey []byte
+	ttl        time.Duration
 }
 
-// NewStateStore creates a new state store with the given TTL and starts
-// a background goroutine that periodically purges expired entries.
-func NewStateStore(ttl time.Duration) *StateStore {
-	s := &StateStore{
-		states: make(map[string]time.Time),
-		ttl:    ttl,
-		stopCh: make(chan struct{}),
+// NewStateStore creates a state store that signs tokens with the given key.
+func NewStateStore(signingKey []byte, ttl time.Duration) *StateStore {
+	return &StateStore{
+		signingKey: signingKey,
+		ttl:        ttl,
 	}
-	go s.cleanup()
-	return s
 }
 
-// Generate creates a new cryptographically random state and stores it.
+// Generate creates a new HMAC-signed state token containing a random
+// nonce and the current timestamp.
 func (s *StateStore) Generate() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generating state: %w", err)
+	nonce := make([]byte, stateNonceLen)
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("generating state nonce: %w", err)
 	}
-	state := hex.EncodeToString(b)
 
-	s.mu.Lock()
-	s.states[state] = time.Now().Add(s.ttl)
-	s.mu.Unlock()
+	ts := make([]byte, stateTimeLen)
+	binary.BigEndian.PutUint64(ts, uint64(time.Now().Unix()))
 
-	return state, nil
+	sig := s.sign(nonce, ts)
+
+	raw := make([]byte, 0, stateRawLen)
+	raw = append(raw, nonce...)
+	raw = append(raw, ts...)
+	raw = append(raw, sig...)
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// Validate checks that the state exists and has not expired.
-// It is single-use: calling Validate consumes the state.
+// Validate checks the HMAC signature and TTL of a state token.
 func (s *StateStore) Validate(state string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	expiry, ok := s.states[state]
-	if !ok {
+	raw, err := base64.RawURLEncoding.DecodeString(state)
+	if err != nil || len(raw) != stateRawLen {
 		return false
 	}
-	delete(s.states, state)
-	return time.Now().Before(expiry)
-}
 
-// Stop halts the background cleanup goroutine. Safe to call multiple times.
-func (s *StateStore) Stop() {
-	s.stopOnce.Do(func() { close(s.stopCh) })
-}
+	nonce := raw[:stateNonceLen]
+	ts := raw[stateNonceLen : stateNonceLen+stateTimeLen]
+	providedMAC := raw[stateNonceLen+stateTimeLen:]
 
-func (s *StateStore) cleanup() {
-	ticker := time.NewTicker(s.ttl / 2)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			s.mu.Lock()
-			now := time.Now()
-			for state, expiry := range s.states {
-				if now.After(expiry) {
-					delete(s.states, state)
-				}
-			}
-			s.mu.Unlock()
-		case <-s.stopCh:
-			return
-		}
+	if !hmac.Equal(providedMAC, s.sign(nonce, ts)) {
+		return false
 	}
+
+	issuedAt := time.Unix(int64(binary.BigEndian.Uint64(ts)), 0)
+	return time.Since(issuedAt) <= s.ttl
+}
+
+func (s *StateStore) sign(nonce, ts []byte) []byte {
+	mac := hmac.New(sha256.New, s.signingKey)
+	mac.Write([]byte(statePrefix))
+	mac.Write(nonce)
+	mac.Write(ts)
+	return mac.Sum(nil)
 }
