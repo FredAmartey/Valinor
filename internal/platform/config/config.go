@@ -17,14 +17,14 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port int    `koanf:"port"`
 	Host string `koanf:"host"`
+	Port int    `koanf:"port"`
 }
 
 type DatabaseConfig struct {
 	URL            string `koanf:"url"`
-	MaxConns       int    `koanf:"max_conns"`
 	MigrationsPath string `koanf:"migrations_path"`
+	MaxConns       int    `koanf:"max_conns"`
 }
 
 type LogConfig struct {
@@ -56,9 +56,9 @@ func Load(configPaths ...string) (*Config, error) {
 	// Environment variables override everything
 	// VALINOR_SERVER_PORT -> server.port
 	_ = k.Load(env.Provider("VALINOR_", ".", func(s string) string {
-		return strings.Replace(
+		return strings.ReplaceAll(
 			strings.ToLower(strings.TrimPrefix(s, "VALINOR_")),
-			"_", ".", -1,
+			"_", ".",
 		)
 	}), nil)
 

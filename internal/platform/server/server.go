@@ -43,7 +43,8 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(ctx, "tcp", s.httpServer.Addr)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", s.httpServer.Addr, err)
 	}
