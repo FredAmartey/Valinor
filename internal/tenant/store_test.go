@@ -2,6 +2,7 @@ package tenant_test
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -44,6 +45,46 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 	}
 
 	return pool, cleanup
+}
+
+// setupTestDBWithRLS returns an owner pool (for platform-level ops like tenant CRUD)
+// and an RLS-enforced pool (for WithTenantConnection — table owner bypasses RLS).
+func setupTestDBWithRLS(t *testing.T) (ownerPool *database.Pool, rlsPool *database.Pool, cleanup func()) {
+	t.Helper()
+	ctx := context.Background()
+
+	ownerPool, ownerCleanup := setupTestDB(t)
+
+	// Get the connection string from the owner pool's config
+	connStr := ownerPool.Config().ConnString()
+
+	// Create a non-superuser role that respects RLS
+	_, err := ownerPool.Exec(ctx, `
+		DO $$ BEGIN
+			IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'rls_user') THEN
+				CREATE ROLE rls_user LOGIN PASSWORD 'rls_pass';
+			END IF;
+		END $$;
+		GRANT USAGE ON SCHEMA public TO rls_user;
+		GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO rls_user;
+	`)
+	require.NoError(t, err)
+
+	// Build connection string for rls_user
+	u, err := url.Parse(connStr)
+	require.NoError(t, err)
+	u.User = url.UserPassword("rls_user", "rls_pass")
+	rlsConnStr := u.String()
+
+	pool, err := database.Connect(ctx, rlsConnStr, 5)
+	require.NoError(t, err)
+
+	cleanup = func() {
+		pool.Close()
+		ownerCleanup()
+	}
+
+	return ownerPool, pool, cleanup
 }
 
 func TestStore_Create(t *testing.T) {
