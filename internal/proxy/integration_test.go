@@ -52,7 +52,7 @@ func TestEndToEnd_MessageRoundTrip(t *testing.T) {
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
 		MessageTimeout: 10 * time.Second,
-	})
+	}, nil, nil)
 
 	// Test 1: POST /message — full response
 	body := `{"role":"user","content":"What is 2+2?"}`

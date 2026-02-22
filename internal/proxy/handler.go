@@ -21,6 +21,42 @@ type AgentLookup interface {
 	GetByID(ctx context.Context, id string) (*orchestrator.AgentInstance, error)
 }
 
+// Sentinel scans messages for prompt injection before forwarding.
+type Sentinel interface {
+	Scan(ctx context.Context, input SentinelInput) (SentinelResult, error)
+}
+
+// SentinelInput mirrors sentinel.ScanInput to avoid import cycle.
+type SentinelInput struct {
+	TenantID string
+	UserID   string
+	Content  string
+}
+
+// SentinelResult mirrors sentinel.ScanResult.
+type SentinelResult struct {
+	Allowed    bool
+	Score      float64
+	Reason     string
+	Quarantine bool
+}
+
+// AuditLogger logs audit events without blocking.
+type AuditLogger interface {
+	Log(ctx context.Context, event AuditEvent)
+}
+
+// AuditEvent mirrors audit.Event to avoid import cycle.
+type AuditEvent struct {
+	TenantID     uuid.UUID
+	UserID       *uuid.UUID
+	Action       string
+	ResourceType string
+	ResourceID   *uuid.UUID
+	Metadata     map[string]any
+	Source       string
+}
+
 // HandlerConfig holds proxy handler configuration.
 type HandlerConfig struct {
 	MessageTimeout time.Duration
@@ -30,13 +66,15 @@ type HandlerConfig struct {
 
 // Handler serves proxy HTTP endpoints for agent communication.
 type Handler struct {
-	pool   *ConnPool
-	agents AgentLookup
-	cfg    HandlerConfig
+	pool     *ConnPool
+	agents   AgentLookup
+	cfg      HandlerConfig
+	sentinel Sentinel
+	audit    AuditLogger
 }
 
 // NewHandler creates a proxy Handler.
-func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig) *Handler {
+func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig, sentinel Sentinel, audit AuditLogger) *Handler {
 	if cfg.MessageTimeout <= 0 {
 		cfg.MessageTimeout = 60 * time.Second
 	}
@@ -46,7 +84,7 @@ func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig) *Handler 
 	if cfg.PingTimeout <= 0 {
 		cfg.PingTimeout = 3 * time.Second
 	}
-	return &Handler{pool: pool, agents: agents, cfg: cfg}
+	return &Handler{pool: pool, agents: agents, cfg: cfg, sentinel: sentinel, audit: audit}
 }
 
 // HandleMessage sends a user message to an agent and returns the full response.

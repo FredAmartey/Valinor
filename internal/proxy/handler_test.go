@@ -65,7 +65,7 @@ func TestHandleMessage_Success(t *testing.T) {
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
 		MessageTimeout: 5 * time.Second,
-	})
+	}, nil, nil)
 
 	// Start mock agent that echoes back as a done chunk
 	ctx := context.Background()
@@ -101,7 +101,7 @@ func TestHandleMessage_AgentNotFound(t *testing.T) {
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
 		MessageTimeout: 5 * time.Second,
-	})
+	}, nil, nil)
 
 	body := `{"role":"user","content":"hello"}`
 	req := httptest.NewRequest("POST", "/agents/bad-id/message", bytes.NewBufferString(body))
@@ -135,7 +135,7 @@ func TestHandleMessage_AgentNotRunning(t *testing.T) {
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
 		MessageTimeout: 5 * time.Second,
-	})
+	}, nil, nil)
 
 	body := `{"role":"user","content":"hello"}`
 	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(body))
@@ -170,7 +170,7 @@ func TestHandleStream_SSE(t *testing.T) {
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
 		MessageTimeout: 5 * time.Second,
-	})
+	}, nil, nil)
 
 	ctx := context.Background()
 	ln, err := transport.Listen(ctx, cid)
@@ -247,7 +247,7 @@ func TestHandleContext_Success(t *testing.T) {
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
 		ConfigTimeout: 5 * time.Second,
-	})
+	}, nil, nil)
 
 	ctx := context.Background()
 	ln, err := transport.Listen(ctx, cid)
