@@ -17,6 +17,8 @@ type Config struct {
 	Auth         AuthConfig         `koanf:"auth"`
 	Orchestrator OrchestratorConfig `koanf:"orchestrator"`
 	Proxy        ProxyConfig        `koanf:"proxy"`
+	Sentinel     SentinelConfig     `koanf:"sentinel"`
+	Audit        AuditConfig        `koanf:"audit"`
 }
 
 type AuthConfig struct {
@@ -84,6 +86,21 @@ type ProxyConfig struct {
 	PingTimeout    int    `koanf:"ping_timeout"`    // seconds, default 3
 }
 
+// SentinelConfig configures the input sentinel scanner.
+type SentinelConfig struct {
+	Enabled        bool    `koanf:"enabled"`
+	LLMEnabled     bool    `koanf:"llm_enabled"`
+	AnthropicKey   string  `koanf:"anthropic_key"`
+	BlockThreshold float64 `koanf:"block_threshold"`
+}
+
+// AuditConfig configures the async audit logger.
+type AuditConfig struct {
+	BufferSize    int `koanf:"buffer_size"`
+	BatchSize     int `koanf:"batch_size"`
+	FlushInterval int `koanf:"flush_interval_ms"`
+}
+
 func Load(configPaths ...string) (*Config, error) {
 	k := koanf.New(".")
 
@@ -112,6 +129,12 @@ func Load(configPaths ...string) (*Config, error) {
 		"proxy.message_timeout":                 60,
 		"proxy.config_timeout":                  5,
 		"proxy.ping_timeout":                    3,
+		"sentinel.enabled":                      true,
+		"sentinel.llm_enabled":                  false,
+		"sentinel.block_threshold":              0.85,
+		"audit.buffer_size":                     4096,
+		"audit.batch_size":                      100,
+		"audit.flush_interval_ms":               500,
 	}, "."), nil)
 
 	// YAML file (optional)

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/config"
@@ -17,6 +18,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/telemetry"
 	"github.com/valinor-ai/valinor/internal/proxy"
 	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/valinor-ai/valinor/internal/sentinel"
 	"github.com/valinor-ai/valinor/internal/tenant"
 )
 
@@ -133,6 +135,35 @@ func run() error {
 		"agents:read",
 	})
 
+	// Audit
+	var auditLogger audit.Logger = audit.NopLogger{}
+	if pool != nil {
+		auditStore := audit.NewStore()
+		auditLogger = audit.NewAsyncLogger(pool, auditStore, audit.LoggerConfig{
+			BufferSize:    cfg.Audit.BufferSize,
+			BatchSize:     cfg.Audit.BatchSize,
+			FlushInterval: time.Duration(cfg.Audit.FlushInterval) * time.Millisecond,
+		})
+		defer auditLogger.Close()
+		slog.Info("audit logger started")
+	}
+
+	// Sentinel
+	var sentinelScanner sentinel.Sentinel = sentinel.NopSentinel{}
+	if cfg.Sentinel.Enabled {
+		patterns := sentinel.NewPatternMatcher(sentinel.DefaultPatterns())
+		var llm sentinel.Sentinel
+		if cfg.Sentinel.LLMEnabled && cfg.Sentinel.AnthropicKey != "" {
+			llm = sentinel.NewLLMClassifier(sentinel.LLMConfig{
+				BaseURL:        "https://api.anthropic.com",
+				APIKey:         cfg.Sentinel.AnthropicKey,
+				BlockThreshold: cfg.Sentinel.BlockThreshold,
+			})
+		}
+		sentinelScanner = sentinel.NewComposite(patterns, llm)
+		slog.Info("sentinel enabled", "llm", cfg.Sentinel.LLMEnabled)
+	}
+
 	// Orchestrator — build manager and handler; background loops start after signal context.
 	var agentHandler *orchestrator.Handler
 	var orchManager *orchestrator.Manager
@@ -165,7 +196,7 @@ func run() error {
 			MessageTimeout: time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
 			ConfigTimeout:  time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 			PingTimeout:    time.Duration(cfg.Proxy.PingTimeout) * time.Second,
-		}, nil, nil)
+		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger})
 	}
 	if connPool != nil {
 		defer connPool.Close()
@@ -226,4 +257,43 @@ type configPusherAdapter struct {
 
 func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string) error {
 	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, a.timeout)
+}
+
+// sentinelAdapter bridges sentinel.Sentinel to proxy.Sentinel.
+type sentinelAdapter struct {
+	s sentinel.Sentinel
+}
+
+func (a *sentinelAdapter) Scan(ctx context.Context, input proxy.SentinelInput) (proxy.SentinelResult, error) {
+	result, err := a.s.Scan(ctx, sentinel.ScanInput{
+		TenantID: input.TenantID,
+		UserID:   input.UserID,
+		Content:  input.Content,
+	})
+	if err != nil {
+		return proxy.SentinelResult{}, err
+	}
+	return proxy.SentinelResult{
+		Allowed:    result.Allowed,
+		Score:      result.Score,
+		Reason:     result.Reason,
+		Quarantine: result.Quarantine,
+	}, nil
+}
+
+// auditAdapter bridges audit.Logger to proxy.AuditLogger.
+type auditAdapter struct {
+	l audit.Logger
+}
+
+func (a *auditAdapter) Log(ctx context.Context, event proxy.AuditEvent) {
+	a.l.Log(ctx, audit.Event{
+		TenantID:     event.TenantID,
+		UserID:       event.UserID,
+		Action:       event.Action,
+		ResourceType: event.ResourceType,
+		ResourceID:   event.ResourceID,
+		Metadata:     event.Metadata,
+		Source:       event.Source,
+	})
 }
