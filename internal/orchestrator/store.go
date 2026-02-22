@@ -2,7 +2,7 @@ package orchestrator
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -18,16 +18,17 @@ func NewStore() *Store {
 }
 
 func (s *Store) Create(ctx context.Context, q database.Querier, inst *AgentInstance) error {
-	configJSON, err := json.Marshal(inst.Config)
-	if err != nil {
-		configJSON = []byte("{}")
+	// inst.Config is already a JSON string (e.g. "{}"); pass directly for JSONB cast.
+	config := inst.Config
+	if config == "" {
+		config = "{}"
 	}
 
 	return q.QueryRow(ctx,
 		`INSERT INTO agent_instances (tenant_id, department_id, vm_id, status, config, vsock_cid, vm_driver, tool_allowlist)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
 		 RETURNING id, created_at`,
-		inst.TenantID, inst.DepartmentID, inst.VMID, inst.Status, configJSON,
+		inst.TenantID, inst.DepartmentID, inst.VMID, inst.Status, config,
 		inst.VsockCID, inst.VMDriver, inst.ToolAllowlist,
 	).Scan(&inst.ID, &inst.CreatedAt)
 }
@@ -43,7 +44,7 @@ func (s *Store) GetByID(ctx context.Context, q database.Querier, id string) (*Ag
 		&inst.Config, &inst.VsockCID, &inst.VMDriver, &inst.ToolAllowlist,
 		&inst.ConsecutiveFailures, &inst.CreatedAt, &inst.LastHealthCheck)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrVMNotFound
 		}
 		return nil, fmt.Errorf("getting agent instance: %w", err)
@@ -95,27 +96,27 @@ func (s *Store) ListByTenant(ctx context.Context, q database.Querier, tenantID s
 	return scanAgentInstances(rows)
 }
 
-// ClaimWarm atomically assigns a warm VM to a tenant.
+// ClaimWarm atomically assigns a warm VM to a tenant, setting department and config in one UPDATE.
 // Uses FOR UPDATE SKIP LOCKED to avoid contention.
-func (s *Store) ClaimWarm(ctx context.Context, q database.Querier, tenantID string) (*AgentInstance, error) {
+func (s *Store) ClaimWarm(ctx context.Context, q database.Querier, tenantID string, deptID *string, config string) (*AgentInstance, error) {
 	var inst AgentInstance
 	err := q.QueryRow(ctx,
 		`UPDATE agent_instances
-		 SET tenant_id = $1, status = $2
+		 SET tenant_id = $1, status = $2, department_id = $3, config = $4::jsonb
 		 WHERE id = (
 		     SELECT id FROM agent_instances
-		     WHERE status = $3 AND tenant_id IS NULL
+		     WHERE status = $5 AND tenant_id IS NULL
 		     ORDER BY created_at LIMIT 1
 		     FOR UPDATE SKIP LOCKED
 		 )
 		 RETURNING id, tenant_id, department_id, vm_id, status, config, vsock_cid,
 		           vm_driver, tool_allowlist, consecutive_failures, created_at, last_health_check`,
-		tenantID, StatusProvisioning, StatusWarm,
+		tenantID, StatusProvisioning, deptID, config, StatusWarm,
 	).Scan(&inst.ID, &inst.TenantID, &inst.DepartmentID, &inst.VMID, &inst.Status,
 		&inst.Config, &inst.VsockCID, &inst.VMDriver, &inst.ToolAllowlist,
 		&inst.ConsecutiveFailures, &inst.CreatedAt, &inst.LastHealthCheck)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNoWarmVMs
 		}
 		return nil, fmt.Errorf("claiming warm VM: %w", err)

@@ -138,6 +138,46 @@ func TestHandler_GetAgent_WrongTenant(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestHandler_Configure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
+	handler := orchestrator.NewHandler(mgr)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Test', 'test') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{})
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"config":{"model":"gpt-4"},"tool_allowlist":["search","code"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+inst.ID+"/configure", body)
+	req.SetPathValue("id", inst.ID)
+	req = withIdentity(req, tenantID, false)
+	w := httptest.NewRecorder()
+
+	handler.HandleConfigure(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp orchestrator.AgentInstance
+	err = json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp.Config, "gpt-4")
+	assert.Contains(t, resp.ToolAllowlist, "search")
+}
+
 func TestHandler_DestroyAgent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

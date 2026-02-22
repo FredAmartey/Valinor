@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/valinor-ai/valinor/internal/auth"
@@ -44,6 +45,7 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		Config:       req.Config,
 	})
 	if err != nil {
+		slog.Error("provision failed", "tenant", tenantID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "provisioning failed"})
 		return
 	}
@@ -102,7 +104,9 @@ func (h *Handler) HandleListAgents(w http.ResponseWriter, r *http.Request) {
 		agents = []AgentInstance{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+	writeJSON(w, http.StatusOK, struct {
+		Agents []AgentInstance `json:"agents"`
+	}{Agents: agents})
 }
 
 // HandleDestroyAgent destroys an agent and its VM.
@@ -135,6 +139,7 @@ func (h *Handler) HandleDestroyAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.manager.Destroy(r.Context(), id); err != nil {
+		slog.Error("destroy failed", "id", id, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "destroy failed"})
 		return
 	}
@@ -186,6 +191,7 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 	allowlistJSON, _ := json.Marshal(req.ToolAllowlist)
 
 	if updateErr := h.manager.UpdateConfig(r.Context(), id, string(configJSON), string(allowlistJSON)); updateErr != nil {
+		slog.Error("configure failed", "id", id, "error", updateErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
 		return
 	}

@@ -53,17 +53,16 @@ func NewManager(pool *database.Pool, driver VMDriver, store *Store, cfg ManagerC
 
 // Provision assigns a VM to a tenant. Tries warm pool first, falls back to cold-start.
 func (m *Manager) Provision(ctx context.Context, tenantID string, opts ProvisionOpts) (*AgentInstance, error) {
-	// Try claiming a warm VM
-	inst, err := m.store.ClaimWarm(ctx, m.pool, tenantID)
+	// Build config string for claim
+	configStr := "{}"
+	if opts.Config != nil {
+		configJSON, _ := json.Marshal(opts.Config)
+		configStr = string(configJSON)
+	}
+
+	// Try claiming a warm VM — dept/config are set atomically in the claim query.
+	inst, err := m.store.ClaimWarm(ctx, m.pool, tenantID, opts.DepartmentID, configStr)
 	if err == nil {
-		// Update department if provided
-		if opts.DepartmentID != nil {
-			inst.DepartmentID = opts.DepartmentID
-		}
-		if opts.Config != nil {
-			configJSON, _ := json.Marshal(opts.Config)
-			inst.Config = string(configJSON)
-		}
 		// Transition to running
 		if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusRunning); err != nil {
 			return nil, fmt.Errorf("transitioning to running: %w", err)
@@ -79,14 +78,20 @@ func (m *Manager) Provision(ctx context.Context, tenantID string, opts Provision
 }
 
 func (m *Manager) coldStart(ctx context.Context, tenantID string, opts ProvisionOpts) (*AgentInstance, error) {
+	// Hold mutex from CID allocation through DB insert to prevent TOCTOU races.
 	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	cid, err := m.store.NextVsockCID(ctx, m.pool)
-	m.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("allocating vsock CID: %w", err)
 	}
 
-	vmID := fmt.Sprintf("vm-%s-%d", tenantID[:8], time.Now().UnixMilli())
+	prefix := tenantID
+	if len(prefix) > 8 {
+		prefix = prefix[:8]
+	}
+	vmID := fmt.Sprintf("vm-%s-%d", prefix, time.Now().UnixMilli())
 
 	spec := VMSpec{
 		VMID:     vmID,
@@ -95,7 +100,7 @@ func (m *Manager) coldStart(ctx context.Context, tenantID string, opts Provision
 
 	handle, err := m.driver.Start(ctx, spec)
 	if err != nil {
-		return nil, fmt.Errorf("%w: starting VM: %w", ErrDriverFailure, err)
+		return nil, fmt.Errorf("starting VM: %w: %v", ErrDriverFailure, err)
 	}
 
 	configStr := "{}"
@@ -224,45 +229,51 @@ func (m *Manager) ReconcileOnce(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-
-		m.mu.Lock()
-		cid, err := m.store.NextVsockCID(ctx, m.pool)
-		m.mu.Unlock()
-		if err != nil {
-			slog.Error("CID allocation failed", "error", err)
-			continue
-		}
-
-		vmID := fmt.Sprintf("warm-%d-%d", cid, time.Now().UnixMilli())
-		spec := VMSpec{
-			VMID:     vmID,
-			VsockCID: cid,
-		}
-
-		handle, err := m.driver.Start(ctx, spec)
-		if err != nil {
-			slog.Error("warm VM start failed", "error", err)
-			continue
-		}
-
-		inst := &AgentInstance{
-			VMID:          &vmID,
-			Status:        StatusWarm,
-			Config:        "{}",
-			VsockCID:      &handle.VsockCID,
-			VMDriver:      m.cfg.Driver,
-			ToolAllowlist: "[]",
-		}
-
-		if err := m.store.Create(ctx, m.pool, inst); err != nil {
-			slog.Error("saving warm VM failed", "error", err)
-			_ = m.driver.Stop(ctx, vmID)
-			_ = m.driver.Cleanup(ctx, vmID)
-			continue
-		}
-
-		slog.Info("warm VM started", "id", inst.ID, "cid", cid)
+		m.createWarmVM(ctx)
 	}
+}
+
+// createWarmVM allocates a CID, starts a VM, and inserts it as warm.
+// Holds the mutex from CID allocation through DB insert to prevent TOCTOU races.
+func (m *Manager) createWarmVM(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cid, err := m.store.NextVsockCID(ctx, m.pool)
+	if err != nil {
+		slog.Error("CID allocation failed", "error", err)
+		return
+	}
+
+	vmID := fmt.Sprintf("warm-%d-%d", cid, time.Now().UnixMilli())
+	spec := VMSpec{
+		VMID:     vmID,
+		VsockCID: cid,
+	}
+
+	handle, err := m.driver.Start(ctx, spec)
+	if err != nil {
+		slog.Error("warm VM start failed", "error", err)
+		return
+	}
+
+	inst := &AgentInstance{
+		VMID:          &vmID,
+		Status:        StatusWarm,
+		Config:        "{}",
+		VsockCID:      &handle.VsockCID,
+		VMDriver:      m.cfg.Driver,
+		ToolAllowlist: "[]",
+	}
+
+	if err := m.store.Create(ctx, m.pool, inst); err != nil {
+		slog.Error("saving warm VM failed", "error", err)
+		_ = m.driver.Stop(ctx, vmID)
+		_ = m.driver.Cleanup(ctx, vmID)
+		return
+	}
+
+	slog.Info("warm VM started", "id", inst.ID, "cid", cid)
 }
 
 // healthCheckLoop checks all running VMs and replaces unhealthy ones.
@@ -347,14 +358,25 @@ func (m *Manager) replaceUnhealthy(ctx context.Context, inst *AgentInstance) {
 	}
 	_ = m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusDestroyed)
 
-	// Provision replacement if this VM had a tenant
+	// Provision replacement if this VM had a tenant, carrying forward config.
 	if inst.TenantID != nil {
+		var prevConfig map[string]any
+		if inst.Config != "" && inst.Config != "{}" {
+			_ = json.Unmarshal([]byte(inst.Config), &prevConfig)
+		}
 		replacement, err := m.Provision(ctx, *inst.TenantID, ProvisionOpts{
 			DepartmentID: inst.DepartmentID,
+			Config:       prevConfig,
 		})
 		if err != nil {
 			slog.Error("replacement provision failed", "original", inst.ID, "error", err)
 			return
+		}
+		// Carry forward tool_allowlist from the old instance.
+		if inst.ToolAllowlist != "" && inst.ToolAllowlist != "[]" {
+			if updateErr := m.store.UpdateConfig(ctx, m.pool, replacement.ID, replacement.Config, inst.ToolAllowlist); updateErr != nil {
+				slog.Error("carrying forward tool_allowlist failed", "id", replacement.ID, "error", updateErr)
+			}
 		}
 		slog.Info("replaced unhealthy VM", "original", inst.ID, "replacement", replacement.ID)
 	}

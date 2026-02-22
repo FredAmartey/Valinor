@@ -106,14 +106,14 @@ func TestStore_ClaimWarm(t *testing.T) {
 	require.NoError(t, err)
 
 	// Claim it
-	claimed, err := store.ClaimWarm(ctx, pool, tenantID)
+	claimed, err := store.ClaimWarm(ctx, pool, tenantID, nil, "{}")
 	require.NoError(t, err)
 	assert.Equal(t, inst.ID, claimed.ID)
 	assert.Equal(t, &tenantID, claimed.TenantID)
 	assert.Equal(t, orchestrator.StatusProvisioning, claimed.Status)
 
 	// No more warm VMs
-	_, err = store.ClaimWarm(ctx, pool, tenantID)
+	_, err = store.ClaimWarm(ctx, pool, tenantID, nil, "{}")
 	assert.ErrorIs(t, err, orchestrator.ErrNoWarmVMs)
 }
 

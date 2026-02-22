@@ -3,7 +3,6 @@ package orchestrator_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -208,6 +207,3 @@ func TestManager_HealthCheckOnce_ReplacesUnhealthy(t *testing.T) {
 	got, _ = mgr.GetByID(ctx, inst.ID)
 	assert.Equal(t, orchestrator.StatusDestroyed, got.Status)
 }
-
-// Ensure unused variable doesn't cause issues
-var _ = time.Millisecond

@@ -132,8 +132,9 @@ func run() error {
 		"agents:read",
 	})
 
-	// Orchestrator
+	// Orchestrator — build manager and handler; background loops start after signal context.
 	var agentHandler *orchestrator.Handler
+	var orchManager *orchestrator.Manager
 	if pool != nil {
 		orchStore := orchestrator.NewStore()
 		orchDriver := orchestrator.NewMockDriver() // TODO: select driver from config
@@ -144,16 +145,8 @@ func run() error {
 			ReconcileInterval:      time.Duration(cfg.Orchestrator.ReconcileIntervalSecs) * time.Second,
 			MaxConsecutiveFailures: cfg.Orchestrator.MaxConsecutiveFailures,
 		}
-		orchManager := orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
+		orchManager = orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
 		agentHandler = orchestrator.NewHandler(orchManager)
-
-		// Start background loops (warm pool + health checks)
-		go func() {
-			if err := orchManager.Run(ctx); err != nil {
-				slog.Error("orchestrator background loops stopped", "error", err)
-			}
-		}()
-		slog.Info("orchestrator started", "driver", cfg.Orchestrator.Driver, "warm_pool", cfg.Orchestrator.WarmPoolSize)
 	}
 
 	// Dev mode identity
@@ -187,6 +180,16 @@ func run() error {
 	// Graceful shutdown on SIGINT/SIGTERM
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Start orchestrator background loops with the signal-aware context.
+	if orchManager != nil {
+		go func() {
+			if err := orchManager.Run(ctx); err != nil {
+				slog.Error("orchestrator background loops stopped", "error", err)
+			}
+		}()
+		slog.Info("orchestrator started", "driver", cfg.Orchestrator.Driver, "warm_pool", cfg.Orchestrator.WarmPoolSize)
+	}
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)
 	return srv.Start(ctx)

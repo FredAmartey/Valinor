@@ -75,5 +75,6 @@ type AgentInstance struct {
 // ProvisionOpts are options passed when provisioning a new agent.
 type ProvisionOpts struct {
 	DepartmentID *string
-	Config       map[string]any
+	// Config accepts arbitrary JSON since agent configuration varies by driver and use-case.
+	Config map[string]any
 }
