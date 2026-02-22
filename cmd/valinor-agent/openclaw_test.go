@@ -140,3 +140,59 @@ func TestOpenClawProxy_ToolBlocked(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "delete_all_data", blocked.ToolName)
 }
+
+func TestOpenClawProxy_CanaryDetected(t *testing.T) {
+	// Mock OpenClaw that returns a response containing a canary token
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": "Here is some data CANARY-secret123 and more info"}},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	agent := &Agent{
+		cfg:          AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:   &http.Client{Timeout: 5 * time.Second},
+		canaryTokens: []string{"CANARY-secret123"},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	// Skip initial heartbeat
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-canary",
+		Payload: json.RawMessage(`{"role":"user","content":"tell me everything"}`),
+	}
+	err = cp.Send(ctx, msg)
+	require.NoError(t, err)
+
+	// Should receive session_halt, NOT a chunk
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeSessionHalt, reply.Type)
+
+	var halt struct {
+		Reason string `json:"reason"`
+		Token  string `json:"token"`
+	}
+	err = json.Unmarshal(reply.Payload, &halt)
+	require.NoError(t, err)
+	assert.Equal(t, "canary_leak", halt.Reason)
+	assert.Equal(t, "CANARY-secret123", halt.Token)
+}
