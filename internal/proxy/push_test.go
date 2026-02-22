@@ -28,8 +28,8 @@ func TestPushConfig_Success(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		conn, err := ln.Accept()
-		if err != nil {
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
 			return
 		}
 		defer conn.Close()
@@ -91,8 +91,8 @@ func TestPushConfig_Timeout(t *testing.T) {
 
 	// Mock agent that accepts but never responds
 	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
 			return
 		}
 		// Read but don't reply — let it timeout

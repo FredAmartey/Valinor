@@ -154,8 +154,7 @@ func run() error {
 		transport := proxy.NewTCPTransport(cfg.Proxy.TCPBasePort)
 		connPool = proxy.NewConnPool(transport)
 
-		var pusher orchestrator.ConfigPusher
-		pusher = &configPusherAdapter{
+		var pusher orchestrator.ConfigPusher = &configPusherAdapter{
 			pool:    connPool,
 			timeout: time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 		}

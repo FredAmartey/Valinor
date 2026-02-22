@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -85,7 +85,8 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	// Read request body
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB max
 	var body json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	err = json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -155,7 +156,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeProxyJSON(w, http.StatusBadGateway, map[string]string{
-				"error": fmt.Sprintf("agent error: %s", agentErr.Message),
+				"error": "agent error: " + agentErr.Message,
 			})
 			return
 
@@ -166,7 +167,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = json.Unmarshal(reply.Payload, &blocked)
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
-				"error": fmt.Sprintf("tool blocked: %s", blocked.ToolName),
+				"error": "tool blocked: " + blocked.ToolName,
 			})
 			return
 		}
@@ -273,13 +274,13 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			fmt.Fprintf(w, "event: chunk\ndata: %s\n\n", string(reply.Payload))
+			writeSSE(w, "chunk", reply.Payload)
 			if flusher != nil {
 				flusher.Flush()
 			}
 
 			if chunk.Done {
-				fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+				writeSSE(w, "done", json.RawMessage(`{}`))
 				if flusher != nil {
 					flusher.Flush()
 				}
@@ -287,14 +288,14 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case TypeError:
-			fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(reply.Payload))
+			writeSSE(w, "error", reply.Payload)
 			if flusher != nil {
 				flusher.Flush()
 			}
 			return
 
 		case TypeToolBlocked:
-			fmt.Fprintf(w, "event: tool_blocked\ndata: %s\n\n", string(reply.Payload))
+			writeSSE(w, "tool_blocked", reply.Payload)
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -337,7 +338,8 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var body json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	err = json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -359,7 +361,8 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.ConfigTimeout)
 	defer cancel()
 
-	if err := conn.Send(ctx, frame); err != nil {
+	err = conn.Send(ctx, frame)
+	if err != nil {
 		h.pool.Remove(agentID)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
@@ -396,6 +399,11 @@ func verifyTenantOwnership(w http.ResponseWriter, r *http.Request, inst *orchest
 		}
 	}
 	return true
+}
+
+// writeSSE writes an SSE event to the response writer without using fmt.Fprintf.
+func writeSSE(w io.Writer, event string, data json.RawMessage) {
+	_, _ = io.WriteString(w, "event: "+event+"\ndata: "+string(data)+"\n\n")
 }
 
 func writeProxyJSON(w http.ResponseWriter, status int, v any) {

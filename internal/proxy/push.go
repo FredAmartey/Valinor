@@ -38,7 +38,8 @@ func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if err := conn.Send(ctx, frame); err != nil {
+	err = conn.Send(ctx, frame)
+	if err != nil {
 		pool.Remove(agentID)
 		return fmt.Errorf("sending config to agent %s: %w", agentID, err)
 	}

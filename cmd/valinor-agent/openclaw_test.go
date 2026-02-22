@@ -22,7 +22,7 @@ func TestOpenClawProxy_Message(t *testing.T) {
 
 		// Return a simple non-streaming response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{"content": "The answer is 42"}},
 			},
@@ -79,7 +79,7 @@ func TestOpenClawProxy_ToolBlocked(t *testing.T) {
 	// Mock OpenClaw that returns a tool call
 	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{
 					"message": map[string]any{

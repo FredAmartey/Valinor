@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -162,7 +161,7 @@ func runStreamingMockAgent(t *testing.T, ctx context.Context, ln net.Listener) {
 			chunk2 := proxy.Frame{
 				Type:    proxy.TypeChunk,
 				ID:      frame.ID,
-				Payload: json.RawMessage(fmt.Sprintf(`{"content":"response","done":true}`)),
+				Payload: json.RawMessage(`{"content":"response","done":true}`),
 			}
 			_ = ac.Send(ctx, chunk2)
 		}

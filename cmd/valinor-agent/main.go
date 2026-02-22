@@ -32,9 +32,13 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	if *portFlag < 0 || *portFlag > 65535 {
+		return fmt.Errorf("port must be between 0 and 65535, got %d", *portFlag)
+	}
+
 	agent := NewAgent(AgentConfig{
 		Transport:   *transportFlag,
-		Port:        uint32(*portFlag),
+		Port:        uint32(*portFlag), // #nosec G115 -- bounds checked above
 		OpenClawURL: *openclawURL,
 	})
 

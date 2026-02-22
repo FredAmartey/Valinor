@@ -48,7 +48,7 @@ func EncodeFrame(f Frame) ([]byte, error) {
 	}
 
 	buf := make([]byte, 4+len(payload))
-	binary.BigEndian.PutUint32(buf[:4], uint32(len(payload)))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(payload))) // #nosec G115 -- bounds checked: len(payload) <= MaxFrameSize (4MB)
 	copy(buf[4:], payload)
 	return buf, nil
 }

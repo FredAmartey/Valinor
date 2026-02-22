@@ -22,8 +22,8 @@ func TestTCPTransport_DialAndListen(t *testing.T) {
 	// Accept in background
 	accepted := make(chan net.Conn, 1)
 	go func() {
-		conn, err := ln.Accept()
-		if err == nil {
+		conn, acceptErr := ln.Accept()
+		if acceptErr == nil {
 			accepted <- conn
 		}
 	}()

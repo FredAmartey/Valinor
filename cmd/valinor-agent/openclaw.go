@@ -79,7 +79,8 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	}
 
 	var ocResp openClawResponse
-	if err := json.Unmarshal(respBody, &ocResp); err != nil {
+	err = json.Unmarshal(respBody, &ocResp)
+	if err != nil {
 		a.sendError(ctx, conn, frame.ID, "parse_error", "failed to parse OpenClaw response")
 		return
 	}
@@ -95,7 +96,8 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	if len(choice.Message.ToolCalls) > 0 {
 		for _, tc := range choice.Message.ToolCalls {
 			if !a.isToolAllowed(tc.Function.Name) {
-				payload, err := json.Marshal(map[string]string{
+				var payload []byte
+				payload, err = json.Marshal(map[string]string{
 					"tool_name": tc.Function.Name,
 					"reason":    "tool not in allow-list",
 				})

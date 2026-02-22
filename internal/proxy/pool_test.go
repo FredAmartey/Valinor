@@ -21,15 +21,15 @@ func TestConnPool_GetCreatesConnection(t *testing.T) {
 	defer ln.Close()
 
 	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
+		conn, acceptErr := ln.Accept()
+		if acceptErr != nil {
 			return
 		}
 		// Keep connection alive — just read and discard
 		buf := make([]byte, 1024)
 		for {
-			_, err := conn.Read(buf)
-			if err != nil {
+			_, readErr := conn.Read(buf)
+			if readErr != nil {
 				return
 			}
 		}
@@ -52,8 +52,8 @@ func TestConnPool_GetReturnsSameConnection(t *testing.T) {
 	accepted := make(chan net.Conn, 2)
 	go func() {
 		for {
-			conn, err := ln.Accept()
-			if err != nil {
+			conn, acceptErr := ln.Accept()
+			if acceptErr != nil {
 				return
 			}
 			accepted <- conn
@@ -81,14 +81,14 @@ func TestConnPool_Remove(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := ln.Accept()
-			if err != nil {
+			conn, acceptErr := ln.Accept()
+			if acceptErr != nil {
 				return
 			}
 			buf := make([]byte, 1024)
 			for {
-				_, err := conn.Read(buf)
-				if err != nil {
+				_, readErr := conn.Read(buf)
+				if readErr != nil {
 					return
 				}
 			}
