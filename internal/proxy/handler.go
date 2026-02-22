@@ -21,6 +21,42 @@ type AgentLookup interface {
 	GetByID(ctx context.Context, id string) (*orchestrator.AgentInstance, error)
 }
 
+// Sentinel scans messages for prompt injection before forwarding.
+type Sentinel interface {
+	Scan(ctx context.Context, input SentinelInput) (SentinelResult, error)
+}
+
+// SentinelInput mirrors sentinel.ScanInput to avoid import cycle.
+type SentinelInput struct {
+	TenantID string
+	UserID   string
+	Content  string
+}
+
+// SentinelResult mirrors sentinel.ScanResult.
+type SentinelResult struct {
+	Allowed    bool
+	Score      float64
+	Reason     string
+	Quarantine bool
+}
+
+// AuditLogger logs audit events without blocking.
+type AuditLogger interface {
+	Log(ctx context.Context, event AuditEvent)
+}
+
+// AuditEvent mirrors audit.Event to avoid import cycle.
+type AuditEvent struct {
+	TenantID     uuid.UUID
+	UserID       *uuid.UUID
+	Action       string
+	ResourceType string
+	ResourceID   *uuid.UUID
+	Metadata     map[string]any
+	Source       string
+}
+
 // HandlerConfig holds proxy handler configuration.
 type HandlerConfig struct {
 	MessageTimeout time.Duration
@@ -30,13 +66,15 @@ type HandlerConfig struct {
 
 // Handler serves proxy HTTP endpoints for agent communication.
 type Handler struct {
-	pool   *ConnPool
-	agents AgentLookup
-	cfg    HandlerConfig
+	pool     *ConnPool
+	agents   AgentLookup
+	cfg      HandlerConfig
+	sentinel Sentinel
+	audit    AuditLogger
 }
 
 // NewHandler creates a proxy Handler.
-func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig) *Handler {
+func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig, sentinel Sentinel, audit AuditLogger) *Handler {
 	if cfg.MessageTimeout <= 0 {
 		cfg.MessageTimeout = 60 * time.Second
 	}
@@ -46,7 +84,7 @@ func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig) *Handler 
 	if cfg.PingTimeout <= 0 {
 		cfg.PingTimeout = 3 * time.Second
 	}
-	return &Handler{pool: pool, agents: agents, cfg: cfg}
+	return &Handler{pool: pool, agents: agents, cfg: cfg, sentinel: sentinel, audit: audit}
 }
 
 // HandleMessage sends a user message to an agent and returns the full response.
@@ -72,6 +110,12 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use agent's tenant for audit attribution (correct for cross-tenant admin access)
+	agentTenant := ""
+	if inst.TenantID != nil {
+		agentTenant = *inst.TenantID
+	}
+
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return
@@ -89,6 +133,43 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
+	}
+
+	// Sentinel scan — extract content field for scanning
+	if h.sentinel != nil {
+		var msg struct {
+			Content string `json:"content"`
+		}
+		scanContent := string(body)
+		if json.Unmarshal(body, &msg) == nil && msg.Content != "" {
+			scanContent = msg.Content
+		}
+		scanInput := SentinelInput{
+			TenantID: middleware.GetTenantID(r.Context()),
+			Content:  scanContent,
+		}
+		if identity := auth.GetIdentity(r.Context()); identity != nil {
+			scanInput.UserID = identity.UserID
+		}
+		scanResult, scanErr := h.sentinel.Scan(r.Context(), scanInput)
+		if scanErr != nil {
+			slog.Error("sentinel scan failed", "error", scanErr)
+			// fail-open: continue to agent
+		} else if !scanResult.Allowed {
+			if h.audit != nil {
+				evt := auditFromRequest(r, "message.blocked", "agent", agentTenant)
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
+				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
+				h.audit.Log(r.Context(), evt)
+			}
+			writeProxyJSON(w, http.StatusForbidden, map[string]string{
+				"error":  "message blocked: potential prompt injection",
+				"reason": scanResult.Reason,
+			})
+			return
+		}
 	}
 
 	// Get or create connection
@@ -115,6 +196,15 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		slog.Error("proxy send failed", "agent", agentID, "error", err)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
+	}
+
+	// Audit: message sent
+	if h.audit != nil {
+		evt := auditFromRequest(r, "message.sent", "agent", agentTenant)
+		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+			evt.ResourceID = &agentUUID
+		}
+		h.audit.Log(r.Context(), evt)
 	}
 
 	// Collect chunks until done
@@ -166,8 +256,31 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				Reason   string `json:"reason"`
 			}
 			_ = json.Unmarshal(reply.Payload, &blocked)
+			if h.audit != nil {
+				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				h.audit.Log(r.Context(), evt)
+			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error": "tool blocked: " + blocked.ToolName,
+			})
+			return
+
+		case TypeSessionHalt:
+			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
+			h.pool.Remove(agentID)
+			if h.audit != nil {
+				evt := auditFromRequest(r, "session.halted", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
+				evt.Source = "system"
+				h.audit.Log(r.Context(), evt)
+			}
+			writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"error": "session terminated for security reasons",
 			})
 			return
 		}
@@ -175,7 +288,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleStream sends a user message and streams response chunks via SSE.
-// GET /agents/:id/stream?message={json}
+// POST /agents/:id/stream
 func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 	if agentID == "" {
@@ -197,6 +310,11 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentTenant := ""
+	if inst.TenantID != nil {
+		agentTenant = *inst.TenantID
+	}
+
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return
@@ -207,19 +325,48 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read message from query param
-	messageJSON := r.URL.Query().Get("message")
-	if messageJSON == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message query param required"})
+	// Read message from POST body
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB max
+	var messageBody json.RawMessage
+	if decodeErr := json.NewDecoder(r.Body).Decode(&messageBody); decodeErr != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if len(messageJSON) > 1<<20 {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message too large"})
-		return
-	}
-	if !json.Valid([]byte(messageJSON)) {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message must be valid JSON"})
-		return
+
+	// Sentinel scan — extract content field for scanning
+	if h.sentinel != nil {
+		var msg struct {
+			Content string `json:"content"`
+		}
+		scanContent := string(messageBody)
+		if json.Unmarshal(messageBody, &msg) == nil && msg.Content != "" {
+			scanContent = msg.Content
+		}
+		scanInput := SentinelInput{
+			TenantID: middleware.GetTenantID(r.Context()),
+			Content:  scanContent,
+		}
+		if identity := auth.GetIdentity(r.Context()); identity != nil {
+			scanInput.UserID = identity.UserID
+		}
+		scanResult, scanErr := h.sentinel.Scan(r.Context(), scanInput)
+		if scanErr != nil {
+			slog.Error("sentinel scan failed", "error", scanErr)
+		} else if !scanResult.Allowed {
+			if h.audit != nil {
+				evt := auditFromRequest(r, "message.blocked", "agent", agentTenant)
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
+				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
+				h.audit.Log(r.Context(), evt)
+			}
+			writeProxyJSON(w, http.StatusForbidden, map[string]string{
+				"error":  "message blocked: potential prompt injection",
+				"reason": scanResult.Reason,
+			})
+			return
+		}
 	}
 
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
@@ -233,7 +380,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	frame := Frame{
 		Type:    TypeMessage,
 		ID:      reqID,
-		Payload: json.RawMessage(messageJSON),
+		Payload: messageBody,
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.MessageTimeout)
@@ -243,6 +390,15 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		h.pool.Remove(agentID)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
+	}
+
+	// Audit: message sent (stream)
+	if h.audit != nil {
+		evt := auditFromRequest(r, "message.sent", "agent", agentTenant)
+		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+			evt.ResourceID = &agentUUID
+		}
+		h.audit.Log(r.Context(), evt)
 	}
 
 	// Set SSE headers
@@ -295,7 +451,36 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			return
 
 		case TypeToolBlocked:
+			if h.audit != nil {
+				var blocked struct {
+					ToolName string `json:"tool_name"`
+					Reason   string `json:"reason"`
+				}
+				_ = json.Unmarshal(reply.Payload, &blocked)
+				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				h.audit.Log(r.Context(), evt)
+			}
 			writeSSE(w, "tool_blocked", reply.Payload)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return
+
+		case TypeSessionHalt:
+			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
+			h.pool.Remove(agentID)
+			if h.audit != nil {
+				evt := auditFromRequest(r, "session.halted", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
+				evt.Source = "system"
+				h.audit.Log(r.Context(), evt)
+			}
+			writeSSE(w, "error", json.RawMessage(`{"error":"session terminated for security reasons"}`))
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -397,6 +582,32 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
 		return
 	}
+}
+
+// auditFromRequest builds a base AuditEvent from the request context.
+// agentTenantID overrides the event's TenantID when non-empty, ensuring
+// audit events are attributed to the agent's tenant (not the admin's).
+func auditFromRequest(r *http.Request, action, resourceType, agentTenantID string) AuditEvent {
+	evt := AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		Source:       "api",
+	}
+	if agentTenantID != "" {
+		if tid, parseErr := uuid.Parse(agentTenantID); parseErr == nil {
+			evt.TenantID = tid
+		}
+	} else if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if tid, parseErr := uuid.Parse(identity.TenantID); parseErr == nil {
+			evt.TenantID = tid
+		}
+	}
+	if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+			evt.UserID = &uid
+		}
+	}
+	return evt
 }
 
 // verifyTenantOwnership checks that the caller owns the agent. Returns true if OK to proceed.

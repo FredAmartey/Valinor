@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"slices"
+	"net/http"
 	"sync"
 	"time"
 
@@ -23,14 +23,20 @@ type AgentConfig struct {
 // Agent is the in-guest valinor-agent that bridges the control plane to OpenClaw.
 type Agent struct {
 	cfg           AgentConfig
+	httpClient    *http.Client
 	toolAllowlist []string
-	mu            sync.RWMutex // protects toolAllowlist and config
+	toolPolicies  map[string]ToolPolicy
+	canaryTokens  []string
+	mu            sync.RWMutex // protects toolAllowlist, toolPolicies, canaryTokens, config
 	config        map[string]any
 }
 
 // NewAgent creates a new Agent.
 func NewAgent(cfg AgentConfig) *Agent {
-	return &Agent{cfg: cfg}
+	return &Agent{
+		cfg:        cfg,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 // Run starts the agent: listens for control plane connections.
@@ -125,8 +131,10 @@ func (a *Agent) handleConnection(ctx context.Context, raw net.Conn) {
 
 func (a *Agent) handleConfigUpdate(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
 	var payload struct {
-		Config        map[string]any `json:"config"`
-		ToolAllowlist []string       `json:"tool_allowlist"`
+		Config        map[string]any        `json:"config"`
+		ToolAllowlist []string              `json:"tool_allowlist"`
+		ToolPolicies  map[string]ToolPolicy `json:"tool_policies"`
+		CanaryTokens  []string              `json:"canary_tokens"`
 	}
 	if err := json.Unmarshal(frame.Payload, &payload); err != nil {
 		slog.Error("invalid config payload", "error", err)
@@ -142,6 +150,8 @@ func (a *Agent) handleConfigUpdate(ctx context.Context, conn *proxy.AgentConn, f
 	a.mu.Lock()
 	a.config = payload.Config
 	a.toolAllowlist = payload.ToolAllowlist
+	a.toolPolicies = payload.ToolPolicies
+	a.canaryTokens = payload.CanaryTokens
 	a.mu.Unlock()
 
 	slog.Info("config updated", "tools", len(payload.ToolAllowlist))
@@ -198,15 +208,4 @@ func (a *Agent) heartbeatLoop(ctx context.Context, conn *proxy.AgentConn) {
 			}
 		}
 	}
-}
-
-// isToolAllowed checks if a tool is in the allow-list.
-func (a *Agent) isToolAllowed(toolName string) bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	if len(a.toolAllowlist) == 0 {
-		return true // empty list = all allowed
-	}
-	return slices.Contains(a.toolAllowlist, toolName)
 }

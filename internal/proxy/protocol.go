@@ -21,6 +21,7 @@ const (
 	TypeChunk       = "chunk"
 	TypeConfigAck   = "config_ack"
 	TypeToolBlocked = "tool_blocked"
+	TypeSessionHalt = "session_halt"
 	TypePong        = "pong"
 	TypeError       = "error"
 )

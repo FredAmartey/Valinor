@@ -10,7 +10,10 @@ import (
 )
 
 // PushConfig sends a config_update frame to a running agent and waits for ack.
-func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32, config map[string]any, toolAllowlist []string, timeout time.Duration) error {
+func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32,
+	config map[string]any, toolAllowlist []string,
+	toolPolicies map[string]any, canaryTokens []string,
+	timeout time.Duration) error {
 	conn, err := pool.Get(ctx, agentID, cid)
 	if err != nil {
 		return fmt.Errorf("connecting to agent %s: %w", agentID, err)
@@ -19,9 +22,13 @@ func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32,
 	payload := struct {
 		Config        map[string]any `json:"config"`
 		ToolAllowlist []string       `json:"tool_allowlist"`
+		ToolPolicies  map[string]any `json:"tool_policies,omitempty"`
+		CanaryTokens  []string       `json:"canary_tokens,omitempty"`
 	}{
 		Config:        config,
 		ToolAllowlist: toolAllowlist,
+		ToolPolicies:  toolPolicies,
+		CanaryTokens:  canaryTokens,
 	}
 
 	payloadJSON, err := json.Marshal(payload)
