@@ -93,11 +93,12 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	// Check for tool calls
 	if len(choice.Message.ToolCalls) > 0 {
 		for _, tc := range choice.Message.ToolCalls {
-			if !a.isToolAllowed(tc.Function.Name) {
+			result := a.validateToolCall(tc.Function.Name, tc.Function.Arguments)
+			if !result.Allowed {
 				var payload []byte
 				payload, err = json.Marshal(map[string]string{
 					"tool_name": tc.Function.Name,
-					"reason":    "tool not in allow-list",
+					"reason":    result.Reason,
 				})
 				if err != nil {
 					slog.Error("marshal tool_blocked payload failed", "error", err)
@@ -117,6 +118,24 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		}
 		// All tools allowed — in a full implementation, we'd execute them
 		// For MVP, send the content back
+	}
+
+	// Check for canary token leak
+	if found, token := a.checkCanary(choice.Message.Content); found {
+		slog.Error("canary token detected in OpenClaw response", "token", token)
+		haltPayload, _ := json.Marshal(map[string]string{
+			"reason": "canary_leak",
+			"token":  token,
+		})
+		halt := proxy.Frame{
+			Type:    proxy.TypeSessionHalt,
+			ID:      frame.ID,
+			Payload: haltPayload,
+		}
+		if err := conn.Send(ctx, halt); err != nil {
+			slog.Error("session_halt send failed", "error", err)
+		}
+		return
 	}
 
 	// Send content as done chunk
