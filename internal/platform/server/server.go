@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
@@ -31,6 +32,7 @@ type Dependencies struct {
 	RoleHandler       *tenant.RoleHandler
 	AgentHandler      *orchestrator.Handler
 	ProxyHandler      *proxy.Handler
+	AuditHandler      *audit.Handler
 	DevMode           bool
 	DevIdentity       *auth.Identity
 	Logger            *slog.Logger
@@ -213,6 +215,15 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("GET /api/v1/users/{id}/roles",
 			rbac.RequirePermission(deps.RBAC, "users:read")(
 				http.HandlerFunc(deps.RoleHandler.HandleListUserRoles),
+			),
+		)
+	}
+
+	// Audit routes
+	if deps.AuditHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("GET /api/v1/audit/events",
+			rbac.RequirePermission(deps.RBAC, "audit:read")(
+				http.HandlerFunc(deps.AuditHandler.HandleListEvents),
 			),
 		)
 	}
