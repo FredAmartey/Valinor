@@ -148,6 +148,12 @@ func run() error {
 		slog.Info("audit logger started")
 	}
 
+	// Audit query handler
+	var auditHandler *audit.Handler
+	if pool != nil {
+		auditHandler = audit.NewHandler(pool)
+	}
+
 	// Sentinel
 	var sentinelScanner sentinel.Sentinel = sentinel.NopSentinel{}
 	if cfg.Sentinel.Enabled {
@@ -226,6 +232,7 @@ func run() error {
 		RoleHandler:       roleHandler,
 		AgentHandler:      agentHandler,
 		ProxyHandler:      proxyHandler,
+		AuditHandler:      auditHandler,
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
 		Logger:            logger,
@@ -255,8 +262,8 @@ type configPusherAdapter struct {
 	timeout time.Duration
 }
 
-func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string) error {
-	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, a.timeout)
+func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string) error {
+	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, toolPolicies, canaryTokens, a.timeout)
 }
 
 // sentinelAdapter bridges sentinel.Sentinel to proxy.Sentinel.

@@ -51,7 +51,7 @@ func TestPushConfig_Success(t *testing.T) {
 	config := map[string]any{"model": "gpt-4o"}
 	allowlist := []string{"search_players", "get_report"}
 
-	err = proxy.PushConfig(ctx, pool, "agent-1", cid, config, allowlist, 5*time.Second)
+	err = proxy.PushConfig(ctx, pool, "agent-1", cid, config, allowlist, nil, nil, 5*time.Second)
 	require.NoError(t, err)
 
 	<-done
@@ -73,7 +73,7 @@ func TestPushConfig_NoListener(t *testing.T) {
 	pool := proxy.NewConnPool(transport)
 	defer pool.Close()
 
-	err := proxy.PushConfig(context.Background(), pool, "agent-bad", 99, nil, nil, 2*time.Second)
+	err := proxy.PushConfig(context.Background(), pool, "agent-bad", 99, nil, nil, nil, nil, 2*time.Second)
 	assert.Error(t, err)
 }
 
@@ -103,6 +103,6 @@ func TestPushConfig_Timeout(t *testing.T) {
 		conn.Close()
 	}()
 
-	err = proxy.PushConfig(ctx, pool, "agent-1", cid, nil, nil, 500*time.Millisecond)
+	err = proxy.PushConfig(ctx, pool, "agent-1", cid, nil, nil, nil, nil, 500*time.Millisecond)
 	assert.Error(t, err)
 }

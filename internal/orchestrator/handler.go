@@ -14,7 +14,7 @@ import (
 
 // ConfigPusher pushes config to a running agent over vsock.
 type ConfigPusher interface {
-	PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string) error
+	PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string) error
 }
 
 // Handler handles HTTP requests for agent lifecycle.
@@ -234,7 +234,7 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 
 	// Best-effort push to running agent via vsock
 	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
-		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist); pushErr != nil {
+		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist, nil, nil); pushErr != nil {
 			slog.Warn("config push to agent failed", "id", id, "error", pushErr)
 		}
 	}
