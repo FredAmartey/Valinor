@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -102,4 +103,53 @@ func TestAgent_ToolAllowList(t *testing.T) {
 	// Empty list = all allowed
 	agent.toolAllowlist = nil
 	assert.True(t, agent.isToolAllowed("anything"))
+}
+
+func TestAgent_ConfigUpdate_ToolPoliciesAndCanary(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	agent := &Agent{
+		cfg:        AgentConfig{OpenClawURL: "http://localhost:8081"},
+		httpClient: &http.Client{Timeout: 2 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	// Skip initial heartbeat
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	// Send config with tool_policies and canary_tokens
+	configPayload := json.RawMessage(`{
+		"config":{"model":"gpt-4o"},
+		"tool_allowlist":["search_players"],
+		"tool_policies":{"search_players":{"allowed_params":["league","position"],"denied_params":["salary"]}},
+		"canary_tokens":["CANARY-abc123"]
+	}`)
+	configFrame := proxy.Frame{
+		Type:    proxy.TypeConfigUpdate,
+		ID:      "cfg-2",
+		Payload: configPayload,
+	}
+	err = cp.Send(ctx, configFrame)
+	require.NoError(t, err)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeConfigAck, reply.Type)
+
+	// Verify policies applied
+	agent.mu.RLock()
+	assert.Equal(t, []string{"search_players"}, agent.toolAllowlist)
+	assert.Contains(t, agent.toolPolicies, "search_players")
+	assert.Equal(t, []string{"salary"}, agent.toolPolicies["search_players"].DeniedParams)
+	assert.Equal(t, []string{"CANARY-abc123"}, agent.canaryTokens)
+	agent.mu.RUnlock()
 }
