@@ -230,6 +230,14 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				"error": "tool blocked: " + blocked.ToolName,
 			})
 			return
+
+		case TypeSessionHalt:
+			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
+			h.pool.Remove(agentID)
+			writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"error": "session terminated for security reasons",
+			})
+			return
 		}
 	}
 }
@@ -370,6 +378,15 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 
 		case TypeToolBlocked:
 			writeSSE(w, "tool_blocked", reply.Payload)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return
+
+		case TypeSessionHalt:
+			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
+			h.pool.Remove(agentID)
+			writeSSE(w, "error", json.RawMessage(`{"error":"session terminated for security reasons"}`))
 			if flusher != nil {
 				flusher.Flush()
 			}
