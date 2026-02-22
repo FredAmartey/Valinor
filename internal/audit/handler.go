@@ -2,8 +2,8 @@ package audit
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,11 +24,16 @@ func NewHandler(db database.Querier) *Handler {
 // HandleListEvents returns audit events for the current tenant.
 // GET /api/v1/audit/events?limit=50&after=<timestamp>
 func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
+	tenantIDStr := middleware.GetTenantID(r.Context())
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		writeAuditJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant context"})
+		return
+	}
 
 	limit := 50
 	if raw := r.URL.Query().Get("limit"); raw != "" {
-		if n, err := parsePositiveInt(raw); err == nil && n > 0 && n <= 200 {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 200 {
 			limit = n
 		}
 	}
@@ -96,15 +101,4 @@ func writeAuditJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func parsePositiveInt(s string) (int, error) {
-	var n int
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("invalid")
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n, nil
 }

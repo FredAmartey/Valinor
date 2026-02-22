@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -209,15 +208,4 @@ func (a *Agent) heartbeatLoop(ctx context.Context, conn *proxy.AgentConn) {
 			}
 		}
 	}
-}
-
-// isToolAllowed checks if a tool is in the allow-list.
-func (a *Agent) isToolAllowed(toolName string) bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	if len(a.toolAllowlist) == 0 {
-		return true // empty list = all allowed
-	}
-	return slices.Contains(a.toolAllowlist, toolName)
 }

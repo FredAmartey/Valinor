@@ -129,11 +129,18 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sentinel scan
+	// Sentinel scan — extract content field for scanning
 	if h.sentinel != nil {
+		var msg struct {
+			Content string `json:"content"`
+		}
+		scanContent := string(body)
+		if json.Unmarshal(body, &msg) == nil && msg.Content != "" {
+			scanContent = msg.Content
+		}
 		scanInput := SentinelInput{
 			TenantID: middleware.GetTenantID(r.Context()),
-			Content:  string(body),
+			Content:  scanContent,
 		}
 		if identity := auth.GetIdentity(r.Context()); identity != nil {
 			scanInput.UserID = identity.UserID
@@ -145,8 +152,9 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		} else if !scanResult.Allowed {
 			if h.audit != nil {
 				evt := auditFromRequest(r, "message.blocked", "agent")
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
 				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
 				h.audit.Log(r.Context(), evt)
 			}
@@ -187,8 +195,9 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	// Audit: message sent
 	if h.audit != nil {
 		evt := auditFromRequest(r, "message.sent", "agent")
-		agentUUID, _ := uuid.Parse(agentID)
-		evt.ResourceID = &agentUUID
+		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+			evt.ResourceID = &agentUUID
+		}
 		h.audit.Log(r.Context(), evt)
 	}
 
@@ -313,11 +322,18 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sentinel scan
+	// Sentinel scan — extract content field for scanning
 	if h.sentinel != nil {
+		var msg struct {
+			Content string `json:"content"`
+		}
+		scanContent := string(messageBody)
+		if json.Unmarshal(messageBody, &msg) == nil && msg.Content != "" {
+			scanContent = msg.Content
+		}
 		scanInput := SentinelInput{
 			TenantID: middleware.GetTenantID(r.Context()),
-			Content:  string(messageBody),
+			Content:  scanContent,
 		}
 		if identity := auth.GetIdentity(r.Context()); identity != nil {
 			scanInput.UserID = identity.UserID
@@ -328,8 +344,9 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		} else if !scanResult.Allowed {
 			if h.audit != nil {
 				evt := auditFromRequest(r, "message.blocked", "agent")
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
 				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
 				h.audit.Log(r.Context(), evt)
 			}
@@ -367,8 +384,9 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	// Audit: message sent (stream)
 	if h.audit != nil {
 		evt := auditFromRequest(r, "message.sent", "agent")
-		agentUUID, _ := uuid.Parse(agentID)
-		evt.ResourceID = &agentUUID
+		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+			evt.ResourceID = &agentUUID
+		}
 		h.audit.Log(r.Context(), evt)
 	}
 

@@ -66,8 +66,6 @@ func (l *AsyncLogger) Log(_ context.Context, event Event) {
 func (l *AsyncLogger) Close() error {
 	l.cancel()
 	l.wg.Wait()
-	// Drain any remaining events
-	l.flush(l.drainAll())
 	return nil
 }
 

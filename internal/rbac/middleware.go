@@ -71,7 +71,6 @@ func RequirePermission(engine *Evaluator, permission string, opts ...MiddlewareO
 
 			if !decision.Allowed {
 				if mc.audit != nil {
-					identity := auth.GetIdentity(r.Context())
 					var evt AuditEvent
 					evt.Action = "access.denied"
 					evt.Metadata = map[string]any{
@@ -79,13 +78,11 @@ func RequirePermission(engine *Evaluator, permission string, opts ...MiddlewareO
 						"reason":     decision.Reason,
 					}
 					evt.Source = "api"
-					if identity != nil {
-						if tid, parseErr := uuid.Parse(identity.TenantID); parseErr == nil {
-							evt.TenantID = tid
-						}
-						if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-							evt.UserID = &uid
-						}
+					if tid, parseErr := uuid.Parse(identity.TenantID); parseErr == nil {
+						evt.TenantID = tid
+					}
+					if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+						evt.UserID = &uid
 					}
 					mc.audit.Log(r.Context(), evt)
 				}

@@ -6,11 +6,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
-func TestHandleListEvents_RequiresTenantID(t *testing.T) {
+func TestHandleListEvents_NilDB(t *testing.T) {
 	h := NewHandler(nil)
 	req := httptest.NewRequest("GET", "/api/v1/audit/events", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
 	w := httptest.NewRecorder()
 
 	h.HandleListEvents(w, req)
@@ -19,9 +21,21 @@ func TestHandleListEvents_RequiresTenantID(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"count":0`)
 }
 
+func TestHandleListEvents_InvalidTenant(t *testing.T) {
+	h := NewHandler(nil)
+	req := httptest.NewRequest("GET", "/api/v1/audit/events", nil)
+	// No tenant ID in context — should return 400
+	w := httptest.NewRecorder()
+
+	h.HandleListEvents(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestHandleListEvents_WithLimit(t *testing.T) {
 	h := NewHandler(nil)
 	req := httptest.NewRequest("GET", "/api/v1/audit/events?limit=10", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
 	w := httptest.NewRecorder()
 
 	h.HandleListEvents(w, req)

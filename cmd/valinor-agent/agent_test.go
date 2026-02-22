@@ -91,20 +91,6 @@ func TestAgent_ConfigUpdate(t *testing.T) {
 	assert.Equal(t, []string{"search"}, agent.toolAllowlist)
 }
 
-func TestAgent_ToolAllowList(t *testing.T) {
-	agent := &Agent{
-		toolAllowlist: []string{"search_players", "get_report"},
-	}
-
-	assert.True(t, agent.isToolAllowed("search_players"))
-	assert.True(t, agent.isToolAllowed("get_report"))
-	assert.False(t, agent.isToolAllowed("delete_all"))
-
-	// Empty list = all allowed
-	agent.toolAllowlist = nil
-	assert.True(t, agent.isToolAllowed("anything"))
-}
-
 func TestAgent_ConfigUpdate_ToolPoliciesAndCanary(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()
