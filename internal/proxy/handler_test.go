@@ -7,14 +7,29 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/proxy"
 )
+
+// withTestAuth injects auth identity and tenant context into a request for testing.
+func withTestAuth(req *http.Request, tenantID string) *http.Request {
+	ctx := req.Context()
+	ctx = auth.WithIdentity(ctx, &auth.Identity{
+		UserID:   "test-user",
+		TenantID: tenantID,
+		Roles:    []string{"org_admin"},
+	})
+	ctx = middleware.WithTenantID(ctx, tenantID)
+	return req.WithContext(ctx)
+}
 
 // mockAgentStore implements the interface proxy.Handler needs to look up agents.
 type mockAgentStore struct {
@@ -65,6 +80,7 @@ func TestHandleMessage_Success(t *testing.T) {
 	body := `{"role":"user","content":"hello"}`
 	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(body))
 	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()
 
 	handler.HandleMessage(w, req)
@@ -125,6 +141,7 @@ func TestHandleMessage_AgentNotRunning(t *testing.T) {
 	body := `{"role":"user","content":"hello"}`
 	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(body))
 	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()
 
 	handler.HandleMessage(w, req)
@@ -190,9 +207,10 @@ func TestHandleStream_SSE(t *testing.T) {
 		_ = ac.Send(ctx, chunk2)
 	}()
 
-	body := `{"role":"user","content":"hello"}`
+	body := url.QueryEscape(`{"role":"user","content":"hello"}`)
 	req := httptest.NewRequest("GET", "/agents/"+agentID+"/stream?message="+body, nil)
 	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()
 
 	handler.HandleStream(w, req)
@@ -259,9 +277,10 @@ func TestHandleContext_Success(t *testing.T) {
 		_ = ac.Send(ctx, ack)
 	}()
 
-	body := `{"context":"The player is 23 years old"}`
-	req := httptest.NewRequest("POST", "/agents/"+agentID+"/context", bytes.NewBufferString(body))
+	ctxBody := `{"context":"The player is 23 years old"}`
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/context", bytes.NewBufferString(ctxBody))
 	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()
 
 	handler.HandleContext(w, req)

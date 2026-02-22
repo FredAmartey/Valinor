@@ -60,6 +60,7 @@ func TestEndToEnd_MessageRoundTrip(t *testing.T) {
 	body := `{"role":"user","content":"What is 2+2?"}`
 	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(body))
 	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()
 
 	handler.HandleMessage(w, req)
@@ -84,6 +85,7 @@ func TestEndToEnd_MessageRoundTrip(t *testing.T) {
 	streamMsg := url.QueryEscape(`{"role":"user","content":"stream test"}`)
 	req2 := httptest.NewRequest("GET", "/agents/"+agentID+"/stream?message="+streamMsg, nil)
 	req2.SetPathValue("id", agentID)
+	req2 = withTestAuth(req2, tenantID)
 	w2 := httptest.NewRecorder()
 
 	handler.HandleStream(w2, req2)

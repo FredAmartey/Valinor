@@ -23,7 +23,7 @@ func NewAgentConn(conn net.Conn) *AgentConn {
 }
 
 // Send writes a length-prefixed Frame to the connection.
-func (c *AgentConn) Send(_ context.Context, frame Frame) error {
+func (c *AgentConn) Send(ctx context.Context, frame Frame) error {
 	data, err := EncodeFrame(frame)
 	if err != nil {
 		return fmt.Errorf("encoding frame: %w", err)
@@ -31,6 +31,11 @@ func (c *AgentConn) Send(_ context.Context, frame Frame) error {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = c.conn.SetWriteDeadline(deadline)
+		defer func() { _ = c.conn.SetWriteDeadline(time.Time{}) }()
+	}
 
 	if _, err := c.conn.Write(data); err != nil {
 		return fmt.Errorf("writing frame: %w", err)

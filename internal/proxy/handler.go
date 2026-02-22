@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
 // AgentLookup provides agent instance lookups for the proxy handler.
@@ -63,6 +65,10 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
+		return
+	}
+
+	if !verifyTenantOwnership(w, r, inst) {
 		return
 	}
 
@@ -186,6 +192,10 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !verifyTenantOwnership(w, r, inst) {
+		return
+	}
+
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return
@@ -200,6 +210,14 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	messageJSON := r.URL.Query().Get("message")
 	if messageJSON == "" {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message query param required"})
+		return
+	}
+	if len(messageJSON) > 1<<20 {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message too large"})
+		return
+	}
+	if !json.Valid([]byte(messageJSON)) {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message must be valid JSON"})
 		return
 	}
 
@@ -231,6 +249,10 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
+
+	// Disable server write timeout for this SSE stream only
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
 
 	flusher, _ := w.(http.Flusher)
 
@@ -299,6 +321,10 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !verifyTenantOwnership(w, r, inst) {
+		return
+	}
+
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return
@@ -353,6 +379,23 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+}
+
+// verifyTenantOwnership checks that the caller owns the agent. Returns true if OK to proceed.
+func verifyTenantOwnership(w http.ResponseWriter, r *http.Request, inst *orchestrator.AgentInstance) bool {
+	identity := auth.GetIdentity(r.Context())
+	if identity == nil {
+		writeProxyJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return false
+	}
+	if !identity.IsPlatformAdmin {
+		tenantID := middleware.GetTenantID(r.Context())
+		if inst.TenantID == nil || *inst.TenantID != tenantID {
+			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
+			return false
+		}
+	}
+	return true
 }
 
 func writeProxyJSON(w http.ResponseWriter, status int, v any) {

@@ -95,13 +95,18 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	if len(choice.Message.ToolCalls) > 0 {
 		for _, tc := range choice.Message.ToolCalls {
 			if !a.isToolAllowed(tc.Function.Name) {
+				payload, err := json.Marshal(map[string]string{
+					"tool_name": tc.Function.Name,
+					"reason":    "tool not in allow-list",
+				})
+				if err != nil {
+					slog.Error("marshal tool_blocked payload failed", "error", err)
+					return
+				}
 				blocked := proxy.Frame{
-					Type: proxy.TypeToolBlocked,
-					ID:   frame.ID,
-					Payload: mustMarshal(map[string]string{
-						"tool_name": tc.Function.Name,
-						"reason":    "tool not in allow-list",
-					}),
+					Type:    proxy.TypeToolBlocked,
+					ID:      frame.ID,
+					Payload: payload,
 				}
 				if err := conn.Send(ctx, blocked); err != nil {
 					slog.Error("tool_blocked send failed", "error", err)
@@ -115,13 +120,18 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 
 	// Send content as done chunk
 	content := choice.Message.Content
+	payload, err := json.Marshal(map[string]any{
+		"content": content,
+		"done":    true,
+	})
+	if err != nil {
+		slog.Error("marshal chunk payload failed", "error", err)
+		return
+	}
 	chunk := proxy.Frame{
-		Type: proxy.TypeChunk,
-		ID:   frame.ID,
-		Payload: mustMarshal(map[string]any{
-			"content": content,
-			"done":    true,
-		}),
+		Type:    proxy.TypeChunk,
+		ID:      frame.ID,
+		Payload: payload,
 	}
 	if err := conn.Send(ctx, chunk); err != nil {
 		slog.Error("chunk send failed", "error", err)
@@ -130,21 +140,18 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 
 func (a *Agent) sendError(ctx context.Context, conn *proxy.AgentConn, reqID, code, message string) {
 	slog.Error("agent error", "code", code, "message", message)
+	payload, err := json.Marshal(map[string]string{
+		"code":    code,
+		"message": message,
+	})
+	if err != nil {
+		slog.Error("marshal error payload failed", "error", err)
+		return
+	}
 	errFrame := proxy.Frame{
-		Type: proxy.TypeError,
-		ID:   reqID,
-		Payload: mustMarshal(map[string]string{
-			"code":    code,
-			"message": message,
-		}),
+		Type:    proxy.TypeError,
+		ID:      reqID,
+		Payload: payload,
 	}
 	_ = conn.Send(ctx, errFrame)
-}
-
-func mustMarshal(v any) json.RawMessage {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("mustMarshal: %v", err))
-	}
-	return data
 }
