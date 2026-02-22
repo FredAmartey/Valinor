@@ -14,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/valinor-ai/valinor/internal/proxy"
 	"github.com/valinor-ai/valinor/internal/rbac"
 	"github.com/valinor-ai/valinor/internal/tenant"
 )
@@ -29,6 +30,7 @@ type Dependencies struct {
 	UserHandler       *tenant.UserHandler
 	RoleHandler       *tenant.RoleHandler
 	AgentHandler      *orchestrator.Handler
+	ProxyHandler      *proxy.Handler
 	DevMode           bool
 	DevIdentity       *auth.Identity
 	Logger            *slog.Logger
@@ -102,6 +104,25 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("POST /api/v1/agents/{id}/configure",
 			rbac.RequirePermission(deps.RBAC, "agents:write")(
 				http.HandlerFunc(deps.AgentHandler.HandleConfigure),
+			),
+		)
+	}
+
+	// Proxy routes (agent messaging)
+	if deps.ProxyHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("POST /api/v1/agents/{id}/message",
+			rbac.RequirePermission(deps.RBAC, "agents:write")(
+				http.HandlerFunc(deps.ProxyHandler.HandleMessage),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/agents/{id}/stream",
+			rbac.RequirePermission(deps.RBAC, "agents:write")(
+				http.HandlerFunc(deps.ProxyHandler.HandleStream),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/agents/{id}/context",
+			rbac.RequirePermission(deps.RBAC, "agents:write")(
+				http.HandlerFunc(deps.ProxyHandler.HandleContext),
 			),
 		)
 	}
