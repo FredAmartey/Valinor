@@ -129,6 +129,28 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sentinel scan
+	if h.sentinel != nil {
+		scanInput := SentinelInput{
+			TenantID: middleware.GetTenantID(r.Context()),
+			Content:  string(body),
+		}
+		if identity := auth.GetIdentity(r.Context()); identity != nil {
+			scanInput.UserID = identity.UserID
+		}
+		scanResult, scanErr := h.sentinel.Scan(r.Context(), scanInput)
+		if scanErr != nil {
+			slog.Error("sentinel scan failed", "error", scanErr)
+			// fail-open: continue to agent
+		} else if !scanResult.Allowed {
+			writeProxyJSON(w, http.StatusForbidden, map[string]string{
+				"error":  "message blocked: potential prompt injection",
+				"reason": scanResult.Reason,
+			})
+			return
+		}
+	}
+
 	// Get or create connection
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
 	if err != nil {
@@ -251,6 +273,27 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&messageBody); err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
+	}
+
+	// Sentinel scan
+	if h.sentinel != nil {
+		scanInput := SentinelInput{
+			TenantID: middleware.GetTenantID(r.Context()),
+			Content:  string(messageBody),
+		}
+		if identity := auth.GetIdentity(r.Context()); identity != nil {
+			scanInput.UserID = identity.UserID
+		}
+		scanResult, scanErr := h.sentinel.Scan(r.Context(), scanInput)
+		if scanErr != nil {
+			slog.Error("sentinel scan failed", "error", scanErr)
+		} else if !scanResult.Allowed {
+			writeProxyJSON(w, http.StatusForbidden, map[string]string{
+				"error":  "message blocked: potential prompt injection",
+				"reason": scanResult.Reason,
+			})
+			return
+		}
 	}
 
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
