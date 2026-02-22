@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
@@ -81,8 +80,8 @@ func TestEndToEnd_MessageRoundTrip(t *testing.T) {
 
 	go runStreamingMockAgent(t, ctx, ln2)
 
-	streamMsg := url.QueryEscape(`{"role":"user","content":"stream test"}`)
-	req2 := httptest.NewRequest("GET", "/agents/"+agentID+"/stream?message="+streamMsg, nil)
+	streamBody := `{"role":"user","content":"stream test"}`
+	req2 := httptest.NewRequest("POST", "/agents/"+agentID+"/stream", bytes.NewBufferString(streamBody))
 	req2.SetPathValue("id", agentID)
 	req2 = withTestAuth(req2, tenantID)
 	w2 := httptest.NewRecorder()

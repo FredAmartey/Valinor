@@ -115,7 +115,7 @@ func New(addr string, deps Dependencies) *Server {
 				http.HandlerFunc(deps.ProxyHandler.HandleMessage),
 			),
 		)
-		protectedMux.Handle("GET /api/v1/agents/{id}/stream",
+		protectedMux.Handle("POST /api/v1/agents/{id}/stream",
 			rbac.RequirePermission(deps.RBAC, "agents:write")(
 				http.HandlerFunc(deps.ProxyHandler.HandleStream),
 			),

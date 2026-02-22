@@ -175,7 +175,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleStream sends a user message and streams response chunks via SSE.
-// GET /agents/:id/stream?message={json}
+// POST /agents/:id/stream
 func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 	if agentID == "" {
@@ -207,18 +207,11 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read message from query param
-	messageJSON := r.URL.Query().Get("message")
-	if messageJSON == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message query param required"})
-		return
-	}
-	if len(messageJSON) > 1<<20 {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message too large"})
-		return
-	}
-	if !json.Valid([]byte(messageJSON)) {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message must be valid JSON"})
+	// Read message from POST body
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB max
+	var messageBody json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&messageBody); err != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 
@@ -233,7 +226,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	frame := Frame{
 		Type:    TypeMessage,
 		ID:      reqID,
-		Payload: json.RawMessage(messageJSON),
+		Payload: messageBody,
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.MessageTimeout)

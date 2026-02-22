@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
@@ -207,8 +206,8 @@ func TestHandleStream_SSE(t *testing.T) {
 		_ = ac.Send(ctx, chunk2)
 	}()
 
-	body := url.QueryEscape(`{"role":"user","content":"hello"}`)
-	req := httptest.NewRequest("GET", "/agents/"+agentID+"/stream?message="+body, nil)
+	streamBody := `{"role":"user","content":"hello"}`
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/stream", bytes.NewBufferString(streamBody))
 	req.SetPathValue("id", agentID)
 	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()

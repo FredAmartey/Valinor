@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"slices"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type AgentConfig struct {
 // Agent is the in-guest valinor-agent that bridges the control plane to OpenClaw.
 type Agent struct {
 	cfg           AgentConfig
+	httpClient    *http.Client
 	toolAllowlist []string
 	mu            sync.RWMutex // protects toolAllowlist and config
 	config        map[string]any
@@ -30,7 +32,10 @@ type Agent struct {
 
 // NewAgent creates a new Agent.
 func NewAgent(cfg AgentConfig) *Agent {
-	return &Agent{cfg: cfg}
+	return &Agent{
+		cfg:        cfg,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 // Run starts the agent: listens for control plane connections.

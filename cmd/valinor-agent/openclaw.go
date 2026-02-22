@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/valinor-ai/valinor/internal/proxy"
 )
@@ -59,8 +58,7 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
+	resp, err := a.httpClient.Do(httpReq)
 	if err != nil {
 		a.sendError(ctx, conn, frame.ID, "openclaw_error", fmt.Sprintf("OpenClaw request failed: %v", err))
 		return

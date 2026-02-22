@@ -31,7 +31,8 @@ func TestOpenClawProxy_Message(t *testing.T) {
 	defer mockOpenClaw.Close()
 
 	agent := &Agent{
-		cfg: AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		cfg:        AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Use net.Pipe for the vsock side
@@ -100,6 +101,7 @@ func TestOpenClawProxy_ToolBlocked(t *testing.T) {
 
 	agent := &Agent{
 		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
 		toolAllowlist: []string{"search_players"}, // delete_all_data is NOT allowed
 	}
 
