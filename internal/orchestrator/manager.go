@@ -31,7 +31,7 @@ type Manager struct {
 }
 
 func NewManager(pool *database.Pool, driver VMDriver, store *Store, cfg ManagerConfig) *Manager {
-	if cfg.WarmPoolSize <= 0 {
+	if cfg.WarmPoolSize < 0 {
 		cfg.WarmPoolSize = 2
 	}
 	if cfg.HealthInterval <= 0 {
@@ -56,8 +56,12 @@ func (m *Manager) Provision(ctx context.Context, tenantID string, opts Provision
 	// Build config string for claim
 	configStr := "{}"
 	if opts.Config != nil {
-		configJSON, _ := json.Marshal(opts.Config)
-		configStr = string(configJSON)
+		configJSON, marshalErr := json.Marshal(opts.Config)
+		if marshalErr != nil {
+			slog.Warn("failed to marshal config, using default", "error", marshalErr)
+		} else {
+			configStr = string(configJSON)
+		}
 	}
 
 	// Try claiming a warm VM — dept/config are set atomically in the claim query.
@@ -78,11 +82,10 @@ func (m *Manager) Provision(ctx context.Context, tenantID string, opts Provision
 }
 
 func (m *Manager) coldStart(ctx context.Context, tenantID string, opts ProvisionOpts) (*AgentInstance, error) {
-	// Hold mutex from CID allocation through DB insert to prevent TOCTOU races.
+	// Allocate CID under lock — narrow scope so driver.Start() doesn't block others.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	cid, err := m.store.NextVsockCID(ctx, m.pool)
+	m.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("allocating vsock CID: %w", err)
 	}
@@ -100,13 +103,17 @@ func (m *Manager) coldStart(ctx context.Context, tenantID string, opts Provision
 
 	handle, err := m.driver.Start(ctx, spec)
 	if err != nil {
-		return nil, fmt.Errorf("starting VM: %w: %v", ErrDriverFailure, err)
+		return nil, fmt.Errorf("starting VM: %w: %w", ErrDriverFailure, err)
 	}
 
 	configStr := "{}"
 	if opts.Config != nil {
-		configJSON, _ := json.Marshal(opts.Config)
-		configStr = string(configJSON)
+		configJSON, marshalErr := json.Marshal(opts.Config)
+		if marshalErr != nil {
+			slog.Warn("failed to marshal config, using default", "error", marshalErr)
+		} else {
+			configStr = string(configJSON)
+		}
 	}
 
 	inst := &AgentInstance{
@@ -234,12 +241,11 @@ func (m *Manager) ReconcileOnce(ctx context.Context) {
 }
 
 // createWarmVM allocates a CID, starts a VM, and inserts it as warm.
-// Holds the mutex from CID allocation through DB insert to prevent TOCTOU races.
 func (m *Manager) createWarmVM(ctx context.Context) {
+	// Allocate CID under lock — narrow scope so driver.Start() doesn't block others.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	cid, err := m.store.NextVsockCID(ctx, m.pool)
+	m.mu.Unlock()
 	if err != nil {
 		slog.Error("CID allocation failed", "error", err)
 		return

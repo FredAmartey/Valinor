@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -40,6 +41,14 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate department_id is a valid UUID if provided.
+	if req.DepartmentID != nil {
+		if _, err := uuid.Parse(*req.DepartmentID); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "department_id must be a valid UUID"})
+			return
+		}
+	}
+
 	inst, err := h.manager.Provision(r.Context(), tenantID, ProvisionOpts{
 		DepartmentID: req.DepartmentID,
 		Config:       req.Config,
@@ -72,9 +81,13 @@ func (h *Handler) HandleGetAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify tenant ownership (or platform admin)
+	// Verify tenant ownership (or platform admin). Fail closed if identity missing.
 	identity := auth.GetIdentity(r.Context())
-	if identity != nil && !identity.IsPlatformAdmin {
+	if identity == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+	if !identity.IsPlatformAdmin {
 		tenantID := middleware.GetTenantID(r.Context())
 		if inst.TenantID == nil || *inst.TenantID != tenantID {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
@@ -130,7 +143,11 @@ func (h *Handler) HandleDestroyAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	identity := auth.GetIdentity(r.Context())
-	if identity != nil && !identity.IsPlatformAdmin {
+	if identity == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+	if !identity.IsPlatformAdmin {
 		tenantID := middleware.GetTenantID(r.Context())
 		if inst.TenantID == nil || *inst.TenantID != tenantID {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
@@ -170,7 +187,11 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 	}
 
 	identity := auth.GetIdentity(r.Context())
-	if identity != nil && !identity.IsPlatformAdmin {
+	if identity == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+	if !identity.IsPlatformAdmin {
 		tenantID := middleware.GetTenantID(r.Context())
 		if inst.TenantID == nil || *inst.TenantID != tenantID {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
@@ -187,8 +208,16 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	configJSON, _ := json.Marshal(req.Config)
-	allowlistJSON, _ := json.Marshal(req.ToolAllowlist)
+	configJSON, err := json.Marshal(req.Config)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid config"})
+		return
+	}
+	allowlistJSON, err := json.Marshal(req.ToolAllowlist)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tool_allowlist"})
+		return
+	}
 
 	if updateErr := h.manager.UpdateConfig(r.Context(), id, string(configJSON), string(allowlistJSON)); updateErr != nil {
 		slog.Error("configure failed", "id", id, "error", updateErr)
