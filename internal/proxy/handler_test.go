@@ -208,6 +208,67 @@ func TestHandleStream_SSE(t *testing.T) {
 	assert.Contains(t, respBody, `"content":"World"`)
 }
 
+func TestHandleContext_Success(t *testing.T) {
+	transport := proxy.NewTCPTransport(9840)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(3)
+	agentID := "agent-1"
+	tenantID := "tenant-1"
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		ConfigTimeout: 5 * time.Second,
+	})
+
+	ctx := context.Background()
+	ln, err := transport.Listen(ctx, cid)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	// Mock agent that acks context updates
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		ack := proxy.Frame{
+			Type:    proxy.TypeConfigAck,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"applied":true}`),
+		}
+		_ = ac.Send(ctx, ack)
+	}()
+
+	body := `{"context":"The player is 23 years old"}`
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/context", bytes.NewBufferString(body))
+	req.SetPathValue("id", agentID)
+	w := httptest.NewRecorder()
+
+	handler.HandleContext(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 // mockAgent accepts one connection, reads a message frame, and replies with a done chunk.
 func mockAgent(t *testing.T, ln net.Listener) {
 	t.Helper()

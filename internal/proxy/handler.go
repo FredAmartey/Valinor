@@ -280,6 +280,81 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleContext pushes a context update to a running agent.
+// POST /agents/:id/context
+func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("id")
+	if agentID == "" {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		return
+	}
+
+	inst, err := h.agents.GetByID(r.Context(), agentID)
+	if err != nil {
+		if errors.Is(err, orchestrator.ErrVMNotFound) {
+			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
+			return
+		}
+		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
+		return
+	}
+
+	if inst.Status != orchestrator.StatusRunning {
+		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
+		return
+	}
+
+	if inst.VsockCID == nil {
+		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var body json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
+	if err != nil {
+		slog.Error("proxy dial failed", "agent", agentID, "error", err)
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
+		return
+	}
+
+	reqID := uuid.New().String()
+	frame := Frame{
+		Type:    TypeContextUpdate,
+		ID:      reqID,
+		Payload: body,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.ConfigTimeout)
+	defer cancel()
+
+	if err := conn.Send(ctx, frame); err != nil {
+		h.pool.Remove(agentID)
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
+		return
+	}
+
+	// Wait for ack
+	reply, err := conn.Recv(ctx)
+	if err != nil {
+		h.pool.Remove(agentID)
+		writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
+		return
+	}
+
+	if reply.Type == TypeError {
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
+		return
+	}
+
+	writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+}
+
 func writeProxyJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
