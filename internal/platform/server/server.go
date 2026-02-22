@@ -65,7 +65,7 @@ func New(addr string, deps Dependencies) *Server {
 		httpServer: &http.Server{
 			Addr:         addr,
 			ReadTimeout:  15 * time.Second,
-			WriteTimeout: 15 * time.Second,
+			WriteTimeout: 0, // SSE streams have no server-side timeout; client disconnects end them
 			IdleTimeout:  60 * time.Second,
 		},
 		protectedMux: protectedMux,
