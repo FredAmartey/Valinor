@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -11,14 +12,20 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
+// ConfigPusher pushes config to a running agent over vsock.
+type ConfigPusher interface {
+	PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string) error
+}
+
 // Handler handles HTTP requests for agent lifecycle.
 type Handler struct {
-	manager *Manager
+	manager      *Manager
+	configPusher ConfigPusher // optional, nil = no vsock push
 }
 
 // NewHandler creates a new orchestrator Handler.
-func NewHandler(manager *Manager) *Handler {
-	return &Handler{manager: manager}
+func NewHandler(manager *Manager, pusher ConfigPusher) *Handler {
+	return &Handler{manager: manager, configPusher: pusher}
 }
 
 // HandleProvision creates a new agent for the caller's tenant.
@@ -223,6 +230,13 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		slog.Error("configure failed", "id", id, "error", updateErr)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
 		return
+	}
+
+	// Best-effort push to running agent via vsock
+	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
+		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist); pushErr != nil {
+			slog.Warn("config push to agent failed", "id", id, "error", pushErr)
+		}
 	}
 
 	// Return updated instance

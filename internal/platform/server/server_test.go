@@ -80,7 +80,7 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	driver := orchestrator.NewMockDriver()
 	store := orchestrator.NewStore()
 	mgr := orchestrator.NewManager(nil, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
-	agentHandler := orchestrator.NewHandler(mgr)
+	agentHandler := orchestrator.NewHandler(mgr, nil)
 
 	return server.Dependencies{
 		Auth:         tokenSvc,

@@ -15,6 +15,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/server"
 	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/valinor-ai/valinor/internal/proxy"
 	"github.com/valinor-ai/valinor/internal/rbac"
 	"github.com/valinor-ai/valinor/internal/tenant"
 )
@@ -135,6 +136,8 @@ func run() error {
 	// Orchestrator — build manager and handler; background loops start after signal context.
 	var agentHandler *orchestrator.Handler
 	var orchManager *orchestrator.Manager
+	var proxyHandler *proxy.Handler
+	var connPool *proxy.ConnPool
 	if pool != nil {
 		orchStore := orchestrator.NewStore()
 		orchDriver := orchestrator.NewMockDriver() // TODO: select driver from config
@@ -146,7 +149,26 @@ func run() error {
 			MaxConsecutiveFailures: cfg.Orchestrator.MaxConsecutiveFailures,
 		}
 		orchManager = orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
-		agentHandler = orchestrator.NewHandler(orchManager)
+
+		// Proxy — agent messaging and config push
+		transport := proxy.NewTCPTransport(cfg.Proxy.TCPBasePort)
+		connPool = proxy.NewConnPool(transport)
+
+		var pusher orchestrator.ConfigPusher = &configPusherAdapter{
+			pool:    connPool,
+			timeout: time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
+		}
+
+		agentHandler = orchestrator.NewHandler(orchManager, pusher)
+
+		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{
+			MessageTimeout: time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
+			ConfigTimeout:  time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
+			PingTimeout:    time.Duration(cfg.Proxy.PingTimeout) * time.Second,
+		})
+	}
+	if connPool != nil {
+		defer connPool.Close()
 	}
 
 	// Dev mode identity
@@ -172,6 +194,7 @@ func run() error {
 		UserHandler:       userHandler,
 		RoleHandler:       roleHandler,
 		AgentHandler:      agentHandler,
+		ProxyHandler:      proxyHandler,
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
 		Logger:            logger,
@@ -193,4 +216,14 @@ func run() error {
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)
 	return srv.Start(ctx)
+}
+
+// configPusherAdapter wraps proxy.ConnPool to implement orchestrator.ConfigPusher.
+type configPusherAdapter struct {
+	pool    *proxy.ConnPool
+	timeout time.Duration
+}
+
+func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string) error {
+	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, a.timeout)
 }

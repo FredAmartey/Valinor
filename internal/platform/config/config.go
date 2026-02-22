@@ -16,6 +16,7 @@ type Config struct {
 	Log          LogConfig          `koanf:"log"`
 	Auth         AuthConfig         `koanf:"auth"`
 	Orchestrator OrchestratorConfig `koanf:"orchestrator"`
+	Proxy        ProxyConfig        `koanf:"proxy"`
 }
 
 type AuthConfig struct {
@@ -75,6 +76,14 @@ type DockerConfig struct {
 	Image string `koanf:"image"`
 }
 
+type ProxyConfig struct {
+	Transport      string `koanf:"transport"`       // "tcp" or "vsock"
+	TCPBasePort    int    `koanf:"tcp_base_port"`   // base port for TCP transport (dev)
+	MessageTimeout int    `koanf:"message_timeout"` // seconds, default 60
+	ConfigTimeout  int    `koanf:"config_timeout"`  // seconds, default 5
+	PingTimeout    int    `koanf:"ping_timeout"`    // seconds, default 3
+}
+
 func Load(configPaths ...string) (*Config, error) {
 	k := koanf.New(".")
 
@@ -98,6 +107,11 @@ func Load(configPaths ...string) (*Config, error) {
 		"orchestrator.reconcile_interval_secs":  30,
 		"orchestrator.max_consecutive_failures": 3,
 		"orchestrator.docker.image":             "valinor-agent:latest",
+		"proxy.transport":                       "tcp",
+		"proxy.tcp_base_port":                   9100,
+		"proxy.message_timeout":                 60,
+		"proxy.config_timeout":                  5,
+		"proxy.ping_timeout":                    3,
 	}, "."), nil)
 
 	// YAML file (optional)

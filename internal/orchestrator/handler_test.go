@@ -38,7 +38,7 @@ func TestHandler_Provision(t *testing.T) {
 	store := orchestrator.NewStore()
 	cfg := orchestrator.ManagerConfig{Driver: "mock"}
 	mgr := orchestrator.NewManager(pool, driver, store, cfg)
-	handler := orchestrator.NewHandler(mgr)
+	handler := orchestrator.NewHandler(mgr, nil)
 	ctx := context.Background()
 
 	// Create tenant
@@ -75,7 +75,7 @@ func TestHandler_GetAgent(t *testing.T) {
 	driver := orchestrator.NewMockDriver()
 	store := orchestrator.NewStore()
 	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
-	handler := orchestrator.NewHandler(mgr)
+	handler := orchestrator.NewHandler(mgr, nil)
 	ctx := context.Background()
 
 	// Create tenant and provision
@@ -109,7 +109,7 @@ func TestHandler_GetAgent_WrongTenant(t *testing.T) {
 	driver := orchestrator.NewMockDriver()
 	store := orchestrator.NewStore()
 	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
-	handler := orchestrator.NewHandler(mgr)
+	handler := orchestrator.NewHandler(mgr, nil)
 	ctx := context.Background()
 
 	// Create two tenants
@@ -149,7 +149,7 @@ func TestHandler_Configure(t *testing.T) {
 	driver := orchestrator.NewMockDriver()
 	store := orchestrator.NewStore()
 	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
-	handler := orchestrator.NewHandler(mgr)
+	handler := orchestrator.NewHandler(mgr, nil)
 	ctx := context.Background()
 
 	var tenantID string
@@ -189,7 +189,7 @@ func TestHandler_DestroyAgent(t *testing.T) {
 	driver := orchestrator.NewMockDriver()
 	store := orchestrator.NewStore()
 	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
-	handler := orchestrator.NewHandler(mgr)
+	handler := orchestrator.NewHandler(mgr, nil)
 	ctx := context.Background()
 
 	var tenantID string
