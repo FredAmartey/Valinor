@@ -110,7 +110,8 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 					ID:      frame.ID,
 					Payload: payload,
 				}
-				if err := conn.Send(ctx, blocked); err != nil {
+				err = conn.Send(ctx, blocked)
+				if err != nil {
 					slog.Error("tool_blocked send failed", "error", err)
 				}
 				return

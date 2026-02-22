@@ -299,6 +299,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			if flusher != nil {
 				flusher.Flush()
 			}
+			return
 		}
 	}
 }
@@ -368,20 +369,34 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Wait for ack
-	reply, err := conn.Recv(ctx)
-	if err != nil {
-		h.pool.Remove(agentID)
-		writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
+	// Wait for matching ack — skip unsolicited frames (e.g. heartbeats)
+	for {
+		reply, recvErr := conn.Recv(ctx)
+		if recvErr != nil {
+			h.pool.Remove(agentID)
+			writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
+			return
+		}
+
+		// Skip frames that don't match our request ID (e.g. heartbeats)
+		if reply.ID != reqID {
+			continue
+		}
+
+		if reply.Type == TypeError {
+			writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
+			return
+		}
+
+		if reply.Type == TypeConfigAck {
+			writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+			return
+		}
+
+		// Unexpected frame type with matching ID
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
 		return
 	}
-
-	if reply.Type == TypeError {
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
-		return
-	}
-
-	writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }
 
 // verifyTenantOwnership checks that the caller owns the agent. Returns true if OK to proceed.

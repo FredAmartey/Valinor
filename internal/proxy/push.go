@@ -44,16 +44,27 @@ func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32,
 		return fmt.Errorf("sending config to agent %s: %w", agentID, err)
 	}
 
-	// Wait for ack
-	reply, err := conn.Recv(ctx)
-	if err != nil {
-		pool.Remove(agentID)
-		return fmt.Errorf("waiting for config ack from agent %s: %w", agentID, err)
-	}
+	// Wait for matching ack — skip unsolicited frames (e.g. heartbeats)
+	for {
+		reply, recvErr := conn.Recv(ctx)
+		if recvErr != nil {
+			pool.Remove(agentID)
+			return fmt.Errorf("waiting for config ack from agent %s: %w", agentID, recvErr)
+		}
 
-	if reply.Type == TypeError {
-		return fmt.Errorf("agent %s rejected config update: %s", agentID, string(reply.Payload))
-	}
+		// Skip frames that don't match our request ID (e.g. heartbeats)
+		if reply.ID != frame.ID {
+			continue
+		}
 
-	return nil
+		if reply.Type == TypeError {
+			return fmt.Errorf("agent %s rejected config update: %s", agentID, string(reply.Payload))
+		}
+
+		if reply.Type == TypeConfigAck {
+			return nil
+		}
+
+		return fmt.Errorf("agent %s sent unexpected response type %q", agentID, reply.Type)
+	}
 }
