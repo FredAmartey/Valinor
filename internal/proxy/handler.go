@@ -167,6 +167,119 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleStream sends a user message and streams response chunks via SSE.
+// GET /agents/:id/stream?message={json}
+func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("id")
+	if agentID == "" {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		return
+	}
+
+	inst, err := h.agents.GetByID(r.Context(), agentID)
+	if err != nil {
+		if errors.Is(err, orchestrator.ErrVMNotFound) {
+			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
+			return
+		}
+		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
+		return
+	}
+
+	if inst.Status != orchestrator.StatusRunning {
+		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
+		return
+	}
+
+	if inst.VsockCID == nil {
+		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
+		return
+	}
+
+	// Read message from query param
+	messageJSON := r.URL.Query().Get("message")
+	if messageJSON == "" {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "message query param required"})
+		return
+	}
+
+	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
+	if err != nil {
+		slog.Error("proxy dial failed", "agent", agentID, "error", err)
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
+		return
+	}
+
+	reqID := uuid.New().String()
+	frame := Frame{
+		Type:    TypeMessage,
+		ID:      reqID,
+		Payload: json.RawMessage(messageJSON),
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.MessageTimeout)
+	defer cancel()
+
+	if err := conn.Send(ctx, frame); err != nil {
+		h.pool.Remove(agentID)
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, _ := w.(http.Flusher)
+
+	for {
+		reply, err := conn.Recv(ctx)
+		if err != nil {
+			h.pool.Remove(agentID)
+			return
+		}
+
+		switch reply.Type {
+		case TypeChunk:
+			var chunk struct {
+				Content string `json:"content"`
+				Done    bool   `json:"done"`
+			}
+			if err := json.Unmarshal(reply.Payload, &chunk); err != nil {
+				return
+			}
+
+			fmt.Fprintf(w, "event: chunk\ndata: %s\n\n", string(reply.Payload))
+			if flusher != nil {
+				flusher.Flush()
+			}
+
+			if chunk.Done {
+				fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+
+		case TypeError:
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", string(reply.Payload))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return
+
+		case TypeToolBlocked:
+			fmt.Fprintf(w, "event: tool_blocked\ndata: %s\n\n", string(reply.Payload))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}
+}
+
 func writeProxyJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
