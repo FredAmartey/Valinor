@@ -9,7 +9,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
-func TestHandleListEvents_NilDB(t *testing.T) {
+func TestHandleListEvents_NilPool(t *testing.T) {
 	h := NewHandler(nil)
 	req := httptest.NewRequest("GET", "/api/v1/audit/events", nil)
 	req = req.WithContext(middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))

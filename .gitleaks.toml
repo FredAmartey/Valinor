@@ -1,0 +1,5 @@
+[allowlist]
+  description = "Allow example canary tokens in design documentation"
+  paths = [
+    '''docs/plans/.*-design\.md''',
+  ]

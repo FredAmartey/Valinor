@@ -132,8 +132,8 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 			ID:      frame.ID,
 			Payload: haltPayload,
 		}
-		if err := conn.Send(ctx, halt); err != nil {
-			slog.Error("session_halt send failed", "error", err)
+		if sendErr := conn.Send(ctx, halt); sendErr != nil {
+			slog.Error("session_halt send failed", "error", sendErr)
 		}
 		return
 	}

@@ -233,6 +233,7 @@ func run() error {
 		AgentHandler:      agentHandler,
 		ProxyHandler:      proxyHandler,
 		AuditHandler:      auditHandler,
+		RBACAuditLogger:   &rbacAuditAdapter{l: auditLogger},
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
 		Logger:            logger,
@@ -294,6 +295,23 @@ type auditAdapter struct {
 }
 
 func (a *auditAdapter) Log(ctx context.Context, event proxy.AuditEvent) {
+	a.l.Log(ctx, audit.Event{
+		TenantID:     event.TenantID,
+		UserID:       event.UserID,
+		Action:       event.Action,
+		ResourceType: event.ResourceType,
+		ResourceID:   event.ResourceID,
+		Metadata:     event.Metadata,
+		Source:       event.Source,
+	})
+}
+
+// rbacAuditAdapter bridges audit.Logger to rbac.AuditLogger.
+type rbacAuditAdapter struct {
+	l audit.Logger
+}
+
+func (a *rbacAuditAdapter) Log(ctx context.Context, event rbac.AuditEvent) {
 	a.l.Log(ctx, audit.Event{
 		TenantID:     event.TenantID,
 		UserID:       event.UserID,

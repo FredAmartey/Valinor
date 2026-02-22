@@ -110,6 +110,12 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use agent's tenant for audit attribution (correct for cross-tenant admin access)
+	agentTenant := ""
+	if inst.TenantID != nil {
+		agentTenant = *inst.TenantID
+	}
+
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return
@@ -151,7 +157,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			// fail-open: continue to agent
 		} else if !scanResult.Allowed {
 			if h.audit != nil {
-				evt := auditFromRequest(r, "message.blocked", "agent")
+				evt := auditFromRequest(r, "message.blocked", "agent", agentTenant)
 				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
 					evt.ResourceID = &agentUUID
 				}
@@ -194,7 +200,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Audit: message sent
 	if h.audit != nil {
-		evt := auditFromRequest(r, "message.sent", "agent")
+		evt := auditFromRequest(r, "message.sent", "agent", agentTenant)
 		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
 			evt.ResourceID = &agentUUID
 		}
@@ -251,7 +257,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = json.Unmarshal(reply.Payload, &blocked)
 			if h.audit != nil {
-				evt := auditFromRequest(r, "tool.blocked", "agent")
+				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
 				agentUUID, _ := uuid.Parse(agentID)
 				evt.ResourceID = &agentUUID
 				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
@@ -266,7 +272,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
 			h.pool.Remove(agentID)
 			if h.audit != nil {
-				evt := auditFromRequest(r, "session.halted", "agent")
+				evt := auditFromRequest(r, "session.halted", "agent", agentTenant)
 				agentUUID, _ := uuid.Parse(agentID)
 				evt.ResourceID = &agentUUID
 				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
@@ -304,6 +310,11 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentTenant := ""
+	if inst.TenantID != nil {
+		agentTenant = *inst.TenantID
+	}
+
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return
@@ -317,7 +328,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	// Read message from POST body
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB max
 	var messageBody json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&messageBody); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&messageBody); decodeErr != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -343,7 +354,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			slog.Error("sentinel scan failed", "error", scanErr)
 		} else if !scanResult.Allowed {
 			if h.audit != nil {
-				evt := auditFromRequest(r, "message.blocked", "agent")
+				evt := auditFromRequest(r, "message.blocked", "agent", agentTenant)
 				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
 					evt.ResourceID = &agentUUID
 				}
@@ -383,7 +394,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 
 	// Audit: message sent (stream)
 	if h.audit != nil {
-		evt := auditFromRequest(r, "message.sent", "agent")
+		evt := auditFromRequest(r, "message.sent", "agent", agentTenant)
 		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
 			evt.ResourceID = &agentUUID
 		}
@@ -446,7 +457,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 					Reason   string `json:"reason"`
 				}
 				_ = json.Unmarshal(reply.Payload, &blocked)
-				evt := auditFromRequest(r, "tool.blocked", "agent")
+				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
 				agentUUID, _ := uuid.Parse(agentID)
 				evt.ResourceID = &agentUUID
 				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
@@ -462,7 +473,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
 			h.pool.Remove(agentID)
 			if h.audit != nil {
-				evt := auditFromRequest(r, "session.halted", "agent")
+				evt := auditFromRequest(r, "session.halted", "agent", agentTenant)
 				agentUUID, _ := uuid.Parse(agentID)
 				evt.ResourceID = &agentUUID
 				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
@@ -574,17 +585,25 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 }
 
 // auditFromRequest builds a base AuditEvent from the request context.
-func auditFromRequest(r *http.Request, action, resourceType string) AuditEvent {
+// agentTenantID overrides the event's TenantID when non-empty, ensuring
+// audit events are attributed to the agent's tenant (not the admin's).
+func auditFromRequest(r *http.Request, action, resourceType, agentTenantID string) AuditEvent {
 	evt := AuditEvent{
 		Action:       action,
 		ResourceType: resourceType,
 		Source:       "api",
 	}
-	if identity := auth.GetIdentity(r.Context()); identity != nil {
-		if tid, err := uuid.Parse(identity.TenantID); err == nil {
+	if agentTenantID != "" {
+		if tid, parseErr := uuid.Parse(agentTenantID); parseErr == nil {
 			evt.TenantID = tid
 		}
-		if uid, err := uuid.Parse(identity.UserID); err == nil {
+	} else if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if tid, parseErr := uuid.Parse(identity.TenantID); parseErr == nil {
+			evt.TenantID = tid
+		}
+	}
+	if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
 			evt.UserID = &uid
 		}
 	}
