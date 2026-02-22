@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/server"
 	"github.com/valinor-ai/valinor/internal/rbac"
 )
@@ -74,20 +75,30 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	rbacEngine := rbac.NewEvaluator(nil)
 	rbacEngine.RegisterRole("standard_user", []string{"agents:read", "agents:message"})
 	rbacEngine.RegisterRole("read_only", []string{"agents:read"})
+
+	// Wire a minimal agent handler (nil pool — will fail on DB calls but routes exist)
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	mgr := orchestrator.NewManager(nil, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
+	agentHandler := orchestrator.NewHandler(mgr)
+
 	return server.Dependencies{
-		Auth: tokenSvc,
-		RBAC: rbacEngine,
+		Auth:         tokenSvc,
+		RBAC:         rbacEngine,
+		AgentHandler: agentHandler,
 	}, tokenSvc
 }
 
-func TestServer_Agents_WithPermission_NoDB(t *testing.T) {
+func TestServer_Agents_WithPermission(t *testing.T) {
 	deps, tokenSvc := newTestDeps()
 	srv := server.New(":0", deps)
 
+	// Use an identity without a TenantID so the handler returns 400
+	// before hitting the DB (which is nil in this test).
+	// This verifies: route exists, auth passes, RBAC passes, handler is reached.
 	identity := &auth.Identity{
-		UserID:   "user-1",
-		TenantID: "tenant-1",
-		Roles:    []string{"standard_user"},
+		UserID: "user-1",
+		Roles:  []string{"standard_user"},
 	}
 	token, err := tokenSvc.CreateAccessToken(identity)
 	require.NoError(t, err)
@@ -98,8 +109,7 @@ func TestServer_Agents_WithPermission_NoDB(t *testing.T) {
 
 	srv.Handler().ServeHTTP(w, req)
 
-	// Without a database pool, handleListAgents returns 503
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestServer_Agents_WithoutPermission(t *testing.T) {

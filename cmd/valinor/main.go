@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/server"
@@ -131,6 +132,30 @@ func run() error {
 		"agents:read",
 	})
 
+	// Orchestrator
+	var agentHandler *orchestrator.Handler
+	if pool != nil {
+		orchStore := orchestrator.NewStore()
+		orchDriver := orchestrator.NewMockDriver() // TODO: select driver from config
+		orchCfg := orchestrator.ManagerConfig{
+			Driver:                 cfg.Orchestrator.Driver,
+			WarmPoolSize:           cfg.Orchestrator.WarmPoolSize,
+			HealthInterval:         time.Duration(cfg.Orchestrator.HealthIntervalSecs) * time.Second,
+			ReconcileInterval:      time.Duration(cfg.Orchestrator.ReconcileIntervalSecs) * time.Second,
+			MaxConsecutiveFailures: cfg.Orchestrator.MaxConsecutiveFailures,
+		}
+		orchManager := orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
+		agentHandler = orchestrator.NewHandler(orchManager)
+
+		// Start background loops (warm pool + health checks)
+		go func() {
+			if err := orchManager.Run(ctx); err != nil {
+				slog.Error("orchestrator background loops stopped", "error", err)
+			}
+		}()
+		slog.Info("orchestrator started", "driver", cfg.Orchestrator.Driver, "warm_pool", cfg.Orchestrator.WarmPoolSize)
+	}
+
 	// Dev mode identity
 	var devIdentity *auth.Identity
 	if cfg.Auth.DevMode {
@@ -153,6 +178,7 @@ func run() error {
 		DepartmentHandler: deptHandler,
 		UserHandler:       userHandler,
 		RoleHandler:       roleHandler,
+		AgentHandler:      agentHandler,
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
 		Logger:            logger,
