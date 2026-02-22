@@ -143,6 +143,13 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			slog.Error("sentinel scan failed", "error", scanErr)
 			// fail-open: continue to agent
 		} else if !scanResult.Allowed {
+			if h.audit != nil {
+				evt := auditFromRequest(r, "message.blocked", "agent")
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
+				h.audit.Log(r.Context(), evt)
+			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error":  "message blocked: potential prompt injection",
 				"reason": scanResult.Reason,
@@ -175,6 +182,14 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		slog.Error("proxy send failed", "agent", agentID, "error", err)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
+	}
+
+	// Audit: message sent
+	if h.audit != nil {
+		evt := auditFromRequest(r, "message.sent", "agent")
+		agentUUID, _ := uuid.Parse(agentID)
+		evt.ResourceID = &agentUUID
+		h.audit.Log(r.Context(), evt)
 	}
 
 	// Collect chunks until done
@@ -226,6 +241,13 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				Reason   string `json:"reason"`
 			}
 			_ = json.Unmarshal(reply.Payload, &blocked)
+			if h.audit != nil {
+				evt := auditFromRequest(r, "tool.blocked", "agent")
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				h.audit.Log(r.Context(), evt)
+			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error": "tool blocked: " + blocked.ToolName,
 			})
@@ -234,6 +256,14 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		case TypeSessionHalt:
 			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
 			h.pool.Remove(agentID)
+			if h.audit != nil {
+				evt := auditFromRequest(r, "session.halted", "agent")
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
+				evt.Source = "system"
+				h.audit.Log(r.Context(), evt)
+			}
 			writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"error": "session terminated for security reasons",
 			})
@@ -296,6 +326,13 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		if scanErr != nil {
 			slog.Error("sentinel scan failed", "error", scanErr)
 		} else if !scanResult.Allowed {
+			if h.audit != nil {
+				evt := auditFromRequest(r, "message.blocked", "agent")
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
+				h.audit.Log(r.Context(), evt)
+			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error":  "message blocked: potential prompt injection",
 				"reason": scanResult.Reason,
@@ -325,6 +362,14 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		h.pool.Remove(agentID)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
+	}
+
+	// Audit: message sent (stream)
+	if h.audit != nil {
+		evt := auditFromRequest(r, "message.sent", "agent")
+		agentUUID, _ := uuid.Parse(agentID)
+		evt.ResourceID = &agentUUID
+		h.audit.Log(r.Context(), evt)
 	}
 
 	// Set SSE headers
@@ -377,6 +422,18 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			return
 
 		case TypeToolBlocked:
+			if h.audit != nil {
+				var blocked struct {
+					ToolName string `json:"tool_name"`
+					Reason   string `json:"reason"`
+				}
+				_ = json.Unmarshal(reply.Payload, &blocked)
+				evt := auditFromRequest(r, "tool.blocked", "agent")
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				h.audit.Log(r.Context(), evt)
+			}
 			writeSSE(w, "tool_blocked", reply.Payload)
 			if flusher != nil {
 				flusher.Flush()
@@ -386,6 +443,14 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		case TypeSessionHalt:
 			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
 			h.pool.Remove(agentID)
+			if h.audit != nil {
+				evt := auditFromRequest(r, "session.halted", "agent")
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
+				evt.Source = "system"
+				h.audit.Log(r.Context(), evt)
+			}
 			writeSSE(w, "error", json.RawMessage(`{"error":"session terminated for security reasons"}`))
 			if flusher != nil {
 				flusher.Flush()
@@ -488,6 +553,24 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
 		return
 	}
+}
+
+// auditFromRequest builds a base AuditEvent from the request context.
+func auditFromRequest(r *http.Request, action, resourceType string) AuditEvent {
+	evt := AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		Source:       "api",
+	}
+	if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if tid, err := uuid.Parse(identity.TenantID); err == nil {
+			evt.TenantID = tid
+		}
+		if uid, err := uuid.Parse(identity.UserID); err == nil {
+			evt.UserID = &uid
+		}
+	}
+	return evt
 }
 
 // verifyTenantOwnership checks that the caller owns the agent. Returns true if OK to proceed.
