@@ -29,6 +29,11 @@ func TenantContext(next http.Handler) http.Handler {
 	})
 }
 
+// WithTenantID adds a tenant ID to the context (for testing).
+func WithTenantID(ctx context.Context, tenantID string) context.Context {
+	return context.WithValue(ctx, tenantContextKey{}, tenantID)
+}
+
 // GetTenantID retrieves the tenant ID from the request context.
 func GetTenantID(ctx context.Context) string {
 	if id, ok := ctx.Value(tenantContextKey{}).(string); ok {

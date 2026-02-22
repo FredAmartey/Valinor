@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/server"
@@ -131,6 +132,23 @@ func run() error {
 		"agents:read",
 	})
 
+	// Orchestrator — build manager and handler; background loops start after signal context.
+	var agentHandler *orchestrator.Handler
+	var orchManager *orchestrator.Manager
+	if pool != nil {
+		orchStore := orchestrator.NewStore()
+		orchDriver := orchestrator.NewMockDriver() // TODO: select driver from config
+		orchCfg := orchestrator.ManagerConfig{
+			Driver:                 cfg.Orchestrator.Driver,
+			WarmPoolSize:           cfg.Orchestrator.WarmPoolSize,
+			HealthInterval:         time.Duration(cfg.Orchestrator.HealthIntervalSecs) * time.Second,
+			ReconcileInterval:      time.Duration(cfg.Orchestrator.ReconcileIntervalSecs) * time.Second,
+			MaxConsecutiveFailures: cfg.Orchestrator.MaxConsecutiveFailures,
+		}
+		orchManager = orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
+		agentHandler = orchestrator.NewHandler(orchManager)
+	}
+
 	// Dev mode identity
 	var devIdentity *auth.Identity
 	if cfg.Auth.DevMode {
@@ -153,6 +171,7 @@ func run() error {
 		DepartmentHandler: deptHandler,
 		UserHandler:       userHandler,
 		RoleHandler:       roleHandler,
+		AgentHandler:      agentHandler,
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
 		Logger:            logger,
@@ -161,6 +180,16 @@ func run() error {
 	// Graceful shutdown on SIGINT/SIGTERM
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// Start orchestrator background loops with the signal-aware context.
+	if orchManager != nil {
+		go func() {
+			if err := orchManager.Run(ctx); err != nil {
+				slog.Error("orchestrator background loops stopped", "error", err)
+			}
+		}()
+		slog.Info("orchestrator started", "driver", cfg.Orchestrator.Driver, "warm_pool", cfg.Orchestrator.WarmPoolSize)
+	}
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)
 	return srv.Start(ctx)
