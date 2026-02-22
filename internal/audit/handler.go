@@ -61,13 +61,13 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 	var events []map[string]any
 	for rows.Next() {
 		var (
-			id, tid      uuid.UUID
-			uid, resID   *uuid.UUID
-			action       string
-			resType      *string
-			metadata     json.RawMessage
-			source       string
-			createdAt    time.Time
+			id, tid    uuid.UUID
+			uid, resID *uuid.UUID
+			action     string
+			resType    *string
+			metadata   json.RawMessage
+			source     string
+			createdAt  time.Time
 		)
 		if err := rows.Scan(&id, &tid, &uid, &action, &resType, &resID, &metadata, &source, &createdAt); err != nil {
 			continue

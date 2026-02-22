@@ -13,7 +13,7 @@ import (
 
 // LLMConfig configures the LLM classifier.
 type LLMConfig struct {
-	BaseURL             string  // e.g. "https://api.anthropic.com" or mock URL
+	BaseURL             string // e.g. "https://api.anthropic.com" or mock URL
 	APIKey              string
 	Model               string  // default: "claude-haiku-4-5-20251001"
 	BlockThreshold      float64 // default: 0.85
