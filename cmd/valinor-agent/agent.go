@@ -157,15 +157,7 @@ func (a *Agent) handleConfigUpdate(ctx context.Context, conn *proxy.AgentConn, f
 }
 
 func (a *Agent) handleMessage(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
-	// Stub — replaced by forwardToOpenClaw in Task 13
-	reply := proxy.Frame{
-		Type:    proxy.TypeChunk,
-		ID:      frame.ID,
-		Payload: json.RawMessage(`{"content":"[agent echo] message received","done":true}`),
-	}
-	if err := conn.Send(ctx, reply); err != nil {
-		slog.Error("message reply failed", "error", err)
-	}
+	a.forwardToOpenClaw(ctx, conn, frame)
 }
 
 func (a *Agent) handleContextUpdate(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {

@@ -1,0 +1,150 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/valinor-ai/valinor/internal/proxy"
+)
+
+// openClawResponse models the OpenClaw chat completions response.
+type openClawResponse struct {
+	Choices []struct {
+		Message struct {
+			Content   string `json:"content"`
+			ToolCalls []struct {
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+// forwardToOpenClaw sends a message to OpenClaw and returns response frames.
+func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
+	var msg struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(frame.Payload, &msg); err != nil {
+		a.sendError(ctx, conn, frame.ID, "invalid_message", "invalid message payload")
+		return
+	}
+
+	// Build OpenClaw request
+	reqBody := map[string]any{
+		"messages": []map[string]string{
+			{"role": msg.Role, "content": msg.Content},
+		},
+	}
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		a.sendError(ctx, conn, frame.ID, "marshal_error", "failed to marshal request")
+		return
+	}
+
+	url := fmt.Sprintf("%s/v1/chat/completions", a.cfg.OpenClawURL)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		a.sendError(ctx, conn, frame.ID, "request_error", "failed to create request")
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		a.sendError(ctx, conn, frame.ID, "openclaw_error", fmt.Sprintf("OpenClaw request failed: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		a.sendError(ctx, conn, frame.ID, "read_error", "failed to read OpenClaw response")
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		a.sendError(ctx, conn, frame.ID, "openclaw_error", fmt.Sprintf("OpenClaw returned %d", resp.StatusCode))
+		return
+	}
+
+	var ocResp openClawResponse
+	if err := json.Unmarshal(respBody, &ocResp); err != nil {
+		a.sendError(ctx, conn, frame.ID, "parse_error", "failed to parse OpenClaw response")
+		return
+	}
+
+	if len(ocResp.Choices) == 0 {
+		a.sendError(ctx, conn, frame.ID, "empty_response", "OpenClaw returned no choices")
+		return
+	}
+
+	choice := ocResp.Choices[0]
+
+	// Check for tool calls
+	if len(choice.Message.ToolCalls) > 0 {
+		for _, tc := range choice.Message.ToolCalls {
+			if !a.isToolAllowed(tc.Function.Name) {
+				blocked := proxy.Frame{
+					Type: proxy.TypeToolBlocked,
+					ID:   frame.ID,
+					Payload: mustMarshal(map[string]string{
+						"tool_name": tc.Function.Name,
+						"reason":    "tool not in allow-list",
+					}),
+				}
+				if err := conn.Send(ctx, blocked); err != nil {
+					slog.Error("tool_blocked send failed", "error", err)
+				}
+				return
+			}
+		}
+		// All tools allowed — in a full implementation, we'd execute them
+		// For MVP, send the content back
+	}
+
+	// Send content as done chunk
+	content := choice.Message.Content
+	chunk := proxy.Frame{
+		Type: proxy.TypeChunk,
+		ID:   frame.ID,
+		Payload: mustMarshal(map[string]any{
+			"content": content,
+			"done":    true,
+		}),
+	}
+	if err := conn.Send(ctx, chunk); err != nil {
+		slog.Error("chunk send failed", "error", err)
+	}
+}
+
+func (a *Agent) sendError(ctx context.Context, conn *proxy.AgentConn, reqID, code, message string) {
+	slog.Error("agent error", "code", code, "message", message)
+	errFrame := proxy.Frame{
+		Type: proxy.TypeError,
+		ID:   reqID,
+		Payload: mustMarshal(map[string]string{
+			"code":    code,
+			"message": message,
+		}),
+	}
+	_ = conn.Send(ctx, errFrame)
+}
+
+func mustMarshal(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("mustMarshal: %v", err))
+	}
+	return data
+}
