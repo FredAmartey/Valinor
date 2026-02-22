@@ -177,7 +177,7 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		Config        map[string]any `json:"config"`
 		ToolAllowlist []string       `json:"tool_allowlist"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -185,7 +185,7 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 	configJSON, _ := json.Marshal(req.Config)
 	allowlistJSON, _ := json.Marshal(req.ToolAllowlist)
 
-	if err := h.manager.UpdateConfig(r.Context(), id, string(configJSON), string(allowlistJSON)); err != nil {
+	if updateErr := h.manager.UpdateConfig(r.Context(), id, string(configJSON), string(allowlistJSON)); updateErr != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
 		return
 	}

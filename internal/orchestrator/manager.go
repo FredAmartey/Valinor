@@ -170,7 +170,7 @@ func (m *Manager) UpdateConfig(ctx context.Context, id, config, toolAllowlist st
 }
 
 // Run starts the warm pool reconciler and health check loops.
-// Blocks until context is cancelled.
+// Blocks until context is canceled.
 func (m *Manager) Run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
