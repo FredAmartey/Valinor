@@ -146,7 +146,7 @@ func run() error {
 			MaxConsecutiveFailures: cfg.Orchestrator.MaxConsecutiveFailures,
 		}
 		orchManager = orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
-		agentHandler = orchestrator.NewHandler(orchManager)
+		agentHandler = orchestrator.NewHandler(orchManager, nil) // proxy push wired in Task 14
 	}
 
 	// Dev mode identity
