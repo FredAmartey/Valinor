@@ -376,7 +376,7 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 		return nil, fmt.Errorf("channels ingress enabled but no providers configured")
 	}
 
-	return channels.NewHandler(ingressByProvider), nil
+	return channels.NewHandler(ingressByProvider).WithLinkStore(pool, store), nil
 }
 
 // configPusherAdapter wraps proxy.ConnPool to implement orchestrator.ConfigPusher.

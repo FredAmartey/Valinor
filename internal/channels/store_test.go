@@ -2,9 +2,11 @@ package channels_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -208,6 +210,172 @@ func TestMessageStore_InsertIdempotency_Duplicate(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
 
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelLinkStore_UpsertLink_CreatesAndUpdatesState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Link', 'tenant-link') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var userID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO users (tenant_id, email, display_name) VALUES ($1, 'link@tenant.com', 'Link User') RETURNING id",
+		tenantID,
+	).Scan(&userID)
+	require.NoError(t, err)
+
+	platformIdentity := "+15556667777"
+	var createdID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		link, upsertErr := store.UpsertLink(ctx, q, channels.UpsertLinkParams{
+			UserID:         userID,
+			Platform:       "whatsapp",
+			PlatformUserID: platformIdentity,
+			State:          channels.LinkStatePendingVerification,
+		})
+		require.NoError(t, upsertErr)
+		require.NotNil(t, link)
+		createdID = link.ID
+		assert.Equal(t, channels.LinkStatePendingVerification, link.State)
+		assert.False(t, link.Verified)
+		assert.Nil(t, link.VerifiedAt)
+		assert.Nil(t, link.RevokedAt)
+		return nil
+	})
+	require.NoError(t, err)
+
+	meta := json.RawMessage(`{"source":"manual"}`)
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		link, upsertErr := store.UpsertLink(ctx, q, channels.UpsertLinkParams{
+			UserID:               userID,
+			Platform:             "whatsapp",
+			PlatformUserID:       platformIdentity,
+			State:                channels.LinkStateVerified,
+			VerificationMethod:   "admin_override",
+			VerificationMetadata: meta,
+		})
+		require.NoError(t, upsertErr)
+		require.NotNil(t, link)
+		assert.Equal(t, createdID, link.ID)
+		assert.Equal(t, channels.LinkStateVerified, link.State)
+		assert.True(t, link.Verified)
+		require.NotNil(t, link.VerifiedAt)
+		assert.Equal(t, "admin_override", link.VerificationMethod)
+		assert.JSONEq(t, string(meta), string(link.VerificationMetadata))
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelLinkStore_UpsertLink_RejectsCrossTenantUser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantA, tenantB string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant X', 'tenant-x') RETURNING id",
+	).Scan(&tenantA)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Y', 'tenant-y') RETURNING id",
+	).Scan(&tenantB)
+	require.NoError(t, err)
+
+	var userBID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO users (tenant_id, email, display_name) VALUES ($1, 'userb@tenant.com', 'User B') RETURNING id",
+		tenantB,
+	).Scan(&userBID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		_, upsertErr := store.UpsertLink(ctx, q, channels.UpsertLinkParams{
+			UserID:         userBID,
+			Platform:       "telegram",
+			PlatformUserID: "tg-cross-tenant",
+			State:          channels.LinkStateVerified,
+		})
+		require.ErrorIs(t, upsertErr, channels.ErrUserNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelLinkStore_ListAndDeleteLink(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Z', 'tenant-z') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var userID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO users (tenant_id, email, display_name) VALUES ($1, 'userz@tenant.com', 'User Z') RETURNING id",
+		tenantID,
+	).Scan(&userID)
+	require.NoError(t, err)
+
+	var linkID string
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		link, upsertErr := store.UpsertLink(ctx, q, channels.UpsertLinkParams{
+			UserID:         userID,
+			Platform:       "slack",
+			PlatformUserID: "U-DELETE-ME",
+			State:          channels.LinkStateVerified,
+		})
+		require.NoError(t, upsertErr)
+		linkID = link.ID.String()
+
+		list, listErr := store.ListLinks(ctx, q)
+		require.NoError(t, listErr)
+		require.Len(t, list, 1)
+		assert.Equal(t, linkID, list[0].ID.String())
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		deleteErr := store.DeleteLink(ctx, q, linkID)
+		require.NoError(t, deleteErr)
+
+		list, listErr := store.ListLinks(ctx, q)
+		require.NoError(t, listErr)
+		assert.Empty(t, list)
+
+		deleteErr = store.DeleteLink(ctx, q, linkID)
+		require.ErrorIs(t, deleteErr, channels.ErrLinkNotFound)
 		return nil
 	})
 	require.NoError(t, err)

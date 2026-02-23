@@ -45,6 +45,16 @@ type ChannelLink struct {
 	VerificationMetadata json.RawMessage `json:"verification_metadata,omitempty"`
 }
 
+// UpsertLinkParams defines input for creating/updating a channel link.
+type UpsertLinkParams struct {
+	UserID               string
+	Platform             string
+	PlatformUserID       string
+	State                LinkState
+	VerificationMethod   string
+	VerificationMetadata json.RawMessage
+}
+
 // IsVerified returns whether this link can execute channel actions.
 func (l ChannelLink) IsVerified() bool {
 	return l.State == LinkStateVerified
@@ -55,6 +65,11 @@ var (
 	ErrLinkUnverified = errors.New("channel link is not verified")
 	ErrPlatformEmpty  = errors.New("platform is required")
 	ErrIdentityEmpty  = errors.New("platform user id is required")
+	ErrUserIDRequired = errors.New("user id is required")
+	ErrUserNotFound   = errors.New("user not found")
+	ErrLinkState      = errors.New("link state is invalid")
+	ErrLinkIDRequired = errors.New("link id is required")
+	ErrLinkIDInvalid  = errors.New("link id must be a valid UUID")
 	ErrIdempotencyKey = errors.New("idempotency key is required")
 	ErrCorrelationID  = errors.New("correlation id is required")
 	ErrFingerprint    = errors.New("payload fingerprint is required")
