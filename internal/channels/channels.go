@@ -30,12 +30,13 @@ const (
 
 // ChannelLink maps an external channel identity to a Valinor user in a tenant.
 type ChannelLink struct {
-	ID                   uuid.UUID       `json:"id"`
-	TenantID             uuid.UUID       `json:"tenant_id"`
-	UserID               uuid.UUID       `json:"user_id"`
-	Platform             string          `json:"platform"`
-	PlatformUserID       string          `json:"platform_user_id"`
-	State                LinkState       `json:"state"`
+	ID             uuid.UUID `json:"id"`
+	TenantID       uuid.UUID `json:"tenant_id"`
+	UserID         uuid.UUID `json:"user_id"`
+	Platform       string    `json:"platform"`
+	PlatformUserID string    `json:"platform_user_id"`
+	State          LinkState `json:"state"`
+	// Verified mirrors a legacy DB column; State is the source of truth for behavior gates.
 	Verified             bool            `json:"verified"`
 	CreatedAt            time.Time       `json:"created_at"`
 	VerifiedAt           *time.Time      `json:"verified_at,omitempty"`
