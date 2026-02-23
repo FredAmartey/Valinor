@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
@@ -19,9 +21,16 @@ var errTenantContextRequired = errors.New("tenant context required")
 var errTenantPathRequired = errors.New("tenant path is required")
 var errTenantPathInvalid = errors.New("tenant path must be a valid UUID")
 
+type listLinksFunc func(ctx context.Context, tenantID string) ([]ChannelLink, error)
+type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error)
+type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
+
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
 	ingressByProvider map[string]*IngressGuard
+	listLinks         listLinksFunc
+	upsertLink        upsertLinkFunc
+	deleteLink        deleteLinkFunc
 }
 
 // NewHandler creates a channels handler.
@@ -30,6 +39,51 @@ func NewHandler(ingressByProvider map[string]*IngressGuard) *Handler {
 		ingressByProvider = map[string]*IngressGuard{}
 	}
 	return &Handler{ingressByProvider: ingressByProvider}
+}
+
+// WithLinkStore wires channel link CRUD operations backed by the channels store.
+func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
+	if pool == nil || store == nil {
+		h.listLinks = nil
+		h.upsertLink = nil
+		h.deleteLink = nil
+		return h
+	}
+
+	h.listLinks = func(ctx context.Context, tenantID string) ([]ChannelLink, error) {
+		var links []ChannelLink
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var listErr error
+			links, listErr = store.ListLinks(ctx, q)
+			return listErr
+		})
+		return links, err
+	}
+
+	h.upsertLink = func(ctx context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error) {
+		var link *ChannelLink
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var upsertErr error
+			link, upsertErr = store.UpsertLink(ctx, q, UpsertLinkParams{
+				UserID:               userID,
+				Platform:             platform,
+				PlatformUserID:       platformUserID,
+				State:                state,
+				VerificationMethod:   verificationMethod,
+				VerificationMetadata: verificationMetadata,
+			})
+			return upsertErr
+		})
+		return link, err
+	}
+
+	h.deleteLink = func(ctx context.Context, tenantID, id string) error {
+		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			return store.DeleteLink(ctx, q, id)
+		})
+	}
+
+	return h
 }
 
 // HandleWebhook processes inbound provider webhook traffic.
@@ -174,31 +228,132 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 // HandleListLinks lists tenant channel links.
 // GET /api/v1/channels/links
 func (h *Handler) HandleListLinks(w http.ResponseWriter, r *http.Request) {
-	if _, err := resolveTenantID(r); err != nil {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, []any{})
+	if h.listLinks == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "channel links are not configured"})
+		return
+	}
+
+	links, err := h.listLinks(r.Context(), tenantID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing channel links failed"})
+		return
+	}
+	if links == nil {
+		links = []ChannelLink{}
+	}
+	writeJSON(w, http.StatusOK, links)
 }
 
 // HandleCreateLink creates or updates a tenant channel link.
 // POST /api/v1/channels/links
 func (h *Handler) HandleCreateLink(w http.ResponseWriter, r *http.Request) {
-	if _, err := resolveTenantID(r); err != nil {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if h.upsertLink == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "channel links are not configured"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+
+	var req struct {
+		UserID               string          `json:"user_id"`
+		Platform             string          `json:"platform"`
+		PlatformUserID       string          `json:"platform_user_id"`
+		State                string          `json:"state"`
+		VerificationMethod   string          `json:"verification_method"`
+		VerificationMetadata json.RawMessage `json:"verification_metadata"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if decodeErr := decoder.Decode(&req); decodeErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if strings.TrimSpace(req.UserID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrUserIDRequired.Error()})
+		return
+	}
+	if _, parseErr := uuid.Parse(strings.TrimSpace(req.UserID)); parseErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id must be a valid UUID"})
+		return
+	}
+
+	state, err := parseLinkState(req.State)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	link, err := h.upsertLink(
+		r.Context(),
+		tenantID,
+		strings.TrimSpace(req.UserID),
+		strings.TrimSpace(req.Platform),
+		strings.TrimSpace(req.PlatformUserID),
+		state,
+		strings.TrimSpace(req.VerificationMethod),
+		req.VerificationMetadata,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPlatformEmpty),
+			errors.Is(err, ErrIdentityEmpty),
+			errors.Is(err, ErrUserIDRequired),
+			errors.Is(err, ErrLinkState):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		case errors.Is(err, ErrUserNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "creating channel link failed"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, link)
 }
 
 // HandleDeleteLink revokes/removes a tenant channel link.
 // DELETE /api/v1/channels/links/{id}
 func (h *Handler) HandleDeleteLink(w http.ResponseWriter, r *http.Request) {
-	if _, err := resolveTenantID(r); err != nil {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+	if h.deleteLink == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "channel links are not configured"})
+		return
+	}
+
+	id := strings.TrimSpace(r.PathValue("id"))
+	err = h.deleteLink(r.Context(), tenantID, id)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLinkIDRequired), errors.Is(err, ErrLinkIDInvalid):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		case errors.Is(err, ErrLinkNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "deleting channel link failed"})
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func resolveTenantID(r *http.Request) (string, error) {
@@ -218,6 +373,20 @@ func resolveWebhookTenantID(r *http.Request) (string, error) {
 		return "", errTenantPathInvalid
 	}
 	return tenantID, nil
+}
+
+func parseLinkState(raw string) (LinkState, error) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" {
+		return LinkStatePendingVerification, nil
+	}
+
+	switch LinkState(value) {
+	case LinkStatePendingVerification, LinkStateVerified, LinkStateRevoked:
+		return LinkState(value), nil
+	default:
+		return "", ErrLinkState
+	}
 }
 
 func writeIngressError(w http.ResponseWriter, err error, correlationID string) bool {

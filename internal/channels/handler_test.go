@@ -2,6 +2,8 @@ package channels
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
 func testWhatsAppWebhookBody() string {
@@ -408,4 +412,127 @@ func TestHandleWebhook_RejectsMalformedJSON(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "invalid webhook payload")
+}
+
+func TestHandleListLinks_ReturnsLinks(t *testing.T) {
+	expectedID := uuid.New()
+	h := NewHandler(nil)
+	h.listLinks = func(_ context.Context, tenantID string) ([]ChannelLink, error) {
+		assert.Equal(t, "tenant-abc", tenantID)
+		return []ChannelLink{{
+			ID:             expectedID,
+			Platform:       "slack",
+			PlatformUserID: "U12345",
+			State:          LinkStateVerified,
+		}}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/links", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-abc"))
+	w := httptest.NewRecorder()
+
+	h.HandleListLinks(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var out []ChannelLink
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
+	require.Len(t, out, 1)
+	assert.Equal(t, expectedID, out[0].ID)
+}
+
+func TestHandleCreateLink_ValidRequest(t *testing.T) {
+	expectedID := uuid.New()
+	seenState := LinkState("")
+	seenMethod := ""
+	seenMetadata := ""
+
+	h := NewHandler(nil)
+	h.upsertLink = func(_ context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error) {
+		assert.Equal(t, "tenant-create", tenantID)
+		assert.Equal(t, "190f3a21-3b2c-42ce-b26e-2f448a58ec14", userID)
+		assert.Equal(t, "whatsapp", platform)
+		assert.Equal(t, "+15550009999", platformUserID)
+		seenState = state
+		seenMethod = verificationMethod
+		seenMetadata = string(verificationMetadata)
+		return &ChannelLink{
+			ID:             expectedID,
+			Platform:       platform,
+			PlatformUserID: platformUserID,
+			State:          state,
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/links", strings.NewReader(`{
+  "user_id": "190f3a21-3b2c-42ce-b26e-2f448a58ec14",
+  "platform": "whatsapp",
+  "platform_user_id": "+15550009999",
+  "state": "verified",
+  "verification_method": "admin_override",
+  "verification_metadata": {"source":"manual"}
+}`))
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-create"))
+	w := httptest.NewRecorder()
+
+	h.HandleCreateLink(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, LinkStateVerified, seenState)
+	assert.Equal(t, "admin_override", seenMethod)
+	assert.JSONEq(t, `{"source":"manual"}`, seenMetadata)
+}
+
+func TestHandleCreateLink_RejectsInvalidUserID(t *testing.T) {
+	h := NewHandler(nil)
+	h.upsertLink = func(_ context.Context, _, _, _, _ string, _ LinkState, _ string, _ json.RawMessage) (*ChannelLink, error) {
+		t.Fatalf("upsert should not be called for invalid user_id")
+		return nil, nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/links", strings.NewReader(`{
+  "user_id": "not-a-uuid",
+  "platform": "telegram",
+  "platform_user_id": "tg-123"
+}`))
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-create"))
+	w := httptest.NewRecorder()
+
+	h.HandleCreateLink(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "user_id")
+}
+
+func TestHandleDeleteLink_NotFound(t *testing.T) {
+	h := NewHandler(nil)
+	h.deleteLink = func(_ context.Context, tenantID, id string) error {
+		assert.Equal(t, "tenant-delete", tenantID)
+		assert.Equal(t, "190f3a21-3b2c-42ce-b26e-2f448a58ec14", id)
+		return ErrLinkNotFound
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/channels/links/190f3a21-3b2c-42ce-b26e-2f448a58ec14", nil)
+	req.SetPathValue("id", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-delete"))
+	w := httptest.NewRecorder()
+
+	h.HandleDeleteLink(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandleDeleteLink_PropagatesUnexpectedError(t *testing.T) {
+	h := NewHandler(nil)
+	h.deleteLink = func(_ context.Context, _, _ string) error {
+		return errors.New("boom")
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/channels/links/190f3a21-3b2c-42ce-b26e-2f448a58ec14", nil)
+	req.SetPathValue("id", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-delete"))
+	w := httptest.NewRecorder()
+
+	h.HandleDeleteLink(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
 }
