@@ -46,7 +46,7 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		Tools         json.RawMessage `json:"tools"`
 		Resources     json.RawMessage `json:"resources"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

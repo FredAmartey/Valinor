@@ -361,7 +361,7 @@ func TestFirecrackerDriver_CleanupPersistedNonDaemonizedStateDoesNotKillPID(t *t
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
-	sleeper := exec.Command("sleep", "60")
+	sleeper := exec.CommandContext(context.Background(), "sleep", "60")
 	require.NoError(t, sleeper.Start())
 	t.Cleanup(func() {
 		if sleeper.Process != nil {
@@ -418,7 +418,8 @@ func runFakeFirecracker() int {
 	}
 	_ = os.Remove(apiSock)
 
-	lis, err := net.Listen("unix", apiSock)
+	lc := net.ListenConfig{}
+	lis, err := lc.Listen(context.Background(), "unix", apiSock)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "listening on unix socket: %v\n", err)
 		return 2
@@ -529,7 +530,7 @@ func runFakeJailer() int {
 
 	pidPath := filepath.Join(jailRoot, defaultJailerPIDFileName)
 	if indexOf(os.Args[1:], "--daemonize") != -1 {
-		child := exec.Command(os.Args[0])
+		child := exec.CommandContext(context.Background(), os.Args[0])
 		child.Env = append(os.Environ(),
 			jailerTestHelperEnv+"=1",
 			jailerTestChildEnv+"=1",
@@ -572,7 +573,8 @@ func runFakeJailerServer(hostSock, pidPath string) int {
 
 	_ = os.Remove(hostSock)
 
-	lis, err := net.Listen("unix", hostSock)
+	lc := net.ListenConfig{}
+	lis, err := lc.Listen(context.Background(), "unix", hostSock)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "listening on jailed socket: %v\n", err)
 		return 2

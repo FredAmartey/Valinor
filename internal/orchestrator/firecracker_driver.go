@@ -173,7 +173,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	d.mu.Unlock()
 
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		return VMHandle{}, fmt.Errorf("%w: creating state dir: %v", ErrDriverFailure, err)
 	}
 
@@ -191,7 +191,8 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 		daemonized = d.jailer.Daemonize
 	}
 
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// #nosec G304 -- logPath is derived from trusted stateRoot/vmID and fixed filenames.
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		_ = os.RemoveAll(stateDir)
 		if jailerDir != "" {
@@ -201,7 +202,9 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(launchBinary, launchArgs...)
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// #nosec G204 -- launchBinary is resolved/validated from trusted config and process env.
+	cmd := exec.CommandContext(context.Background(), launchBinary, launchArgs...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = stateDir
@@ -579,7 +582,7 @@ func (d *FirecrackerDriver) persistVMState(vmID string, vm *firecrackerVM) error
 
 	statePath := filepath.Join(vm.stateDir, defaultVMStateFileName)
 	tmpPath := statePath + ".tmp"
-	if err := os.WriteFile(tmpPath, encoded, 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, encoded, 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpPath, statePath); err != nil {
@@ -591,6 +594,7 @@ func (d *FirecrackerDriver) persistVMState(vmID string, vm *firecrackerVM) error
 
 func (d *FirecrackerDriver) loadPersistedVM(id string) (*firecrackerVM, bool, error) {
 	statePath := filepath.Join(d.stateRoot, id, defaultVMStateFileName)
+	// #nosec G304 -- statePath is generated from internal state root and vm ID.
 	encoded, err := os.ReadFile(statePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -651,6 +655,7 @@ func waitForPIDFile(ctx context.Context, pidPath string) (int, error) {
 	defer ticker.Stop()
 
 	for {
+		// #nosec G304 -- pidPath points to jailer-owned .pid under internal jail dir.
 		pidBytes, err := os.ReadFile(pidPath)
 		if err == nil {
 			pidStr := strings.TrimSpace(string(pidBytes))
@@ -790,7 +795,7 @@ func (d *FirecrackerDriver) prepareJailerLayout(vmID, kernelPath, rootDrive, dat
 	jailerDir = filepath.Join(d.jailer.ChrootBaseDir, execName, vmID)
 	jailRoot := filepath.Join(jailerDir, "root")
 	runDir := filepath.Join(jailRoot, "run")
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
 		return "", "", "", "", "", err
 	}
 
@@ -819,7 +824,7 @@ func (d *FirecrackerDriver) prepareJailerLayout(vmID, kernelPath, rootDrive, dat
 }
 
 func linkOrCopyFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
 	_ = os.Remove(dst)
@@ -827,18 +832,15 @@ func linkOrCopyFile(src, dst string) error {
 		return nil
 	}
 
+	// #nosec G304 -- src comes from validated kernel/root/data paths controlled by config/spec.
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer srcFile.Close()
 
-	srcInfo, err := srcFile.Stat()
-	if err != nil {
-		return err
-	}
-
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode().Perm())
+	// #nosec G304 -- dst is generated under internal jail root.
+	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
