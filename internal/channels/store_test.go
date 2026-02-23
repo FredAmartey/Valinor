@@ -620,6 +620,168 @@ func TestMessageStore_GetMessageByIdempotencyKey_NotFound(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMessageStore_DeleteExpiredMessages(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantA, tenantB string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Retention A', 'tenant-retention-a') RETURNING id",
+	).Scan(&tenantA)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Retention B', 'tenant-retention-b') RETURNING id",
+	).Scan(&tenantB)
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15551110001', 'msg-retention-expired-a', 'idem-retention-expired-a',
+				'fp-retention-expired-a', 'corr-retention-expired-a', 'accepted', $1
+			), (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15551110001', 'msg-retention-active-a', 'idem-retention-active-a',
+				'fp-retention-active-a', 'corr-retention-active-a', 'accepted', $2
+			)`,
+			now.Add(-2*time.Hour),
+			now.Add(2*time.Hour),
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15551110002', 'msg-retention-expired-b', 'idem-retention-expired-b',
+				'fp-retention-expired-b', 'corr-retention-expired-b', 'accepted', $1
+			)`,
+			now.Add(-90*time.Minute),
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		deleted, cleanupErr := store.DeleteExpiredMessages(ctx, q, now, 100)
+		require.NoError(t, cleanupErr)
+		assert.Equal(t, 1, deleted)
+
+		var remaining int
+		scanErr := q.QueryRow(ctx,
+			`SELECT COUNT(*)
+			 FROM channel_messages
+			 WHERE idempotency_key IN ('idem-retention-expired-a', 'idem-retention-active-a')`,
+		).Scan(&remaining)
+		require.NoError(t, scanErr)
+		assert.Equal(t, 1, remaining)
+
+		var activePresent int
+		scanErr = q.QueryRow(ctx,
+			`SELECT COUNT(*)
+			 FROM channel_messages
+			 WHERE idempotency_key = 'idem-retention-active-a'`,
+		).Scan(&activePresent)
+		require.NoError(t, scanErr)
+		assert.Equal(t, 1, activePresent)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		var count int
+		scanErr := q.QueryRow(ctx,
+			`SELECT COUNT(*)
+			 FROM channel_messages
+			 WHERE idempotency_key = 'idem-retention-expired-b'`,
+		).Scan(&count)
+		require.NoError(t, scanErr)
+		assert.Equal(t, 1, count)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestMessageStore_DeleteExpiredMessages_RespectsLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Retention Limit', 'tenant-retention-limit') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'telegram', '1001', 'msg-retention-1', 'idem-retention-1',
+				'fp-retention-1', 'corr-retention-1', 'accepted', $1
+			), (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'telegram', '1002', 'msg-retention-2', 'idem-retention-2',
+				'fp-retention-2', 'corr-retention-2', 'accepted', $2
+			), (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'telegram', '1003', 'msg-retention-3', 'idem-retention-3',
+				'fp-retention-3', 'corr-retention-3', 'accepted', $3
+			)`,
+			now.Add(-3*time.Hour),
+			now.Add(-2*time.Hour),
+			now.Add(-1*time.Hour),
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		firstDeleted, firstErr := store.DeleteExpiredMessages(ctx, q, now, 2)
+		require.NoError(t, firstErr)
+		assert.Equal(t, 2, firstDeleted)
+
+		secondDeleted, secondErr := store.DeleteExpiredMessages(ctx, q, now, 2)
+		require.NoError(t, secondErr)
+		assert.Equal(t, 1, secondDeleted)
+
+		var remaining int
+		scanErr := q.QueryRow(ctx, `SELECT COUNT(*) FROM channel_messages`).Scan(&remaining)
+		require.NoError(t, scanErr)
+		assert.Equal(t, 0, remaining)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestOutboxStore_EnqueueAndClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

@@ -364,6 +364,44 @@ func (s *Store) UpdateMessageStatus(
 	return nil
 }
 
+// DeleteExpiredMessages removes tenant-scoped idempotency rows whose expiry is in the past.
+// Returns the number of deleted rows in this call.
+func (s *Store) DeleteExpiredMessages(
+	ctx context.Context,
+	q database.Querier,
+	before time.Time,
+	limit int,
+) (int, error) {
+	if before.IsZero() {
+		return 0, ErrExpiryRequired
+	}
+	if limit <= 0 {
+		return 0, fmt.Errorf("cleanup limit must be greater than zero")
+	}
+
+	cmd, err := q.Exec(ctx,
+		`WITH expired AS (
+			SELECT id
+			FROM channel_messages
+			WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			  AND expires_at <= $1
+			ORDER BY expires_at ASC
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		)
+		DELETE FROM channel_messages msg
+		USING expired
+		WHERE msg.id = expired.id`,
+		before,
+		limit,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("deleting expired channel messages: %w", err)
+	}
+
+	return int(cmd.RowsAffected()), nil
+}
+
 // GetMessageIDByIdempotencyKey resolves a tenant-scoped channel message ID.
 func (s *Store) GetMessageIDByIdempotencyKey(ctx context.Context, q database.Querier, platform, idempotencyKey string) (uuid.UUID, error) {
 	if platform == "" {
