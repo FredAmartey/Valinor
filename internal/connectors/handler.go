@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/platform/database"
@@ -50,6 +51,14 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrNameEmpty.Error()})
+		return
+	}
+	if strings.TrimSpace(req.Endpoint) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrEndpointEmpty.Error()})
+		return
+	}
 
 	var connector *Connector
 	err = database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
@@ -58,8 +67,12 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return createErr
 	})
 	if err != nil {
-		if err == ErrNameEmpty || err == ErrEndpointEmpty {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		if errors.Is(err, ErrNameEmpty) || errors.Is(err, ErrEndpointEmpty) || errors.Is(err, ErrNameTaken) {
+			status := http.StatusBadRequest
+			if errors.Is(err, ErrNameTaken) {
+				status = http.StatusConflict
+			}
+			writeJSON(w, status, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "connector creation failed"})
@@ -115,7 +128,7 @@ func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		return h.store.Delete(ctx, q, id)
 	})
 	if err != nil {
-		if err == ErrNotFound {
+		if errors.Is(err, ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "connector not found"})
 			return
 		}

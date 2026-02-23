@@ -129,6 +129,7 @@ func run() error {
 		"agents:read", "agents:write", "agents:message",
 		"users:read", "users:write",
 		"departments:read",
+		"connectors:read", "connectors:write",
 	})
 	rbacEngine.RegisterRole("standard_user", []string{
 		"agents:read", "agents:message",

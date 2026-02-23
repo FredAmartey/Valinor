@@ -28,6 +28,7 @@ jobs:
         run: go build ./...
 
   firecracker-driver:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -41,6 +42,7 @@ jobs:
         run: go test ./internal/orchestrator -run 'TestFirecrackerDriver_' -v
 
   test:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -61,6 +63,7 @@ jobs:
           path: coverage.out
 
   lint:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

@@ -22,8 +22,18 @@ type Connector struct {
 	CreatedAt     time.Time       `json:"created_at"`
 }
 
+// AgentConnectorConfig is the reduced connector shape injected into agent config.
+type AgentConnectorConfig struct {
+	Name     string          `json:"name"`
+	Type     string          `json:"type"`
+	Endpoint string          `json:"endpoint"`
+	Auth     json.RawMessage `json:"auth"`
+	Tools    json.RawMessage `json:"tools"`
+}
+
 var (
 	ErrNotFound      = errors.New("connector not found")
 	ErrNameEmpty     = errors.New("connector name is required")
+	ErrNameTaken     = errors.New("connector name already exists")
 	ErrEndpointEmpty = errors.New("connector endpoint is required")
 )

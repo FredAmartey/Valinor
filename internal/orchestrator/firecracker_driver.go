@@ -71,8 +71,9 @@ type FirecrackerDriver struct {
 	socketWaitTimeout time.Duration
 	stopTimeout       time.Duration
 
-	mu  sync.Mutex
-	vms map[string]*firecrackerVM
+	mu       sync.Mutex
+	vms      map[string]*firecrackerVM
+	starting map[string]struct{}
 }
 
 // NewFirecrackerDriver creates a new FirecrackerDriver.
@@ -83,8 +84,9 @@ func NewFirecrackerDriver(kernelPath, rootDrive, jailerPath string) *Firecracker
 			Enabled:       true,
 			BinaryPath:    strings.TrimSpace(jailerPath),
 			ChrootBaseDir: filepath.Join(os.TempDir(), "valinor-jailer"),
-			UID:           os.Getuid(),
-			GID:           os.Getgid(),
+			// Require explicit jailer UID/GID in production config.
+			UID: -1,
+			GID: -1,
 		}
 	}
 	return NewFirecrackerDriverWithConfig(kernelPath, rootDrive, jailerCfg)
@@ -111,6 +113,7 @@ func NewFirecrackerDriverWithConfig(kernelPath, rootDrive string, jailerCfg Fire
 		socketWaitTimeout: defaultSocketWaitTimeout,
 		stopTimeout:       defaultStopTimeout,
 		vms:               make(map[string]*firecrackerVM),
+		starting:          make(map[string]struct{}),
 	}
 }
 
@@ -121,6 +124,14 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	if spec.VsockCID == 0 {
 		return VMHandle{}, fmt.Errorf("%w: vsock CID is required", ErrDriverFailure)
+	}
+	if d.jailer.Enabled {
+		if d.jailer.UID < 0 {
+			return VMHandle{}, fmt.Errorf("%w: jailer uid must be >= 0", ErrDriverFailure)
+		}
+		if d.jailer.GID < 0 {
+			return VMHandle{}, fmt.Errorf("%w: jailer gid must be >= 0", ErrDriverFailure)
+		}
 	}
 
 	kernelPath := strings.TrimSpace(spec.KernelPath)
@@ -188,11 +199,24 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	daemonized := false
 
 	d.mu.Lock()
+	if d.starting == nil {
+		d.starting = make(map[string]struct{})
+	}
 	if _, exists := d.vms[vmID]; exists {
 		d.mu.Unlock()
 		return VMHandle{}, fmt.Errorf("%w: vm already exists: %s", ErrDriverFailure, vmID)
 	}
+	if _, exists := d.starting[vmID]; exists {
+		d.mu.Unlock()
+		return VMHandle{}, fmt.Errorf("%w: vm startup already in progress: %s", ErrDriverFailure, vmID)
+	}
+	d.starting[vmID] = struct{}{}
 	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		delete(d.starting, vmID)
+		d.mu.Unlock()
+	}()
 
 	if mkdirErr := os.MkdirAll(stateDir, 0o750); mkdirErr != nil {
 		return VMHandle{}, fmt.Errorf("%w: creating state dir: %v", ErrDriverFailure, mkdirErr)
@@ -271,6 +295,9 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 
 	if daemonized && jailerDir != "" {
+		// Daemonized jailer startup currently has two sequential waits:
+		// API socket and PID file. The combined startup budget can reach
+		// roughly 2*socketWaitTimeout in the worst case.
 		pidPath := filepath.Join(jailerDir, "root", defaultJailerPIDFileName)
 		pidCtx, cancelPID := context.WithTimeout(ctx, d.socketWaitTimeout)
 		pid, pidErr := waitForPIDFile(pidCtx, pidPath)
@@ -744,9 +771,12 @@ func (d *FirecrackerDriver) loadPersistedVM(id string) (*firecrackerVM, bool, er
 func waitForSocket(ctx context.Context, socketPath string) error {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
+	dialer := &net.Dialer{}
 
 	for {
-		if _, err := os.Stat(socketPath); err == nil {
+		conn, err := dialer.DialContext(ctx, "unix", socketPath)
+		if err == nil {
+			_ = conn.Close()
 			return nil
 		}
 

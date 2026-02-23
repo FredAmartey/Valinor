@@ -14,6 +14,8 @@ func TestHandleCreate_MissingName(t *testing.T) {
 	handler := connectors.NewHandler(nil, connectors.NewStore())
 	body := `{"endpoint": "https://example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/tenants/test-tenant/connectors", strings.NewReader(body))
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "test-tenant"))
+	req.SetPathValue("tenantID", "test-tenant")
 	w := httptest.NewRecorder()
 
 	handler.HandleCreate(w, req)

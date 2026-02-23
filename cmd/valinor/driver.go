@@ -116,6 +116,9 @@ func validateFirecrackerPrereqs(cfg config.FirecrackerConfig) (orchestrator.Fire
 }
 
 func requireFilePath(path, label string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%s %q must be an absolute path", label, path)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -125,9 +128,6 @@ func requireFilePath(path, label string) error {
 	}
 	if info.IsDir() {
 		return fmt.Errorf("%s %q must be a file, got directory", label, path)
-	}
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("%s %q must be an absolute path", label, path)
 	}
 	return nil
 }

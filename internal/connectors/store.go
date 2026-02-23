@@ -3,9 +3,11 @@ package connectors
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
@@ -47,6 +49,10 @@ func (s *Store) Create(ctx context.Context, q database.Querier, name, connectorT
 		name, connectorType, endpoint, authConfig, tools, resources,
 	).Scan(&c.ID, &c.TenantID, &c.Name, &c.ConnectorType, &c.Endpoint, &c.AuthConfig, &c.Resources, &c.Tools, &c.Status, &c.CreatedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "connectors_tenant_name_unique" {
+			return nil, ErrNameTaken
+		}
 		return nil, fmt.Errorf("creating connector: %w", err)
 	}
 	return &c, nil
@@ -92,7 +98,12 @@ func (s *Store) GetByID(ctx context.Context, q database.Querier, id string) (*Co
 
 // Delete removes a connector by ID. Returns ErrNotFound if no rows affected.
 func (s *Store) Delete(ctx context.Context, q database.Querier, id string) error {
-	tag, err := q.Exec(ctx, `DELETE FROM connectors WHERE id = $1`, id)
+	tag, err := q.Exec(ctx,
+		`DELETE FROM connectors
+		 WHERE id = $1
+		   AND tenant_id = current_setting('app.current_tenant_id', true)::UUID`,
+		id,
+	)
 	if err != nil {
 		return fmt.Errorf("deleting connector: %w", err)
 	}
@@ -102,8 +113,8 @@ func (s *Store) Delete(ctx context.Context, q database.Querier, id string) error
 	return nil
 }
 
-// ListForAgent returns connectors as simplified config maps for agent injection.
-func (s *Store) ListForAgent(ctx context.Context, q database.Querier) ([]map[string]any, error) {
+// ListForAgent returns active connectors as agent-facing config entries.
+func (s *Store) ListForAgent(ctx context.Context, q database.Querier) ([]AgentConnectorConfig, error) {
 	rows, err := q.Query(ctx,
 		`SELECT name, connector_type, endpoint, auth_config, tools
 		 FROM connectors WHERE status = 'active' ORDER BY created_at`)
@@ -112,19 +123,19 @@ func (s *Store) ListForAgent(ctx context.Context, q database.Querier) ([]map[str
 	}
 	defer rows.Close()
 
-	var result []map[string]any
+	var result []AgentConnectorConfig
 	for rows.Next() {
 		var name, connType, endpoint string
 		var authConfig, tools json.RawMessage
 		if err := rows.Scan(&name, &connType, &endpoint, &authConfig, &tools); err != nil {
 			return nil, fmt.Errorf("scanning connector for agent: %w", err)
 		}
-		result = append(result, map[string]any{
-			"name":     name,
-			"type":     connType,
-			"endpoint": endpoint,
-			"auth":     json.RawMessage(authConfig),
-			"tools":    json.RawMessage(tools),
+		result = append(result, AgentConnectorConfig{
+			Name:     name,
+			Type:     connType,
+			Endpoint: endpoint,
+			Auth:     json.RawMessage(authConfig),
+			Tools:    json.RawMessage(tools),
 		})
 	}
 	return result, rows.Err()
