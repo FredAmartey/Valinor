@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -26,6 +28,7 @@ type listLinksFunc func(ctx context.Context, tenantID string) ([]ChannelLink, er
 type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error)
 type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
 type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
+type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error
 
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
@@ -34,6 +37,7 @@ type Handler struct {
 	upsertLink          upsertLinkFunc
 	deleteLink          deleteLinkFunc
 	updateMessageStatus updateMessageStatusFunc
+	enqueueOutbound     enqueueOutboundFunc
 	execute             executeFunc
 }
 
@@ -52,6 +56,7 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		h.upsertLink = nil
 		h.deleteLink = nil
 		h.updateMessageStatus = nil
+		h.enqueueOutbound = nil
 		return h
 	}
 
@@ -91,6 +96,45 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 	h.updateMessageStatus = func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			return store.UpdateMessageStatus(ctx, q, platform, idempotencyKey, status, metadata)
+		})
+	}
+
+	h.enqueueOutbound = func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error {
+		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var messageID uuid.UUID
+			if err := q.QueryRow(ctx,
+				`SELECT id
+				 FROM channel_messages
+				 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+				   AND platform = $1
+				   AND idempotency_key = $2`,
+				platform,
+				idempotencyKey,
+			).Scan(&messageID); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return ErrMessageNotFound
+				}
+				return fmt.Errorf("resolving channel message for outbox enqueue: %w", err)
+			}
+
+			payload, err := json.Marshal(map[string]string{
+				"content":        responseContent,
+				"correlation_id": correlationID,
+			})
+			if err != nil {
+				return fmt.Errorf("marshaling outbox payload: %w", err)
+			}
+
+			_, err = store.EnqueueOutbound(ctx, q, EnqueueOutboundParams{
+				ChannelMessageID: messageID.String(),
+				Provider:         platform,
+				RecipientID:      recipientID,
+				Payload:          payload,
+			})
+			if err != nil {
+				return fmt.Errorf("enqueuing outbound response: %w", err)
+			}
+			return nil
 		})
 	}
 
@@ -186,6 +230,8 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 		actionableCount++
 		messageAgentID := ""
+		messageResponseContent := ""
+		enqueueFailed := false
 
 		platformMessageID := meta.PlatformMessageID
 		platformUserID := meta.PlatformUserID
@@ -242,6 +288,31 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				if execResult.AgentID != "" {
 					messageAgentID = execResult.AgentID
 					executedAgentID = execResult.AgentID
+				}
+				messageResponseContent = execResult.ResponseContent
+				if messageDecision == IngressExecuted && h.enqueueOutbound != nil {
+					enqueueErr := h.enqueueOutbound(
+						ctx,
+						tenantID,
+						provider,
+						idempotencyKey,
+						platformUserID,
+						correlationID,
+						messageResponseContent,
+					)
+					if enqueueErr != nil {
+						slog.Error(
+							"channel outbox enqueue failed",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"platform_user_id", platformUserID,
+							"correlation_id", correlationID,
+							"error", enqueueErr,
+						)
+						messageDecision = IngressDispatchFailed
+						enqueueFailed = true
+					}
 				}
 			}
 		}
@@ -301,6 +372,13 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+		}
+		if enqueueFailed {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error":          "processing webhook failed",
+				"correlation_id": correlationID,
+			})
+			return
 		}
 		decision = messageDecision
 	}

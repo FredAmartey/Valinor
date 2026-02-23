@@ -15,8 +15,9 @@ type ExecutionMessage struct {
 
 // ExecutionResult captures execution outcome after ingress acceptance.
 type ExecutionResult struct {
-	Decision IngressDecision
-	AgentID  string
+	Decision        IngressDecision
+	AgentID         string
+	ResponseContent string
 }
 
 type executeFunc func(ctx context.Context, msg ExecutionMessage) ExecutionResult

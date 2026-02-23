@@ -229,6 +229,116 @@ func TestHandleWebhook_ExecutionPersistsMessageStatus(t *testing.T) {
 	assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-123"}`, string(persisted.metadata))
 }
 
+func TestHandleWebhook_ExecutedEnqueuesOutbox(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	var enqueued struct {
+		tenantID       string
+		platform       string
+		idempotencyKey string
+		recipientID    string
+		correlationID  string
+		content        string
+	}
+	enqueuedCalled := false
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{
+				Decision:        IngressExecuted,
+				AgentID:         "agent-123",
+				ResponseContent: "agent response body",
+			}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error {
+		enqueuedCalled = true
+		enqueued.tenantID = tenantID
+		enqueued.platform = platform
+		enqueued.idempotencyKey = idempotencyKey
+		enqueued.recipientID = recipientID
+		enqueued.correlationID = correlationID
+		enqueued.content = responseContent
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("outbox me")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req.Header.Set("X-Request-ID", "req-outbox")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, enqueuedCalled)
+	assert.Equal(t, "190f3a21-3b2c-42ce-b26e-2f448a58ec14", enqueued.tenantID)
+	assert.Equal(t, "whatsapp", enqueued.platform)
+	assert.Equal(t, "wamid.123", enqueued.idempotencyKey)
+	assert.Equal(t, "+15550001111", enqueued.recipientID)
+	assert.Equal(t, "req-outbox", enqueued.correlationID)
+	assert.Equal(t, "agent response body", enqueued.content)
+}
+
+func TestHandleWebhook_EnqueueFailureReturns500AndDispatchFailed(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	var persistedStatus string
+	var persistedMetadata json.RawMessage
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{
+				Decision:        IngressExecuted,
+				AgentID:         "agent-123",
+				ResponseContent: "agent response body",
+			}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _ string) error {
+		return errors.New("enqueue failed")
+	}
+	h.updateMessageStatus = func(_ context.Context, _, _, _, status string, metadata json.RawMessage) error {
+		persistedStatus = status
+		persistedMetadata = metadata
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("outbox me")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "processing webhook failed")
+	assert.Equal(t, MessageStatusDispatchFailed, persistedStatus)
+	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123"}`, string(persistedMetadata))
+}
+
 func TestHandleWebhook_StatusPersistenceFailureReturns500(t *testing.T) {
 	guard := NewIngressGuard(
 		stubVerifier{},
