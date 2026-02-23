@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 const (
 	defaultFirecrackerBinary      = "firecracker"
+	defaultJailerBinary           = "jailer"
 	defaultFirecrackerStateSubdir = "valinor-firecracker"
 	defaultFirecrackerBootArgs    = "console=ttyS0 reboot=k panic=1 pci=off"
 	defaultFirecrackerVCPUs       = 1
@@ -32,6 +34,8 @@ const (
 	defaultJailerPIDFileName      = ".pid"
 	defaultVMStateFileName        = "vm-state.json"
 )
+
+var vmIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
 type firecrackerVM struct {
 	cmd            *exec.Cmd
@@ -94,7 +98,7 @@ func NewFirecrackerDriverWithConfig(kernelPath, rootDrive string, jailerCfg Fire
 	}
 	binaryPath = resolveExecutablePath(binaryPath)
 	if strings.TrimSpace(jailerCfg.BinaryPath) == "" {
-		jailerCfg.BinaryPath = "jailer"
+		jailerCfg.BinaryPath = defaultJailerBinary
 	}
 	jailerCfg.BinaryPath = resolveExecutablePath(jailerCfg.BinaryPath)
 
@@ -111,9 +115,9 @@ func NewFirecrackerDriverWithConfig(kernelPath, rootDrive string, jailerCfg Fire
 }
 
 func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error) {
-	vmID := strings.TrimSpace(spec.VMID)
-	if vmID == "" {
-		return VMHandle{}, fmt.Errorf("%w: vm id is required", ErrDriverFailure)
+	vmID, err := normalizeVMID(spec.VMID)
+	if err != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
 	}
 	if spec.VsockCID == 0 {
 		return VMHandle{}, fmt.Errorf("%w: vsock CID is required", ErrDriverFailure)
@@ -126,6 +130,9 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	if kernelPath == "" {
 		return VMHandle{}, fmt.Errorf("%w: kernel path is required", ErrDriverFailure)
 	}
+	if err := requireAbsoluteFilePath(kernelPath, "kernel path"); err != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
 
 	rootDrive := strings.TrimSpace(spec.RootDrive)
 	if rootDrive == "" {
@@ -133,6 +140,15 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	if rootDrive == "" {
 		return VMHandle{}, fmt.Errorf("%w: root drive is required", ErrDriverFailure)
+	}
+	if err := requireAbsoluteFilePath(rootDrive, "root drive path"); err != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
+	dataDrive := strings.TrimSpace(spec.DataDrive)
+	if dataDrive != "" {
+		if err := requireAbsoluteFilePath(dataDrive, "data drive path"); err != nil {
+			return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+		}
 	}
 	if spec.UseJailer || strings.TrimSpace(spec.JailerPath) != "" {
 		return VMHandle{}, fmt.Errorf("%w: per-request jailer override is not supported", ErrDriverFailure)
@@ -152,15 +168,20 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 		memMB = defaultFirecrackerMemoryMB
 	}
 
+	resolvedFirecrackerBinary, err := resolveAndValidateExecutable(d.binaryPath, defaultFirecrackerBinary)
+	if err != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
+
 	stateDir := filepath.Join(d.stateRoot, vmID)
 	apiSock := filepath.Join(stateDir, "api.sock")
 	vsockSock := filepath.Join(stateDir, "vsock.sock")
 	logPath := filepath.Join(stateDir, "firecracker.log")
 	firecrackerKernelPath := kernelPath
 	firecrackerRootDrive := rootDrive
-	firecrackerDataDrive := spec.DataDrive
+	firecrackerDataDrive := dataDrive
 	vsockUDSPath := vsockSock
-	launchBinary := d.binaryPath
+	launchBinaryPath := resolvedFirecrackerBinary
 	launchArgs := []string{"--api-sock", apiSock}
 	jailerDir := ""
 	firecrackerPID := 0
@@ -178,16 +199,20 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 
 	if d.jailer.Enabled {
+		resolvedJailerBinary, binaryErr := resolveAndValidateExecutable(d.jailer.BinaryPath, defaultJailerBinary)
+		if binaryErr != nil {
+			return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, binaryErr)
+		}
 		var prepErr error
-		jailerDir, apiSock, firecrackerKernelPath, firecrackerRootDrive, firecrackerDataDrive, prepErr = d.prepareJailerLayout(vmID, kernelPath, rootDrive, spec.DataDrive)
+		jailerDir, apiSock, firecrackerKernelPath, firecrackerRootDrive, firecrackerDataDrive, prepErr = d.prepareJailerLayout(vmID, kernelPath, rootDrive, dataDrive)
 		if prepErr != nil {
 			_ = os.RemoveAll(stateDir)
 			return VMHandle{}, fmt.Errorf("%w: preparing jailer layout: %v", ErrDriverFailure, prepErr)
 		}
 		vsockUDSPath = "/run/vsock.sock"
 		logPath = filepath.Join(stateDir, "jailer.log")
-		launchBinary = d.jailer.BinaryPath
-		launchArgs = buildJailerCommandArgs(vmID, d.binaryPath, d.jailer, "/run/firecracker.socket")
+		launchBinaryPath = resolvedJailerBinary
+		launchArgs = buildJailerCommandArgs(vmID, resolvedFirecrackerBinary, d.jailer, "/run/firecracker.socket")
 		daemonized = d.jailer.Daemonize
 	}
 
@@ -202,8 +227,15 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	defer logFile.Close()
 
-	// #nosec G204 -- launchBinary is resolved/validated from trusted config and process env.
-	cmd := exec.CommandContext(context.Background(), launchBinary, launchArgs...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	var cmd *exec.Cmd
+	if d.jailer.Enabled {
+		// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
+		cmd = exec.CommandContext(context.Background(), "jailer", launchArgs...)
+	} else {
+		// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
+		cmd = exec.CommandContext(context.Background(), "firecracker", launchArgs...)
+	}
+	cmd.Path = launchBinaryPath
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = stateDir
@@ -395,18 +427,23 @@ func (d *FirecrackerDriver) IsHealthy(ctx context.Context, id string) (bool, err
 }
 
 func (d *FirecrackerDriver) Cleanup(_ context.Context, id string) error {
+	vmID, err := normalizeVMID(id)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
+
 	d.mu.Lock()
-	vm, ok := d.vms[id]
+	vm, ok := d.vms[vmID]
 	if ok {
-		delete(d.vms, id)
+		delete(d.vms, vmID)
 	}
 	d.mu.Unlock()
 
 	if !ok {
-		var err error
-		vm, ok, err = d.loadVMForCleanup(id)
-		if err != nil {
-			return err
+		var loadErr error
+		vm, ok, loadErr = d.loadVMForCleanup(vmID)
+		if loadErr != nil {
+			return loadErr
 		}
 		if !ok {
 			return nil
@@ -461,19 +498,24 @@ func (d *FirecrackerDriver) stopProcess(vm *firecrackerVM) error {
 }
 
 func (d *FirecrackerDriver) getVM(id string) (*firecrackerVM, error) {
+	vmID, err := normalizeVMID(id)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
+
 	d.mu.Lock()
-	vm, ok := d.vms[id]
+	vm, ok := d.vms[vmID]
 	d.mu.Unlock()
 	if ok {
 		return vm, nil
 	}
 
-	vm, ok, err := d.loadPersistedVM(id)
+	vm, ok, err = d.loadPersistedVM(vmID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok || !vm.daemonized || vm.firecrackerPID <= 0 {
-		return nil, fmt.Errorf("%w: %s", ErrVMNotFound, id)
+		return nil, fmt.Errorf("%w: %s", ErrVMNotFound, vmID)
 	}
 
 	alive, err := processAlive(vm.firecrackerPID)
@@ -481,21 +523,26 @@ func (d *FirecrackerDriver) getVM(id string) (*firecrackerVM, error) {
 		return nil, fmt.Errorf("%w: checking process health: %v", ErrDriverFailure, err)
 	}
 	if !alive {
-		return nil, fmt.Errorf("%w: %s", ErrVMNotFound, id)
+		return nil, fmt.Errorf("%w: %s", ErrVMNotFound, vmID)
 	}
 
 	d.mu.Lock()
-	if existing, exists := d.vms[id]; exists {
+	if existing, exists := d.vms[vmID]; exists {
 		d.mu.Unlock()
 		return existing, nil
 	}
-	d.vms[id] = vm
+	d.vms[vmID] = vm
 	d.mu.Unlock()
 	return vm, nil
 }
 
 func (d *FirecrackerDriver) loadVMForCleanup(id string) (*firecrackerVM, bool, error) {
-	vm, ok, err := d.loadPersistedVM(id)
+	vmID, err := normalizeVMID(id)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
+
+	vm, ok, err := d.loadPersistedVM(vmID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -503,7 +550,7 @@ func (d *FirecrackerDriver) loadVMForCleanup(id string) (*firecrackerVM, bool, e
 		return vm, true, nil
 	}
 
-	stateDir := filepath.Join(d.stateRoot, id)
+	stateDir := filepath.Join(d.stateRoot, vmID)
 	if _, err := os.Stat(stateDir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, false, nil
@@ -513,7 +560,7 @@ func (d *FirecrackerDriver) loadVMForCleanup(id string) (*firecrackerVM, bool, e
 
 	vm = &firecrackerVM{
 		stateDir:   stateDir,
-		jailerDir:  d.inferJailerDir(id),
+		jailerDir:  d.inferJailerDir(vmID),
 		daemonized: false,
 	}
 	return vm, true, nil
@@ -545,6 +592,68 @@ func configureMachine(ctx context.Context, client *firecrackerClient, vcpus, mem
 		return nil
 	}
 	return fmt.Errorf("machine-config smt mode failed (%v); ht_enabled fallback failed (%v)", err, legacyErr)
+}
+
+func normalizeVMID(raw string) (string, error) {
+	vmID := strings.TrimSpace(raw)
+	if vmID == "" {
+		return "", fmt.Errorf("vm id is required")
+	}
+	if !vmIDPattern.MatchString(vmID) {
+		return "", fmt.Errorf("invalid vm id %q: allowed pattern %q", vmID, vmIDPattern.String())
+	}
+	return vmID, nil
+}
+
+func requireAbsoluteFilePath(path, label string) error {
+	candidate := strings.TrimSpace(path)
+	if candidate == "" {
+		return fmt.Errorf("%s is required", label)
+	}
+	if !filepath.IsAbs(candidate) {
+		return fmt.Errorf("%s must be an absolute file path", label)
+	}
+	info, err := os.Stat(candidate)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%s %q does not exist", label, candidate)
+		}
+		return fmt.Errorf("%s %q cannot be read: %w", label, candidate, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%s %q must be a file, got directory", label, candidate)
+	}
+	return nil
+}
+
+func resolveAndValidateExecutable(binary, defaultName string) (string, error) {
+	candidate := strings.TrimSpace(binary)
+	if candidate == "" {
+		candidate = defaultName
+	}
+	resolved, err := exec.LookPath(candidate)
+	if err != nil {
+		return "", fmt.Errorf("executable %q not found in PATH", candidate)
+	}
+	absPath, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolving executable %q: %w", resolved, err)
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return "", fmt.Errorf("checking executable %q: %w", absPath, err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("executable %q is a directory", absPath)
+	}
+	mode := info.Mode().Perm()
+	if mode&0o111 == 0 {
+		return "", fmt.Errorf("executable %q is not marked executable", absPath)
+	}
+	if mode&0o022 != 0 {
+		return "", fmt.Errorf("executable %q must not be group/world writable", absPath)
+	}
+	return absPath, nil
 }
 
 func (d *FirecrackerDriver) inferJailerDir(id string) string {
@@ -592,32 +701,37 @@ func (d *FirecrackerDriver) persistVMState(vmID string, vm *firecrackerVM) error
 }
 
 func (d *FirecrackerDriver) loadPersistedVM(id string) (*firecrackerVM, bool, error) {
-	statePath := filepath.Join(d.stateRoot, id, defaultVMStateFileName)
+	vmID, err := normalizeVMID(id)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	}
+
+	statePath := filepath.Join(d.stateRoot, vmID, defaultVMStateFileName)
 	// #nosec G304 -- statePath is generated from internal state root and vm ID.
 	encoded, err := os.ReadFile(statePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("%w: reading vm state for %s: %v", ErrDriverFailure, id, err)
+		return nil, false, fmt.Errorf("%w: reading vm state for %s: %v", ErrDriverFailure, vmID, err)
 	}
 
 	var state firecrackerVMPersistedState
 	if err := json.Unmarshal(encoded, &state); err != nil {
-		return nil, false, fmt.Errorf("%w: decoding vm state for %s: %v", ErrDriverFailure, id, err)
+		return nil, false, fmt.Errorf("%w: decoding vm state for %s: %v", ErrDriverFailure, vmID, err)
 	}
 
-	if vmID := strings.TrimSpace(state.VMID); vmID != "" && vmID != id {
-		return nil, false, fmt.Errorf("%w: vm state mismatch: expected %s got %s", ErrDriverFailure, id, vmID)
+	if persistedID := strings.TrimSpace(state.VMID); persistedID != "" && persistedID != vmID {
+		return nil, false, fmt.Errorf("%w: vm state mismatch: expected %s got %s", ErrDriverFailure, vmID, persistedID)
 	}
 
 	stateDir := strings.TrimSpace(state.StateDir)
 	if stateDir == "" {
-		stateDir = filepath.Join(d.stateRoot, id)
+		stateDir = filepath.Join(d.stateRoot, vmID)
 	}
 	apiSock := strings.TrimSpace(state.APISock)
 	if apiSock == "" {
-		return nil, false, fmt.Errorf("%w: vm state missing api socket for %s", ErrDriverFailure, id)
+		return nil, false, fmt.Errorf("%w: vm state missing api socket for %s", ErrDriverFailure, vmID)
 	}
 
 	vm := &firecrackerVM{
@@ -823,6 +937,13 @@ func (d *FirecrackerDriver) prepareJailerLayout(vmID, kernelPath, rootDrive, dat
 }
 
 func linkOrCopyFile(src, dst string) error {
+	if err := requireAbsoluteFilePath(src, "source path"); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(dst) {
+		return fmt.Errorf("destination path must be an absolute file path")
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}

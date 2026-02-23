@@ -122,6 +122,116 @@ func TestFirecrackerDriver_StartFailsWhenMachineConfigRejected(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr))
 }
 
+func TestFirecrackerDriver_StartRejectsInvalidVMID(t *testing.T) {
+	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv(firecrackerTestHelperEnv, "1")
+
+	tmp := shortTempDir(t)
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	driver := NewFirecrackerDriver(kernelPath, rootDrive, "")
+	driver.stateRoot = filepath.Join(tmp, "state")
+	driver.socketWaitTimeout = 2 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := driver.Start(ctx, VMSpec{
+		VMID:     "../escape",
+		VsockCID: 50,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid vm id")
+}
+
+func TestFirecrackerDriver_StartRejectsUnsafePathOverrides(t *testing.T) {
+	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv(firecrackerTestHelperEnv, "1")
+
+	tmp := shortTempDir(t)
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	driver := NewFirecrackerDriver(kernelPath, rootDrive, "")
+	driver.stateRoot = filepath.Join(tmp, "state")
+	driver.socketWaitTimeout = 2 * time.Second
+
+	tests := []struct {
+		name    string
+		spec    VMSpec
+		errLike string
+	}{
+		{
+			name: "relative kernel path",
+			spec: VMSpec{
+				VMID:       "vm-relative-kernel",
+				VsockCID:   51,
+				KernelPath: "relative-kernel",
+			},
+			errLike: "kernel path must be an absolute file path",
+		},
+		{
+			name: "relative root drive path",
+			spec: VMSpec{
+				VMID:      "vm-relative-root",
+				VsockCID:  52,
+				RootDrive: "relative-root",
+			},
+			errLike: "root drive path must be an absolute file path",
+		},
+		{
+			name: "relative data drive path",
+			spec: VMSpec{
+				VMID:      "vm-relative-data",
+				VsockCID:  53,
+				DataDrive: "relative-data",
+			},
+			errLike: "data drive path must be an absolute file path",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			_, err := driver.Start(ctx, tc.spec)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.errLike)
+		})
+	}
+}
+
+func TestFirecrackerDriver_ManagementRejectsInvalidVMID(t *testing.T) {
+	tmp := shortTempDir(t)
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	driver := NewFirecrackerDriver(kernelPath, rootDrive, "")
+
+	_, healthyErr := driver.IsHealthy(context.Background(), "../bad-id")
+	require.Error(t, healthyErr)
+	assert.Contains(t, healthyErr.Error(), "invalid vm id")
+
+	stopErr := driver.Stop(context.Background(), "../bad-id")
+	require.Error(t, stopErr)
+	assert.Contains(t, stopErr.Error(), "invalid vm id")
+
+	cleanupErr := driver.Cleanup(context.Background(), "../bad-id")
+	require.Error(t, cleanupErr)
+	assert.Contains(t, cleanupErr.Error(), "invalid vm id")
+}
+
 func TestFirecrackerDriver_StartUsesSMTMachineConfigWhenRequired(t *testing.T) {
 	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
