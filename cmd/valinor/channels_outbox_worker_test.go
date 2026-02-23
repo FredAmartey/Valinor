@@ -48,6 +48,13 @@ func setupWorkerTestDB(t *testing.T) (*database.Pool, func()) {
 	return pool, cleanup
 }
 
+func TestListTenantIDs_NonPositivePageSizeReturnsError(t *testing.T) {
+	tenantIDs, err := listTenantIDs(context.Background(), nil, 0)
+	require.Error(t, err)
+	assert.Nil(t, tenantIDs)
+	assert.Contains(t, err.Error(), "must be positive")
+}
+
 func TestListTenantIDs_Paginates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

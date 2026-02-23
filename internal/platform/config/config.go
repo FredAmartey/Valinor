@@ -124,6 +124,7 @@ type ChannelsConfig struct {
 type ChannelsIngressConfig struct {
 	Enabled                         bool `koanf:"enabled"`
 	ReplayWindowSeconds             int  `koanf:"replaywindowseconds"`
+	TenantScanPageSize              int  `koanf:"tenantscanpagesize"`
 	RetentionCleanupEnabled         bool `koanf:"retentioncleanupenabled"`
 	RetentionCleanupIntervalSeconds int  `koanf:"retentioncleanupintervalseconds"`
 	RetentionCleanupBatchSize       int  `koanf:"retentioncleanupbatchsize"`
@@ -151,6 +152,7 @@ type ChannelProviderConfig struct {
 type ChannelsOutboxConfig struct {
 	Enabled             bool    `koanf:"enabled"`
 	PollIntervalSeconds int     `koanf:"pollintervalseconds"`
+	TenantScanPageSize  int     `koanf:"tenantscanpagesize"`
 	ClaimBatchSize      int     `koanf:"claimbatchsize"`
 	RecoveryBatchSize   int     `koanf:"recoverybatchsize"`
 	LockTimeoutSeconds  int     `koanf:"locktimeoutseconds"`
@@ -198,6 +200,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"audit.flush_interval_ms":                          500,
 		"channels.ingress.enabled":                         false,
 		"channels.ingress.replaywindowseconds":             86400,
+		"channels.ingress.tenantscanpagesize":              500,
 		"channels.ingress.retentioncleanupenabled":         true,
 		"channels.ingress.retentioncleanupintervalseconds": 3600,
 		"channels.ingress.retentioncleanupbatchsize":       500,
@@ -210,6 +213,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.providers.telegram.apibaseurl":           "https://api.telegram.org",
 		"channels.outbox.enabled":                          true,
 		"channels.outbox.pollintervalseconds":              2,
+		"channels.outbox.tenantscanpagesize":               500,
 		"channels.outbox.claimbatchsize":                   10,
 		"channels.outbox.recoverybatchsize":                10,
 		"channels.outbox.locktimeoutseconds":               30,

@@ -13,12 +13,11 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
-const defaultTenantScanPageSize = 500
-
 type channelOutboxWorker struct {
-	pool         *database.Pool
-	dispatcher   *channels.OutboxDispatcher
-	pollInterval time.Duration
+	pool               *database.Pool
+	dispatcher         *channels.OutboxDispatcher
+	pollInterval       time.Duration
+	tenantScanPageSize int
 }
 
 func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*channelOutboxWorker, error) {
@@ -29,6 +28,10 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 	pollInterval := time.Duration(cfg.Outbox.PollIntervalSeconds) * time.Second
 	if pollInterval <= 0 {
 		pollInterval = 2 * time.Second
+	}
+	tenantScanPageSize := cfg.Outbox.TenantScanPageSize
+	if tenantScanPageSize <= 0 {
+		tenantScanPageSize = defaultTenantScanPageSize
 	}
 
 	sender, err := buildChannelOutboxSender(cfg)
@@ -47,9 +50,10 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 	})
 
 	return &channelOutboxWorker{
-		pool:         pool,
-		dispatcher:   dispatcher,
-		pollInterval: pollInterval,
+		pool:               pool,
+		dispatcher:         dispatcher,
+		pollInterval:       pollInterval,
+		tenantScanPageSize: tenantScanPageSize,
 	}, nil
 }
 
@@ -74,7 +78,7 @@ func (w *channelOutboxWorker) Run(ctx context.Context) error {
 }
 
 func (w *channelOutboxWorker) sweep(ctx context.Context) {
-	tenantIDs, err := listTenantIDs(ctx, w.pool, defaultTenantScanPageSize)
+	tenantIDs, err := listTenantIDs(ctx, w.pool, w.tenantScanPageSize)
 	if err != nil {
 		slog.Error("channel outbox worker failed to list tenants", "error", err)
 		return
@@ -101,7 +105,7 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 
 func listTenantIDs(ctx context.Context, pool *database.Pool, pageSize int) ([]string, error) {
 	if pageSize <= 0 {
-		pageSize = defaultTenantScanPageSize
+		return nil, fmt.Errorf("tenant scan page size must be positive")
 	}
 
 	tenantIDs := make([]string, 0, pageSize)

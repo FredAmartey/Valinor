@@ -28,6 +28,7 @@ channels:
   ingress:
     enabled: false
     replaywindowseconds: 86400
+    tenantscanpagesize: 500
     retentioncleanupenabled: true
     retentioncleanupintervalseconds: 3600
     retentioncleanupbatchsize: 500
@@ -52,6 +53,7 @@ channels:
   outbox:
     enabled: true
     pollintervalseconds: 2
+    tenantscanpagesize: 500
     claimbatchsize: 10
     recoverybatchsize: 10
     locktimeoutseconds: 30
