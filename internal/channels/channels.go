@@ -38,6 +38,16 @@ const (
 	MessageStatusReplayBlocked = "replay_blocked"
 )
 
+// OutboxStatus represents delivery status for a provider-agnostic outbound job.
+type OutboxStatus string
+
+const (
+	OutboxStatusPending OutboxStatus = "pending"
+	OutboxStatusSending OutboxStatus = "sending"
+	OutboxStatusSent    OutboxStatus = "sent"
+	OutboxStatusDead    OutboxStatus = "dead"
+)
+
 // ChannelLink maps an external channel identity to a Valinor user in a tenant.
 type ChannelLink struct {
 	ID             uuid.UUID `json:"id"`
@@ -65,6 +75,46 @@ type UpsertLinkParams struct {
 	VerificationMetadata json.RawMessage
 }
 
+// ChannelOutbox stores an outbound delivery job and retry metadata.
+type ChannelOutbox struct {
+	ID               uuid.UUID       `json:"id"`
+	TenantID         uuid.UUID       `json:"tenant_id"`
+	ChannelMessageID uuid.UUID       `json:"channel_message_id"`
+	Provider         string          `json:"provider"`
+	RecipientID      string          `json:"recipient_id"`
+	Payload          json.RawMessage `json:"payload"`
+	Status           OutboxStatus    `json:"status"`
+	AttemptCount     int             `json:"attempt_count"`
+	MaxAttempts      int             `json:"max_attempts"`
+	NextAttemptAt    time.Time       `json:"next_attempt_at"`
+	LastError        *string         `json:"last_error,omitempty"`
+	LockedAt         *time.Time      `json:"locked_at,omitempty"`
+	SentAt           *time.Time      `json:"sent_at,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
+}
+
+// ChannelMessageRecord contains the persisted state for an inbound idempotency row.
+type ChannelMessageRecord struct {
+	ID                uuid.UUID       `json:"id"`
+	Platform          string          `json:"platform"`
+	PlatformUserID    string          `json:"platform_user_id"`
+	PlatformMessageID string          `json:"platform_message_id"`
+	IdempotencyKey    string          `json:"idempotency_key"`
+	CorrelationID     string          `json:"correlation_id"`
+	Status            string          `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
+}
+
+// EnqueueOutboundParams defines input for inserting an outbox job.
+type EnqueueOutboundParams struct {
+	ChannelMessageID string
+	Provider         string
+	RecipientID      string
+	Payload          json.RawMessage
+	MaxAttempts      int
+}
+
 // IsVerified returns whether this link can execute channel actions.
 func (l ChannelLink) IsVerified() bool {
 	return l.State == LinkStateVerified
@@ -74,6 +124,7 @@ var (
 	ErrLinkNotFound    = errors.New("channel link not found")
 	ErrLinkUnverified  = errors.New("channel link is not verified")
 	ErrMessageNotFound = errors.New("channel message not found")
+	ErrOutboxNotFound  = errors.New("channel outbox job not found")
 	ErrPlatformEmpty   = errors.New("platform is required")
 	ErrIdentityEmpty   = errors.New("platform user id is required")
 	ErrUserIDRequired  = errors.New("user id is required")
@@ -86,4 +137,5 @@ var (
 	ErrFingerprint     = errors.New("payload fingerprint is required")
 	ErrExpiryRequired  = errors.New("expiry timestamp is required")
 	ErrStatusRequired  = errors.New("status is required")
+	ErrPayloadRequired = errors.New("payload is required")
 )

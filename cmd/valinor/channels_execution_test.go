@@ -421,6 +421,7 @@ func TestNewChannelExecutor_ExecutesAgainstPreferredDepartmentAgent(t *testing.T
 	result := exec(context.Background(), testExecutionMessage())
 	assert.Equal(t, channels.IngressExecuted, result.Decision)
 	assert.Equal(t, "agent-dept-a", result.AgentID)
+	assert.Equal(t, "agent response", result.ResponseContent)
 	assert.True(t, dispatchCalled)
 	assert.Equal(t, "agent-dept-a", dispatchedAgentID)
 	require.Len(t, logger.events, 1)

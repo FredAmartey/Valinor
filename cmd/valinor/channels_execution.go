@@ -131,8 +131,9 @@ func newChannelExecutor(
 			"response_char_count": len(response),
 		})
 		return channels.ExecutionResult{
-			Decision: channels.IngressExecuted,
-			AgentID:  target.ID,
+			Decision:        channels.IngressExecuted,
+			AgentID:         target.ID,
+			ResponseContent: response,
 		}
 	}
 }

@@ -180,15 +180,30 @@ func seedTwoTenants(t *testing.T, superConnStr string) (tenantA, tenantB string)
 	require.NoError(t, err)
 
 	// channel_messages
-	_, err = pool.Exec(ctx,
+	var messageAID, messageBID string
+	err = pool.QueryRow(ctx,
 		`INSERT INTO channel_messages (tenant_id, platform, platform_user_id, platform_message_id, idempotency_key, payload_fingerprint, correlation_id, status, expires_at)
-		 VALUES ($1, 'whatsapp', 'wa-user-a', 'msg-a', 'idem-a', 'fp-a', 'corr-a', 'accepted', now() + interval '1 day')`,
-		tenantA)
+		 VALUES ($1, 'whatsapp', 'wa-user-a', 'msg-a', 'idem-a', 'fp-a', 'corr-a', 'accepted', now() + interval '1 day')
+		 RETURNING id`,
+		tenantA).Scan(&messageAID)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		`INSERT INTO channel_messages (tenant_id, platform, platform_user_id, platform_message_id, idempotency_key, payload_fingerprint, correlation_id, status, expires_at)
+		 VALUES ($1, 'whatsapp', 'wa-user-b', 'msg-b', 'idem-b', 'fp-b', 'corr-b', 'accepted', now() + interval '1 day')
+		 RETURNING id`,
+		tenantB).Scan(&messageBID)
+	require.NoError(t, err)
+
+	// channel_outbox
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_outbox (tenant_id, channel_message_id, provider, recipient_id, payload, status)
+		 VALUES ($1, $2, 'whatsapp', 'wa-user-a', '{"text":"hello a"}', 'pending')`,
+		tenantA, messageAID)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx,
-		`INSERT INTO channel_messages (tenant_id, platform, platform_user_id, platform_message_id, idempotency_key, payload_fingerprint, correlation_id, status, expires_at)
-		 VALUES ($1, 'whatsapp', 'wa-user-b', 'msg-b', 'idem-b', 'fp-b', 'corr-b', 'accepted', now() + interval '1 day')`,
-		tenantB)
+		`INSERT INTO channel_outbox (tenant_id, channel_message_id, provider, recipient_id, payload, status)
+		 VALUES ($1, $2, 'whatsapp', 'wa-user-b', '{"text":"hello b"}', 'pending')`,
+		tenantB, messageBID)
 	require.NoError(t, err)
 
 	return tenantA, tenantB
@@ -226,6 +241,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 		"user_departments",
 		"channel_links",
 		"channel_messages",
+		"channel_outbox",
 	}
 
 	for _, table := range tables {

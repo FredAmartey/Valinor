@@ -84,3 +84,27 @@ func TestBuildChannelHandler(t *testing.T) {
 		assert.NotNil(t, handler)
 	})
 }
+
+func TestBuildChannelOutboxWorker(t *testing.T) {
+	pool := (*database.Pool)(&pgxpool.Pool{})
+
+	t.Run("disabled ingress returns nil worker", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: false},
+			Outbox:  config.ChannelsOutboxConfig{Enabled: true},
+		})
+		require.NoError(t, err)
+		assert.Nil(t, worker)
+	})
+
+	t.Run("enabled ingress and outbox returns worker", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled: true,
+			},
+		})
+		require.NoError(t, err)
+		assert.NotNil(t, worker)
+	})
+}

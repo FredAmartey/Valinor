@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,15 +27,19 @@ type listLinksFunc func(ctx context.Context, tenantID string) ([]ChannelLink, er
 type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error)
 type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
 type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
+type getMessageByIdempotencyKeyFunc func(ctx context.Context, tenantID, platform, idempotencyKey string) (*ChannelMessageRecord, error)
+type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error
 
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
-	ingressByProvider   map[string]*IngressGuard
-	listLinks           listLinksFunc
-	upsertLink          upsertLinkFunc
-	deleteLink          deleteLinkFunc
-	updateMessageStatus updateMessageStatusFunc
-	execute             executeFunc
+	ingressByProvider          map[string]*IngressGuard
+	listLinks                  listLinksFunc
+	upsertLink                 upsertLinkFunc
+	deleteLink                 deleteLinkFunc
+	updateMessageStatus        updateMessageStatusFunc
+	getMessageByIdempotencyKey getMessageByIdempotencyKeyFunc
+	enqueueOutbound            enqueueOutboundFunc
+	execute                    executeFunc
 }
 
 // NewHandler creates a channels handler.
@@ -52,6 +57,8 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		h.upsertLink = nil
 		h.deleteLink = nil
 		h.updateMessageStatus = nil
+		h.getMessageByIdempotencyKey = nil
+		h.enqueueOutbound = nil
 		return h
 	}
 
@@ -91,6 +98,44 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 	h.updateMessageStatus = func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			return store.UpdateMessageStatus(ctx, q, platform, idempotencyKey, status, metadata)
+		})
+	}
+
+	h.getMessageByIdempotencyKey = func(ctx context.Context, tenantID, platform, idempotencyKey string) (*ChannelMessageRecord, error) {
+		var record *ChannelMessageRecord
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var lookupErr error
+			record, lookupErr = store.GetMessageByIdempotencyKey(ctx, q, platform, idempotencyKey)
+			return lookupErr
+		})
+		return record, err
+	}
+
+	h.enqueueOutbound = func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error {
+		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			messageID, err := store.GetMessageIDByIdempotencyKey(ctx, q, platform, idempotencyKey)
+			if err != nil {
+				return fmt.Errorf("resolving channel message for outbox enqueue: %w", err)
+			}
+
+			payload, err := json.Marshal(map[string]string{
+				"content":        responseContent,
+				"correlation_id": correlationID,
+			})
+			if err != nil {
+				return fmt.Errorf("marshaling outbox payload: %w", err)
+			}
+
+			_, err = store.EnqueueOutbound(ctx, q, EnqueueOutboundParams{
+				ChannelMessageID: messageID.String(),
+				Provider:         platform,
+				RecipientID:      recipientID,
+				Payload:          payload,
+			})
+			if err != nil {
+				return fmt.Errorf("enqueuing outbound response: %w", err)
+			}
+			return nil
 		})
 	}
 
@@ -186,6 +231,9 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 		actionableCount++
 		messageAgentID := ""
+		messageResponseContent := ""
+		statusMetadataExtra := map[string]any{}
+		enqueueFailed := false
 
 		platformMessageID := meta.PlatformMessageID
 		platformUserID := meta.PlatformUserID
@@ -224,6 +272,44 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		messageDecision := result.Decision
+		if result.Decision == IngressDuplicate && h.getMessageByIdempotencyKey != nil && h.enqueueOutbound != nil {
+			recoveredAgentID, recoveredResponse, recovered, recoverErr := h.recoverDuplicateDispatchFailure(
+				ctx,
+				tenantID,
+				provider,
+				idempotencyKey,
+				platformUserID,
+				correlationID,
+			)
+			if recoverErr != nil {
+				slog.Error(
+					"channel outbox duplicate recovery failed",
+					"tenant_id", tenantID,
+					"provider", provider,
+					"idempotency_key", idempotencyKey,
+					"platform_user_id", platformUserID,
+					"correlation_id", correlationID,
+					"error", recoverErr,
+				)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{
+					"error":          "processing webhook failed",
+					"correlation_id": correlationID,
+				})
+				return
+			}
+			if recovered {
+				messageDecision = IngressExecuted
+				if recoveredAgentID != "" {
+					messageAgentID = recoveredAgentID
+					executedAgentID = recoveredAgentID
+				}
+				statusMetadataExtra["outbox_enqueue_failed"] = false
+				statusMetadataExtra["outbox_recovered"] = true
+				if recoveredResponse != "" {
+					statusMetadataExtra["response_content"] = recoveredResponse
+				}
+			}
+		}
 		if h.execute != nil && result.Decision == IngressAccepted && result.Link != nil {
 			content := strings.TrimSpace(meta.Content)
 			if content != "" {
@@ -243,6 +329,35 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 					messageAgentID = execResult.AgentID
 					executedAgentID = execResult.AgentID
 				}
+				messageResponseContent = execResult.ResponseContent
+				if messageDecision == IngressExecuted && h.enqueueOutbound != nil {
+					enqueueErr := h.enqueueOutbound(
+						ctx,
+						tenantID,
+						provider,
+						idempotencyKey,
+						platformUserID,
+						correlationID,
+						messageResponseContent,
+					)
+					if enqueueErr != nil {
+						slog.Error(
+							"channel outbox enqueue failed",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"platform_user_id", platformUserID,
+							"correlation_id", correlationID,
+							"error", enqueueErr,
+						)
+						messageDecision = IngressDispatchFailed
+						statusMetadataExtra["outbox_enqueue_failed"] = true
+						if messageResponseContent != "" {
+							statusMetadataExtra["response_content"] = messageResponseContent
+						}
+						enqueueFailed = true
+					}
+				}
 			}
 		}
 		if h.updateMessageStatus != nil {
@@ -254,6 +369,9 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				}
 				if messageAgentID != "" {
 					statusMetadata["agent_id"] = messageAgentID
+				}
+				for key, value := range statusMetadataExtra {
+					statusMetadata[key] = value
 				}
 				rawStatusMetadata, marshalErr := json.Marshal(statusMetadata)
 				if marshalErr != nil {
@@ -302,6 +420,13 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if enqueueFailed {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error":          "processing webhook failed",
+				"correlation_id": correlationID,
+			})
+			return
+		}
 		decision = messageDecision
 	}
 
@@ -339,6 +464,80 @@ func messageStatusForDecision(decision IngressDecision) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+type dispatchFailureMetadata struct {
+	AgentID             string `json:"agent_id"`
+	ResponseContent     string `json:"response_content"`
+	OutboxEnqueueFailed bool   `json:"outbox_enqueue_failed"`
+}
+
+func (h *Handler) recoverDuplicateDispatchFailure(
+	ctx context.Context,
+	tenantID string,
+	provider string,
+	idempotencyKey string,
+	platformUserID string,
+	correlationID string,
+) (string, string, bool, error) {
+	record, err := h.getMessageByIdempotencyKey(ctx, tenantID, provider, idempotencyKey)
+	if err != nil {
+		if errors.Is(err, ErrMessageNotFound) {
+			return "", "", false, nil
+		}
+		return "", "", false, fmt.Errorf("loading duplicate message state: %w", err)
+	}
+	if record == nil || strings.TrimSpace(record.Status) != MessageStatusDispatchFailed {
+		return "", "", false, nil
+	}
+
+	var metadata dispatchFailureMetadata
+	if len(record.Metadata) > 0 {
+		if unmarshalErr := json.Unmarshal(record.Metadata, &metadata); unmarshalErr != nil {
+			slog.Warn(
+				"channel duplicate recovery metadata unmarshal failed",
+				"tenant_id", tenantID,
+				"provider", provider,
+				"idempotency_key", idempotencyKey,
+				"error", unmarshalErr,
+			)
+			return "", "", false, nil
+		}
+	}
+	responseContent := strings.TrimSpace(metadata.ResponseContent)
+	if !metadata.OutboxEnqueueFailed || responseContent == "" {
+		return "", "", false, nil
+	}
+
+	recipientID := strings.TrimSpace(record.PlatformUserID)
+	if recipientID == "" {
+		recipientID = strings.TrimSpace(platformUserID)
+	}
+	if recipientID == "" {
+		return "", "", false, fmt.Errorf("missing recipient id for duplicate dispatch recovery")
+	}
+
+	outboundCorrelationID := strings.TrimSpace(record.CorrelationID)
+	if outboundCorrelationID == "" {
+		outboundCorrelationID = strings.TrimSpace(correlationID)
+	}
+	if outboundCorrelationID == "" {
+		return "", "", false, fmt.Errorf("missing correlation id for duplicate dispatch recovery")
+	}
+
+	if err := h.enqueueOutbound(
+		ctx,
+		tenantID,
+		provider,
+		idempotencyKey,
+		recipientID,
+		outboundCorrelationID,
+		responseContent,
+	); err != nil {
+		return "", "", false, fmt.Errorf("re-enqueuing duplicate dispatch failure: %w", err)
+	}
+
+	return strings.TrimSpace(metadata.AgentID), responseContent, true, nil
 }
 
 // HandleListLinks lists tenant channel links.
