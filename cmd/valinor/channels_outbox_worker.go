@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -34,7 +35,12 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 		pollInterval = 2 * time.Second
 	}
 
-	dispatcher := channels.NewOutboxDispatcher(channels.NewStore(), noopOutboxSender{}, channels.OutboxDispatcherConfig{
+	sender, err := buildChannelOutboxSender(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building channel outbox sender: %w", err)
+	}
+
+	dispatcher := channels.NewOutboxDispatcher(channels.NewStore(), sender, channels.OutboxDispatcherConfig{
 		ClaimBatchSize:    cfg.Outbox.ClaimBatchSize,
 		RecoveryBatchSize: cfg.Outbox.RecoveryBatchSize,
 		LockTimeout:       time.Duration(cfg.Outbox.LockTimeoutSeconds) * time.Second,

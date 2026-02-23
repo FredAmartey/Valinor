@@ -107,4 +107,22 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, worker)
 	})
+
+	t.Run("whatsapp enabled without outbound credentials fails", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled: true,
+			},
+			Providers: config.ChannelsProvidersConfig{
+				WhatsApp: config.ChannelProviderConfig{
+					Enabled:       true,
+					SigningSecret: "wa-signing-secret",
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Nil(t, worker)
+		assert.Contains(t, err.Error(), "access token")
+	})
 }

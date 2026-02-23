@@ -75,6 +75,8 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 	assert.Equal(t, 86400, cfg.Channels.Ingress.ReplayWindowSeconds)
 	assert.False(t, cfg.Channels.Providers.Slack.Enabled)
 	assert.False(t, cfg.Channels.Providers.WhatsApp.Enabled)
+	assert.Equal(t, "https://graph.facebook.com", cfg.Channels.Providers.WhatsApp.APIBaseURL)
+	assert.Equal(t, "v22.0", cfg.Channels.Providers.WhatsApp.APIVersion)
 	assert.False(t, cfg.Channels.Providers.Telegram.Enabled)
 }
 
@@ -82,10 +84,18 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_INGRESS_ENABLED", "true")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ENABLED", "true")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_SIGNINGSECRET", "wa-secret")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIBASEURL", "https://graph.test")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIVERSION", "v99.0")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ACCESSTOKEN", "wa-access-token")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_PHONENUMBERID", "123456789")
 	defer func() {
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_ENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_SIGNINGSECRET")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIBASEURL")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIVERSION")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ACCESSTOKEN")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_PHONENUMBERID")
 	}()
 
 	cfg, err := config.Load()
@@ -94,6 +104,10 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	assert.True(t, cfg.Channels.Ingress.Enabled)
 	assert.True(t, cfg.Channels.Providers.WhatsApp.Enabled)
 	assert.Equal(t, "wa-secret", cfg.Channels.Providers.WhatsApp.SigningSecret)
+	assert.Equal(t, "https://graph.test", cfg.Channels.Providers.WhatsApp.APIBaseURL)
+	assert.Equal(t, "v99.0", cfg.Channels.Providers.WhatsApp.APIVersion)
+	assert.Equal(t, "wa-access-token", cfg.Channels.Providers.WhatsApp.AccessToken)
+	assert.Equal(t, "123456789", cfg.Channels.Providers.WhatsApp.PhoneNumberID)
 }
 
 func TestLoad_ChannelsOutboxDefaults(t *testing.T) {

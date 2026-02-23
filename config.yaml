@@ -35,6 +35,20 @@ channels:
     whatsapp:
       enabled: false
       signingsecret: ""
+      apibaseurl: "https://graph.facebook.com"
+      apiversion: "v22.0"
+      accesstoken: ""
+      phonenumberid: ""
     telegram:
       enabled: false
       secrettoken: ""
+  outbox:
+    enabled: true
+    pollintervalseconds: 2
+    claimbatchsize: 10
+    recoverybatchsize: 10
+    locktimeoutseconds: 30
+    maxattempts: 5
+    baseretryseconds: 5
+    maxretryseconds: 120
+    jitterfraction: 0.2

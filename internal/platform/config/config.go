@@ -138,6 +138,10 @@ type ChannelProviderConfig struct {
 	Enabled       bool   `koanf:"enabled"`
 	SigningSecret string `koanf:"signingsecret"`
 	SecretToken   string `koanf:"secrettoken"`
+	APIBaseURL    string `koanf:"apibaseurl"`
+	APIVersion    string `koanf:"apiversion"`
+	AccessToken   string `koanf:"accesstoken"`
+	PhoneNumberID string `koanf:"phonenumberid"`
 }
 
 // ChannelsOutboxConfig controls background outbox worker behavior.
@@ -193,6 +197,8 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.ingress.replaywindowseconds":      86400,
 		"channels.providers.slack.enabled":          false,
 		"channels.providers.whatsapp.enabled":       false,
+		"channels.providers.whatsapp.apibaseurl":    "https://graph.facebook.com",
+		"channels.providers.whatsapp.apiversion":    "v22.0",
 		"channels.providers.telegram.enabled":       false,
 		"channels.outbox.enabled":                   true,
 		"channels.outbox.pollintervalseconds":       2,
