@@ -13,6 +13,7 @@ type ingressMetadata struct {
 	PlatformUserID    string
 	PlatformMessageID string
 	OccurredAt        time.Time
+	Content           string
 	Control           *ingressControl
 }
 
@@ -43,6 +44,7 @@ func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time
 			Type  string `json:"type"`
 			User  string `json:"user"`
 			BotID string `json:"bot_id"`
+			Text  string `json:"text"`
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -83,6 +85,7 @@ func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time
 		PlatformUserID:    platformIdentity,
 		PlatformMessageID: strings.TrimSpace(payload.EventID),
 		OccurredAt:        occurredAt,
+		Content:           strings.TrimSpace(payload.Event.Text),
 	}}, nil
 }
 
@@ -95,6 +98,9 @@ func extractWhatsAppIngressMetadata(body []byte, now time.Time) ([]ingressMetada
 						From      string `json:"from"`
 						ID        string `json:"id"`
 						Timestamp string `json:"timestamp"`
+						Text      struct {
+							Body string `json:"body"`
+						} `json:"text"`
 					} `json:"messages"`
 					Statuses []struct {
 						Timestamp string `json:"timestamp"`
@@ -143,6 +149,7 @@ func extractWhatsAppIngressMetadata(body []byte, now time.Time) ([]ingressMetada
 					PlatformUserID:    strings.TrimSpace(message.From),
 					PlatformMessageID: strings.TrimSpace(message.ID),
 					OccurredAt:        occurredAt,
+					Content:           strings.TrimSpace(message.Text.Body),
 				})
 			}
 		}
@@ -179,8 +186,9 @@ func extractWhatsAppIngressMetadata(body []byte, now time.Time) ([]ingressMetada
 func extractTelegramIngressMetadata(body []byte, now time.Time) ([]ingressMetadata, error) {
 	var payload struct {
 		Message struct {
-			MessageID int64 `json:"message_id"`
-			Date      int64 `json:"date"`
+			MessageID int64  `json:"message_id"`
+			Date      int64  `json:"date"`
+			Text      string `json:"text"`
 			From      struct {
 				ID int64 `json:"id"`
 			} `json:"from"`
@@ -207,5 +215,6 @@ func extractTelegramIngressMetadata(body []byte, now time.Time) ([]ingressMetada
 		PlatformUserID:    strconv.FormatInt(payload.Message.From.ID, 10),
 		PlatformMessageID: platformMessageID,
 		OccurredAt:        occurredAt,
+		Content:           strings.TrimSpace(payload.Message.Text),
 	}}, nil
 }

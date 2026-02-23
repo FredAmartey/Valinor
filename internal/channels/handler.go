@@ -31,6 +31,7 @@ type Handler struct {
 	listLinks         listLinksFunc
 	upsertLink        upsertLinkFunc
 	deleteLink        deleteLinkFunc
+	execute           executeFunc
 }
 
 // NewHandler creates a channels handler.
@@ -145,6 +146,9 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	decision := IngressIgnored
 	actionableCount := 0
 	controlVerified := false
+	executedAgentID := ""
+	// For batched webhook payloads, response fields reflect the most recent
+	// actionable message processed in this request.
 
 	for _, meta := range metas {
 		if meta.Control != nil && meta.Control.AcknowledgeOnly {
@@ -209,6 +213,26 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		decision = result.Decision
+		if h.execute != nil && result.Decision == IngressAccepted && result.Link != nil {
+			content := strings.TrimSpace(meta.Content)
+			if content != "" {
+				execResult := h.execute(ctx, ExecutionMessage{
+					TenantID:          tenantID,
+					Platform:          provider,
+					PlatformUserID:    platformUserID,
+					PlatformMessageID: platformMessageID,
+					CorrelationID:     correlationID,
+					Content:           content,
+					Link:              *result.Link,
+				})
+				if execResult.Decision != "" {
+					decision = execResult.Decision
+				}
+				if execResult.AgentID != "" {
+					executedAgentID = execResult.AgentID
+				}
+			}
+		}
 	}
 
 	if actionableCount == 0 {
@@ -219,10 +243,15 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	resp := map[string]string{
 		"decision":       string(decision),
 		"correlation_id": correlationID,
-	})
+	}
+	if executedAgentID != "" {
+		resp["agent_id"] = executedAgentID
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // HandleListLinks lists tenant channel links.

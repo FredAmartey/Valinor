@@ -24,6 +24,11 @@ const (
 	ActionChannelWebhookIgnored           = "channel.webhook.ignored"
 	ActionChannelWebhookRejectedSignature = "channel.webhook.rejected_signature"
 	ActionChannelActionDeniedUnverified   = "channel.action_denied_unverified"
+	ActionChannelActionExecuted           = "channel.action_executed"
+	ActionChannelActionDeniedRBAC         = "channel.action_denied_rbac"
+	ActionChannelActionDeniedNoAgent      = "channel.action_denied_no_agent"
+	ActionChannelActionDeniedSentinel     = "channel.action_denied_sentinel"
+	ActionChannelActionDispatchFailed     = "channel.action_dispatch_failed"
 )
 
 const (
@@ -31,6 +36,7 @@ const (
 	MetadataDecision        = "decision"
 	MetadataIdempotencyKey  = "idempotency_key"
 	MetadataPlatformMessage = "platform_message_id"
+	MetadataPlatformUserID  = "platform_user_id"
 )
 
 // Logger is the audit logging interface. Log is fire-and-forget.

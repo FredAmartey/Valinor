@@ -15,10 +15,15 @@ type IngressDecision string
 
 const (
 	IngressAccepted          IngressDecision = "accepted"
+	IngressExecuted          IngressDecision = "executed"
 	IngressDuplicate         IngressDecision = "duplicate"
 	IngressReplayBlocked     IngressDecision = "replay_blocked"
 	IngressRejectedSignature IngressDecision = "rejected_signature"
 	IngressDeniedUnverified  IngressDecision = "denied_unverified"
+	IngressDeniedRBAC        IngressDecision = "denied_rbac"
+	IngressDeniedNoAgent     IngressDecision = "denied_no_agent"
+	IngressDeniedSentinel    IngressDecision = "denied_sentinel"
+	IngressDispatchFailed    IngressDecision = "dispatch_failed"
 	IngressIgnored           IngressDecision = "ignored"
 )
 

@@ -184,10 +184,11 @@ func run() error {
 	// Orchestrator — build manager and handler; background loops start after signal context.
 	var agentHandler *orchestrator.Handler
 	var orchManager *orchestrator.Manager
+	var orchStore *orchestrator.Store
 	var proxyHandler *proxy.Handler
 	var connPool *proxy.ConnPool
 	if pool != nil {
-		orchStore := orchestrator.NewStore()
+		orchStore = orchestrator.NewStore()
 		orchDriver, err := selectVMDriver(cfg.Orchestrator, cfg.Auth.DevMode)
 		if err != nil {
 			return fmt.Errorf("selecting orchestrator driver: %w", err)
@@ -220,6 +221,47 @@ func run() error {
 	}
 	if connPool != nil {
 		defer connPool.Close()
+	}
+
+	if channelHandler != nil {
+		executor := newChannelExecutor(
+			func(ctx context.Context, userID string) (*auth.Identity, error) {
+				if authStore == nil {
+					return nil, fmt.Errorf("auth store is not configured")
+				}
+				return authStore.GetIdentityWithRoles(ctx, userID)
+			},
+			func(ctx context.Context, identity *auth.Identity, action string) (*rbac.Decision, error) {
+				return rbacEngine.Authorize(ctx, identity, action, "", "")
+			},
+			func(ctx context.Context, tenantID string) ([]orchestrator.AgentInstance, error) {
+				if orchStore == nil || pool == nil {
+					return nil, fmt.Errorf("orchestrator store is not configured")
+				}
+				return orchStore.ListByTenant(ctx, pool, tenantID)
+			},
+			func(ctx context.Context, agent orchestrator.AgentInstance, content string) (string, error) {
+				return dispatchChannelMessageToAgent(
+					ctx,
+					connPool,
+					agent,
+					content,
+					time.Duration(cfg.Proxy.MessageTimeout)*time.Second,
+				)
+			},
+			func(ctx context.Context, tenantID, userID, content string) (sentinel.ScanResult, error) {
+				if sentinelScanner == nil {
+					return sentinel.ScanResult{Allowed: true}, nil
+				}
+				return sentinelScanner.Scan(ctx, sentinel.ScanInput{
+					TenantID: tenantID,
+					UserID:   userID,
+					Content:  content,
+				})
+			},
+			auditLogger,
+		)
+		channelHandler.WithExecutor(executor)
 	}
 
 	// Dev mode identity

@@ -34,6 +34,23 @@ func testWhatsAppWebhookBody() string {
 }`, time.Now().Unix())
 }
 
+func testWhatsAppWebhookBodyWithText(text string) string {
+	return fmt.Sprintf(`{
+  "entry": [{
+    "changes": [{
+      "value": {
+        "messages": [{
+          "from": "+15550001111",
+          "id": "wamid.123",
+          "timestamp": "%d",
+          "text": {"body": %q}
+        }]
+      }
+    }]
+  }]
+}`, time.Now().Unix(), text)
+}
+
 func TestHandleWebhook_RejectsInvalidSignature(t *testing.T) {
 	guard := NewIngressGuard(
 		stubVerifier{verifyErr: ErrInvalidSignature},
@@ -82,6 +99,83 @@ func TestHandleWebhook_AcceptsVerifiedMessage(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "accepted")
+}
+
+func TestHandleWebhook_AcceptedMessageInvokesExecutor(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			return true, nil
+		},
+	)
+
+	executed := false
+	var executedMsg ExecutionMessage
+	h := NewHandler(map[string]*IngressGuard{
+		"whatsapp": guard,
+	}).WithExecutor(func(_ context.Context, msg ExecutionMessage) ExecutionResult {
+		executed = true
+		executedMsg = msg
+		return ExecutionResult{
+			Decision: IngressExecuted,
+			AgentID:  "agent-123",
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("hello from field")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req.Header.Set("X-Request-ID", "req-exec")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, executed)
+	assert.Equal(t, "hello from field", executedMsg.Content)
+	assert.Equal(t, "req-exec", executedMsg.CorrelationID)
+	assert.Contains(t, w.Body.String(), string(IngressExecuted))
+	assert.Contains(t, w.Body.String(), "agent-123")
+}
+
+func TestHandleWebhook_DuplicateMessageSkipsExecutor(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			return false, nil
+		},
+	)
+
+	executed := false
+	h := NewHandler(map[string]*IngressGuard{
+		"whatsapp": guard,
+	}).WithExecutor(func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+		executed = true
+		return ExecutionResult{Decision: IngressExecuted}
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("hello duplicate")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.False(t, executed)
+	assert.Contains(t, w.Body.String(), string(IngressDuplicate))
 }
 
 func TestHandleListLinks_RequiresTenantContext(t *testing.T) {
