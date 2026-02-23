@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -16,14 +17,6 @@ type channelOutboxWorker struct {
 	pollInterval time.Duration
 }
 
-type noopOutboxSender struct{}
-
-func (noopOutboxSender) Send(_ context.Context, _ channels.ChannelOutbox) error {
-	// TODO(v2): replace this stub with real provider dispatch.
-	// V1 adapter stub: successful no-op send for infrastructure wiring.
-	return nil
-}
-
 func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*channelOutboxWorker, error) {
 	if pool == nil || !cfg.Ingress.Enabled || !cfg.Outbox.Enabled {
 		return nil, nil
@@ -34,7 +27,12 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 		pollInterval = 2 * time.Second
 	}
 
-	dispatcher := channels.NewOutboxDispatcher(channels.NewStore(), noopOutboxSender{}, channels.OutboxDispatcherConfig{
+	sender, err := buildChannelOutboxSender(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building channel outbox sender: %w", err)
+	}
+
+	dispatcher := channels.NewOutboxDispatcher(channels.NewStore(), sender, channels.OutboxDispatcherConfig{
 		ClaimBatchSize:    cfg.Outbox.ClaimBatchSize,
 		RecoveryBatchSize: cfg.Outbox.RecoveryBatchSize,
 		LockTimeout:       time.Duration(cfg.Outbox.LockTimeoutSeconds) * time.Second,
