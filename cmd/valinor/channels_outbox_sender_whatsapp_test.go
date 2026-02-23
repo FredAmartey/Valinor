@@ -137,7 +137,7 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		err := sender.Send(context.Background(), channels.ChannelOutbox{
 			Provider:    "slack",
 			RecipientID: "C12345678",
-			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123","thread_ts":"1730000010.000100"}`),
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "Bearer xoxb-test-token", seenAuth)
@@ -145,6 +145,32 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		assert.Equal(t, "C12345678", seenBody["channel"])
 		assert.Equal(t, "hello from outbox", seenBody["text"])
 		assert.Equal(t, false, seenBody["unfurl_links"])
+		assert.Equal(t, "1730000010.000100", seenBody["thread_ts"])
+	})
+
+	t.Run("returns error when slack API returns non-2xx status", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"ok":false,"error":"invalid_auth"}`))
+		}))
+		defer srv.Close()
+
+		sender := newSlackOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "xoxb-test-token",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "slack",
+			RecipientID: "C12345678",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "status 401")
 	})
 
 	t.Run("returns error when slack API rejects request", func(t *testing.T) {
@@ -189,6 +215,25 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "decoding outbox payload")
+	})
+
+	t.Run("returns error for empty content", func(t *testing.T) {
+		sender := newSlackOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  "https://slack.example.com",
+				AccessToken: "xoxb-test-token",
+			},
+			http.DefaultClient,
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "slack",
+			RecipientID: "C12345678",
+			Payload:     json.RawMessage(`{"content":"  ","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "content is required")
 	})
 
 	t.Run("returns error for empty recipient id", func(t *testing.T) {

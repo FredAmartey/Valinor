@@ -16,7 +16,7 @@ func TestExtractIngressMetadata_Slack(t *testing.T) {
 	}
 	body := []byte(`{
 	  "event_id":"Ev123",
-	  "event":{"user":"U12345","text":"hello"}
+	  "event":{"user":"U12345","text":"hello","channel":"C12345"}
 	}`)
 
 	metas, err := extractIngressMetadata("slack", headers, body, now)
@@ -27,6 +27,8 @@ func TestExtractIngressMetadata_Slack(t *testing.T) {
 	assert.Equal(t, "Ev123", meta.PlatformMessageID)
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
 	assert.Equal(t, "hello", meta.Content)
+	assert.Equal(t, "C12345", meta.OutboundRecipientID)
+	assert.Empty(t, meta.OutboundThreadTS)
 }
 
 func TestExtractIngressMetadata_WhatsApp(t *testing.T) {
@@ -104,7 +106,7 @@ func TestExtractIngressMetadata_SlackBotEventUsesBotID(t *testing.T) {
 	}
 	body := []byte(`{
 	  "event_id":"Ev456",
-	  "event":{"bot_id":"B12345","text":"hello"}
+	  "event":{"bot_id":"B12345","text":"hello","channel":"C67890","thread_ts":"1730000010.000100"}
 	}`)
 
 	metas, err := extractIngressMetadata("slack", headers, body, now)
@@ -115,6 +117,8 @@ func TestExtractIngressMetadata_SlackBotEventUsesBotID(t *testing.T) {
 	assert.Equal(t, "Ev456", meta.PlatformMessageID)
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
 	assert.Equal(t, "hello", meta.Content)
+	assert.Equal(t, "C67890", meta.OutboundRecipientID)
+	assert.Equal(t, "1730000010.000100", meta.OutboundThreadTS)
 }
 
 func TestExtractIngressMetadata_WhatsAppStatusUpdate(t *testing.T) {

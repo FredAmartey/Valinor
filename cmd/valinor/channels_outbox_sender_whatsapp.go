@@ -53,12 +53,6 @@ func buildChannelOutboxSender(cfg config.ChannelsConfig) (channels.OutboxSender,
 		providers["whatsapp"] = newWhatsAppOutboxSender(waCfg, nil)
 	}
 
-	if len(providers) == 0 {
-		return routingOutboxSender{
-			byProvider: providers,
-		}, nil
-	}
-
 	return routingOutboxSender{
 		byProvider: providers,
 	}, nil

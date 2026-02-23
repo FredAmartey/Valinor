@@ -45,6 +45,7 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 	var payload struct {
 		Content       string `json:"content"`
 		CorrelationID string `json:"correlation_id"`
+		ThreadTS      string `json:"thread_ts"`
 	}
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return fmt.Errorf("decoding outbox payload: %w", err)
@@ -64,12 +65,15 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		Channel     string `json:"channel"`
 		Text        string `json:"text"`
 		UnfurlLinks bool   `json:"unfurl_links"`
+		ThreadTS    string `json:"thread_ts,omitempty"`
 	}
 
+	threadTS := strings.TrimSpace(payload.ThreadTS)
 	body, err := json.Marshal(slackSendRequest{
 		Channel:     recipientID,
 		Text:        content,
 		UnfurlLinks: false,
+		ThreadTS:    threadTS,
 	})
 	if err != nil {
 		return fmt.Errorf("marshaling slack message body: %w", err)
