@@ -53,17 +53,17 @@ func run() error {
 
 	if cfg.Database.URL != "" {
 		slog.Info("connecting to database")
-		p, err := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConns)
-		if err != nil {
-			slog.Warn("database connection failed, starting without DB", "error", err)
+		p, dbErr := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConns)
+		if dbErr != nil {
+			slog.Warn("database connection failed, starting without DB", "error", dbErr)
 		} else {
 			pool = p
 			defer pool.Close()
 
 			// Run migrations
 			migrationsURL := fmt.Sprintf("file://%s", cfg.Database.MigrationsPath)
-			if err := database.RunMigrations(cfg.Database.URL, migrationsURL); err != nil {
-				return fmt.Errorf("running migrations: %w", err)
+			if migrateErr := database.RunMigrations(cfg.Database.URL, migrationsURL); migrateErr != nil {
+				return fmt.Errorf("running migrations: %w", migrateErr)
 			}
 			slog.Info("migrations complete")
 		}

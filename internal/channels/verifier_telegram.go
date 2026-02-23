@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// #nosec G101 -- Telegram requires this fixed header name for webhook verification.
 const telegramSecretHeader = "X-Telegram-Bot-Api-Secret-Token"
 
 // TelegramVerifier validates Telegram webhook secret tokens.

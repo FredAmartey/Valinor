@@ -94,8 +94,8 @@ func TestChannelLinkStore_GetByIdentity_TenantScoped(t *testing.T) {
 	require.NoError(t, err)
 
 	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
-		link, err := store.GetLinkByIdentity(ctx, q, "whatsapp", "+15551230000")
-		require.NoError(t, err)
+		link, getErr := store.GetLinkByIdentity(ctx, q, "whatsapp", "+15551230000")
+		require.NoError(t, getErr)
 		assert.Equal(t, tenantA, link.TenantID.String())
 		assert.Equal(t, userAID, link.UserID.String())
 		return nil
@@ -103,8 +103,8 @@ func TestChannelLinkStore_GetByIdentity_TenantScoped(t *testing.T) {
 	require.NoError(t, err)
 
 	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
-		link, err := store.GetLinkByIdentity(ctx, q, "whatsapp", "+15551230000")
-		require.NoError(t, err)
+		link, getErr := store.GetLinkByIdentity(ctx, q, "whatsapp", "+15551230000")
+		require.NoError(t, getErr)
 		assert.Equal(t, tenantB, link.TenantID.String())
 		assert.Equal(t, userBID, link.UserID.String())
 		return nil
@@ -140,7 +140,7 @@ func TestMessageStore_InsertIdempotency_FirstSeen(t *testing.T) {
 	require.NoError(t, err)
 
 	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
-		firstSeen, err := store.InsertIdempotency(ctx, q,
+		firstSeen, insertErr := store.InsertIdempotency(ctx, q,
 			"whatsapp",
 			"+15550001111",
 			"wamid.abc123",
@@ -149,7 +149,7 @@ func TestMessageStore_InsertIdempotency_FirstSeen(t *testing.T) {
 			"corr-abc123",
 			time.Now().Add(24*time.Hour),
 		)
-		require.NoError(t, err)
+		require.NoError(t, insertErr)
 		assert.True(t, firstSeen)
 		return nil
 	})
@@ -176,7 +176,7 @@ func TestMessageStore_InsertIdempotency_Duplicate(t *testing.T) {
 	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 		expiresAt := time.Now().Add(24 * time.Hour)
 
-		firstSeen, err := store.InsertIdempotency(ctx, q,
+		firstSeen, insertErr := store.InsertIdempotency(ctx, q,
 			"whatsapp",
 			"+15550002222",
 			"wamid.xyz789",
@@ -185,10 +185,10 @@ func TestMessageStore_InsertIdempotency_Duplicate(t *testing.T) {
 			"corr-xyz789",
 			expiresAt,
 		)
-		require.NoError(t, err)
+		require.NoError(t, insertErr)
 		assert.True(t, firstSeen)
 
-		firstSeen, err = store.InsertIdempotency(ctx, q,
+		firstSeen, insertErr = store.InsertIdempotency(ctx, q,
 			"whatsapp",
 			"+15550002222",
 			"wamid.xyz789",
@@ -197,7 +197,7 @@ func TestMessageStore_InsertIdempotency_Duplicate(t *testing.T) {
 			"corr-xyz789",
 			expiresAt,
 		)
-		require.NoError(t, err)
+		require.NoError(t, insertErr)
 		assert.False(t, firstSeen)
 
 		var count int

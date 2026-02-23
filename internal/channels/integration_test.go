@@ -182,12 +182,12 @@ func TestIngress_CrossTenantIsolation_SamePlatformIdentity(t *testing.T) {
 	resolveForTenant := func(tenantID string) func(context.Context, string, string) (*channels.ChannelLink, error) {
 		return func(ctx context.Context, platform, platformUserID string) (*channels.ChannelLink, error) {
 			var out *channels.ChannelLink
-			err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			tenantErr := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 				var lookupErr error
 				out, lookupErr = store.GetLinkByIdentity(ctx, q, platform, platformUserID)
 				return lookupErr
 			})
-			return out, err
+			return out, tenantErr
 		}
 	}
 
