@@ -95,3 +95,50 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	assert.True(t, cfg.Channels.Providers.WhatsApp.Enabled)
 	assert.Equal(t, "wa-secret", cfg.Channels.Providers.WhatsApp.SigningSecret)
 }
+
+func TestLoad_ChannelsOutboxDefaults(t *testing.T) {
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Channels.Outbox.Enabled)
+	assert.Equal(t, 2, cfg.Channels.Outbox.PollIntervalSeconds)
+	assert.Equal(t, 10, cfg.Channels.Outbox.ClaimBatchSize)
+	assert.Equal(t, 30, cfg.Channels.Outbox.LockTimeoutSeconds)
+	assert.Equal(t, 5, cfg.Channels.Outbox.MaxAttempts)
+	assert.Equal(t, 5, cfg.Channels.Outbox.BaseRetrySeconds)
+	assert.Equal(t, 120, cfg.Channels.Outbox.MaxRetrySeconds)
+	assert.Equal(t, 0.2, cfg.Channels.Outbox.JitterFraction)
+}
+
+func TestLoad_ChannelsOutboxEnvOverrides(t *testing.T) {
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_ENABLED", "false")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_POLLINTERVALSECONDS", "9")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_CLAIMBATCHSIZE", "17")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_LOCKTIMEOUTSECONDS", "44")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_MAXATTEMPTS", "8")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_BASERETRYSECONDS", "7")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_MAXRETRYSECONDS", "180")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_JITTERFRACTION", "0.35")
+	defer func() {
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_POLLINTERVALSECONDS")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_CLAIMBATCHSIZE")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_LOCKTIMEOUTSECONDS")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_MAXATTEMPTS")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_BASERETRYSECONDS")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_MAXRETRYSECONDS")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_JITTERFRACTION")
+	}()
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.False(t, cfg.Channels.Outbox.Enabled)
+	assert.Equal(t, 9, cfg.Channels.Outbox.PollIntervalSeconds)
+	assert.Equal(t, 17, cfg.Channels.Outbox.ClaimBatchSize)
+	assert.Equal(t, 44, cfg.Channels.Outbox.LockTimeoutSeconds)
+	assert.Equal(t, 8, cfg.Channels.Outbox.MaxAttempts)
+	assert.Equal(t, 7, cfg.Channels.Outbox.BaseRetrySeconds)
+	assert.Equal(t, 180, cfg.Channels.Outbox.MaxRetrySeconds)
+	assert.Equal(t, 0.35, cfg.Channels.Outbox.JitterFraction)
+}

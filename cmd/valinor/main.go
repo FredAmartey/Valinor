@@ -125,6 +125,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("building channel handler: %w", err)
 	}
+	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
+	if err != nil {
+		return fmt.Errorf("building channel outbox worker: %w", err)
+	}
 
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)
@@ -309,6 +313,14 @@ func run() error {
 			}
 		}()
 		slog.Info("orchestrator started", "driver", cfg.Orchestrator.Driver, "warm_pool", cfg.Orchestrator.WarmPoolSize)
+	}
+	if channelOutboxWorker != nil {
+		go func() {
+			if err := channelOutboxWorker.Run(ctx); err != nil {
+				slog.Error("channel outbox worker stopped", "error", err)
+			}
+		}()
+		slog.Info("channel outbox worker started", "poll_interval", channelOutboxWorker.pollInterval)
 	}
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)

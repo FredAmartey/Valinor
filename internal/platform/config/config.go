@@ -117,6 +117,7 @@ type AuditConfig struct {
 type ChannelsConfig struct {
 	Ingress   ChannelsIngressConfig   `koanf:"ingress"`
 	Providers ChannelsProvidersConfig `koanf:"providers"`
+	Outbox    ChannelsOutboxConfig    `koanf:"outbox"`
 }
 
 // ChannelsIngressConfig controls global channel ingress behavior.
@@ -137,6 +138,18 @@ type ChannelProviderConfig struct {
 	Enabled       bool   `koanf:"enabled"`
 	SigningSecret string `koanf:"signingsecret"`
 	SecretToken   string `koanf:"secrettoken"`
+}
+
+// ChannelsOutboxConfig controls background outbox worker behavior.
+type ChannelsOutboxConfig struct {
+	Enabled             bool    `koanf:"enabled"`
+	PollIntervalSeconds int     `koanf:"pollintervalseconds"`
+	ClaimBatchSize      int     `koanf:"claimbatchsize"`
+	LockTimeoutSeconds  int     `koanf:"locktimeoutseconds"`
+	MaxAttempts         int     `koanf:"maxattempts"`
+	BaseRetrySeconds    int     `koanf:"baseretryseconds"`
+	MaxRetrySeconds     int     `koanf:"maxretryseconds"`
+	JitterFraction      float64 `koanf:"jitterfraction"`
 }
 
 func Load(configPaths ...string) (*Config, error) {
@@ -180,6 +193,14 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.providers.slack.enabled":          false,
 		"channels.providers.whatsapp.enabled":       false,
 		"channels.providers.telegram.enabled":       false,
+		"channels.outbox.enabled":                   true,
+		"channels.outbox.pollintervalseconds":       2,
+		"channels.outbox.claimbatchsize":            10,
+		"channels.outbox.locktimeoutseconds":        30,
+		"channels.outbox.maxattempts":               5,
+		"channels.outbox.baseretryseconds":          5,
+		"channels.outbox.maxretryseconds":           120,
+		"channels.outbox.jitterfraction":            0.2,
 	}, "."), nil)
 
 	// YAML file (optional)
