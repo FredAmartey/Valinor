@@ -426,12 +426,12 @@ func TestMessageStore_UpdateMessageStatus(t *testing.T) {
 
 		var status string
 		var metadata json.RawMessage
-		err := q.QueryRow(ctx,
+		rowErr := q.QueryRow(ctx,
 			`SELECT status, metadata
 			 FROM channel_messages
 			 WHERE platform = 'whatsapp' AND idempotency_key = 'idem-status-1'`,
 		).Scan(&status, &metadata)
-		require.NoError(t, err)
+		require.NoError(t, rowErr)
 		assert.Equal(t, channels.MessageStatusExecuted, status)
 		assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-1"}`, string(metadata))
 

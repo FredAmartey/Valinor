@@ -184,7 +184,6 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 
 		actionableCount++
-		messageDecision := IngressIgnored
 		messageAgentID := ""
 
 		platformMessageID := meta.PlatformMessageID
@@ -223,7 +222,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		messageDecision = result.Decision
+		messageDecision := result.Decision
 		if h.execute != nil && result.Decision == IngressAccepted && result.Link != nil {
 			content := strings.TrimSpace(meta.Content)
 			if content != "" {
