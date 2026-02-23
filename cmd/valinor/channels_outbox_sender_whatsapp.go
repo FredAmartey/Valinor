@@ -42,6 +42,13 @@ func buildChannelOutboxSender(cfg config.ChannelsConfig) (channels.OutboxSender,
 		}
 		providers["slack"] = newSlackOutboxSender(slackCfg, nil)
 	}
+	if cfg.Providers.Telegram.Enabled {
+		telegramCfg := cfg.Providers.Telegram
+		if strings.TrimSpace(telegramCfg.AccessToken) == "" {
+			return nil, fmt.Errorf("telegram access token is required for outbox sender")
+		}
+		providers["telegram"] = newTelegramOutboxSender(telegramCfg, nil)
+	}
 	if cfg.Providers.WhatsApp.Enabled {
 		waCfg := cfg.Providers.WhatsApp
 		if strings.TrimSpace(waCfg.AccessToken) == "" {

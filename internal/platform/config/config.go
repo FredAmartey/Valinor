@@ -201,6 +201,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.providers.whatsapp.apibaseurl":    "https://graph.facebook.com",
 		"channels.providers.whatsapp.apiversion":    "v22.0",
 		"channels.providers.telegram.enabled":       false,
+		"channels.providers.telegram.apibaseurl":    "https://api.telegram.org",
 		"channels.outbox.enabled":                   true,
 		"channels.outbox.pollintervalseconds":       2,
 		"channels.outbox.claimbatchsize":            10,

@@ -44,6 +44,8 @@ channels:
     telegram:
       enabled: false
       secrettoken: ""
+      apibaseurl: "https://api.telegram.org"
+      accesstoken: ""
   outbox:
     enabled: true
     pollintervalseconds: 2
