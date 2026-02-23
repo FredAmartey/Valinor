@@ -76,6 +76,7 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 	assert.True(t, cfg.Channels.Ingress.RetentionCleanupEnabled)
 	assert.Equal(t, 3600, cfg.Channels.Ingress.RetentionCleanupIntervalSeconds)
 	assert.Equal(t, 500, cfg.Channels.Ingress.RetentionCleanupBatchSize)
+	assert.Equal(t, 500, cfg.Channels.Ingress.TenantScanPageSize)
 	assert.False(t, cfg.Channels.Providers.Slack.Enabled)
 	assert.Equal(t, "https://slack.com", cfg.Channels.Providers.Slack.APIBaseURL)
 	assert.False(t, cfg.Channels.Providers.WhatsApp.Enabled)
@@ -90,6 +91,7 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPENABLED", "false")
 	os.Setenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPINTERVALSECONDS", "1800")
 	os.Setenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPBATCHSIZE", "333")
+	os.Setenv("VALINOR_CHANNELS_INGRESS_TENANTSCANPAGESIZE", "777")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ENABLED", "true")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_SLACK_APIBASEURL", "https://slack.test")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ACCESSTOKEN", "xoxb-slack-token")
@@ -107,6 +109,7 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPINTERVALSECONDS")
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPBATCHSIZE")
+		os.Unsetenv("VALINOR_CHANNELS_INGRESS_TENANTSCANPAGESIZE")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_APIBASEURL")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ACCESSTOKEN")
@@ -128,6 +131,7 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	assert.False(t, cfg.Channels.Ingress.RetentionCleanupEnabled)
 	assert.Equal(t, 1800, cfg.Channels.Ingress.RetentionCleanupIntervalSeconds)
 	assert.Equal(t, 333, cfg.Channels.Ingress.RetentionCleanupBatchSize)
+	assert.Equal(t, 777, cfg.Channels.Ingress.TenantScanPageSize)
 	assert.True(t, cfg.Channels.Providers.Slack.Enabled)
 	assert.Equal(t, "https://slack.test", cfg.Channels.Providers.Slack.APIBaseURL)
 	assert.Equal(t, "xoxb-slack-token", cfg.Channels.Providers.Slack.AccessToken)
@@ -155,6 +159,7 @@ func TestLoad_ChannelsOutboxDefaults(t *testing.T) {
 	assert.Equal(t, 5, cfg.Channels.Outbox.BaseRetrySeconds)
 	assert.Equal(t, 120, cfg.Channels.Outbox.MaxRetrySeconds)
 	assert.Equal(t, 0.2, cfg.Channels.Outbox.JitterFraction)
+	assert.Equal(t, 500, cfg.Channels.Outbox.TenantScanPageSize)
 }
 
 func TestLoad_ChannelsOutboxEnvOverrides(t *testing.T) {
@@ -167,6 +172,7 @@ func TestLoad_ChannelsOutboxEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_OUTBOX_BASERETRYSECONDS", "7")
 	os.Setenv("VALINOR_CHANNELS_OUTBOX_MAXRETRYSECONDS", "180")
 	os.Setenv("VALINOR_CHANNELS_OUTBOX_JITTERFRACTION", "0.35")
+	os.Setenv("VALINOR_CHANNELS_OUTBOX_TENANTSCANPAGESIZE", "444")
 	defer func() {
 		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_ENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_POLLINTERVALSECONDS")
@@ -177,6 +183,7 @@ func TestLoad_ChannelsOutboxEnvOverrides(t *testing.T) {
 		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_BASERETRYSECONDS")
 		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_MAXRETRYSECONDS")
 		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_JITTERFRACTION")
+		os.Unsetenv("VALINOR_CHANNELS_OUTBOX_TENANTSCANPAGESIZE")
 	}()
 
 	cfg, err := config.Load()
@@ -191,4 +198,5 @@ func TestLoad_ChannelsOutboxEnvOverrides(t *testing.T) {
 	assert.Equal(t, 7, cfg.Channels.Outbox.BaseRetrySeconds)
 	assert.Equal(t, 180, cfg.Channels.Outbox.MaxRetrySeconds)
 	assert.Equal(t, 0.35, cfg.Channels.Outbox.JitterFraction)
+	assert.Equal(t, 444, cfg.Channels.Outbox.TenantScanPageSize)
 }

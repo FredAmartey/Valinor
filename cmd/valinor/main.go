@@ -325,6 +325,7 @@ func run() error {
 			"channel retention worker started",
 			"interval", channelRetentionWorker.interval,
 			"batch_size", channelRetentionWorker.batchSize,
+			"tenant_scan_page_size", channelRetentionWorker.tenantScanPageSize,
 		)
 	}
 	if channelOutboxWorker != nil {
@@ -333,7 +334,11 @@ func run() error {
 				slog.Error("channel outbox worker stopped", "error", err)
 			}
 		}()
-		slog.Info("channel outbox worker started", "poll_interval", channelOutboxWorker.pollInterval)
+		slog.Info(
+			"channel outbox worker started",
+			"poll_interval", channelOutboxWorker.pollInterval,
+			"tenant_scan_page_size", channelOutboxWorker.tenantScanPageSize,
+		)
 	}
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)

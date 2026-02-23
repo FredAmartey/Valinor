@@ -127,6 +127,7 @@ type ChannelsIngressConfig struct {
 	RetentionCleanupEnabled         bool `koanf:"retentioncleanupenabled"`
 	RetentionCleanupIntervalSeconds int  `koanf:"retentioncleanupintervalseconds"`
 	RetentionCleanupBatchSize       int  `koanf:"retentioncleanupbatchsize"`
+	TenantScanPageSize              int  `koanf:"tenantscanpagesize"`
 }
 
 // ChannelsProvidersConfig controls per-provider channel settings.
@@ -151,6 +152,7 @@ type ChannelProviderConfig struct {
 type ChannelsOutboxConfig struct {
 	Enabled             bool    `koanf:"enabled"`
 	PollIntervalSeconds int     `koanf:"pollintervalseconds"`
+	TenantScanPageSize  int     `koanf:"tenantscanpagesize"`
 	ClaimBatchSize      int     `koanf:"claimbatchsize"`
 	RecoveryBatchSize   int     `koanf:"recoverybatchsize"`
 	LockTimeoutSeconds  int     `koanf:"locktimeoutseconds"`
@@ -201,6 +203,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.ingress.retentioncleanupenabled":         true,
 		"channels.ingress.retentioncleanupintervalseconds": 3600,
 		"channels.ingress.retentioncleanupbatchsize":       500,
+		"channels.ingress.tenantscanpagesize":              500,
 		"channels.providers.slack.enabled":                 false,
 		"channels.providers.slack.apibaseurl":              "https://slack.com",
 		"channels.providers.whatsapp.enabled":              false,
@@ -210,6 +213,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.providers.telegram.apibaseurl":           "https://api.telegram.org",
 		"channels.outbox.enabled":                          true,
 		"channels.outbox.pollintervalseconds":              2,
+		"channels.outbox.tenantscanpagesize":               500,
 		"channels.outbox.claimbatchsize":                   10,
 		"channels.outbox.recoverybatchsize":                10,
 		"channels.outbox.locktimeoutseconds":               30,

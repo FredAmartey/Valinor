@@ -107,6 +107,33 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.NotNil(t, worker)
+		assert.Equal(t, 500, worker.tenantScanPageSize)
+	})
+
+	t.Run("non-positive tenant scan page size falls back to default", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled:            true,
+				TenantScanPageSize: 0,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, worker)
+		assert.Equal(t, 500, worker.tenantScanPageSize)
+	})
+
+	t.Run("explicit tenant scan page size is respected", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled:            true,
+				TenantScanPageSize: 275,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, worker)
+		assert.Equal(t, 275, worker.tenantScanPageSize)
 	})
 
 	t.Run("whatsapp enabled without outbound credentials fails", func(t *testing.T) {
@@ -194,6 +221,7 @@ func TestBuildChannelRetentionWorker(t *testing.T) {
 		require.NotNil(t, worker)
 		assert.Equal(t, time.Hour, worker.interval)
 		assert.Equal(t, 500, worker.batchSize)
+		assert.Equal(t, 500, worker.tenantScanPageSize)
 	})
 
 	t.Run("non-positive cleanup settings fall back to defaults", func(t *testing.T) {
@@ -208,6 +236,7 @@ func TestBuildChannelRetentionWorker(t *testing.T) {
 		require.NotNil(t, worker)
 		assert.Equal(t, time.Hour, worker.interval)
 		assert.Equal(t, 500, worker.batchSize)
+		assert.Equal(t, 500, worker.tenantScanPageSize)
 	})
 
 	t.Run("explicit cleanup settings are respected", func(t *testing.T) {
@@ -217,10 +246,12 @@ func TestBuildChannelRetentionWorker(t *testing.T) {
 				RetentionCleanupEnabled:         true,
 				RetentionCleanupIntervalSeconds: 120,
 				RetentionCleanupBatchSize:       250,
+				TenantScanPageSize:              125,
 			},
 		})
 		require.NotNil(t, worker)
 		assert.Equal(t, 2*time.Minute, worker.interval)
 		assert.Equal(t, 250, worker.batchSize)
+		assert.Equal(t, 125, worker.tenantScanPageSize)
 	})
 }

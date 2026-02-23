@@ -16,11 +16,12 @@ const (
 )
 
 type channelRetentionWorker struct {
-	pool      *database.Pool
-	store     *channels.Store
-	interval  time.Duration
-	batchSize int
-	now       func() time.Time
+	pool               *database.Pool
+	store              *channels.Store
+	interval           time.Duration
+	batchSize          int
+	tenantScanPageSize int
+	now                func() time.Time
 }
 
 func buildChannelRetentionWorker(pool *database.Pool, cfg config.ChannelsConfig) *channelRetentionWorker {
@@ -37,13 +38,18 @@ func buildChannelRetentionWorker(pool *database.Pool, cfg config.ChannelsConfig)
 	if batchSize <= 0 {
 		batchSize = defaultRetentionCleanupBatchSize
 	}
+	tenantScanPageSize := cfg.Ingress.TenantScanPageSize
+	if tenantScanPageSize <= 0 {
+		tenantScanPageSize = defaultTenantScanPageSize
+	}
 
 	return &channelRetentionWorker{
-		pool:      pool,
-		store:     channels.NewStore(),
-		interval:  interval,
-		batchSize: batchSize,
-		now:       time.Now,
+		pool:               pool,
+		store:              channels.NewStore(),
+		interval:           interval,
+		batchSize:          batchSize,
+		tenantScanPageSize: tenantScanPageSize,
+		now:                time.Now,
 	}
 }
 
@@ -68,7 +74,7 @@ func (w *channelRetentionWorker) Run(ctx context.Context) error {
 }
 
 func (w *channelRetentionWorker) sweep(ctx context.Context) {
-	tenantIDs, err := listTenantIDs(ctx, w.pool, defaultTenantScanPageSize)
+	tenantIDs, err := listTenantIDs(ctx, w.pool, w.tenantScanPageSize)
 	if err != nil {
 		slog.Error("channel retention worker failed to list tenants", "error", err)
 		return
