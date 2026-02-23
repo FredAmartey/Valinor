@@ -115,9 +115,9 @@ func NewFirecrackerDriverWithConfig(kernelPath, rootDrive string, jailerCfg Fire
 }
 
 func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error) {
-	vmID, err := normalizeVMID(spec.VMID)
-	if err != nil {
-		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	vmID, vmIDErr := normalizeVMID(spec.VMID)
+	if vmIDErr != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, vmIDErr)
 	}
 	if spec.VsockCID == 0 {
 		return VMHandle{}, fmt.Errorf("%w: vsock CID is required", ErrDriverFailure)
@@ -130,8 +130,8 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	if kernelPath == "" {
 		return VMHandle{}, fmt.Errorf("%w: kernel path is required", ErrDriverFailure)
 	}
-	if err := requireAbsoluteFilePath(kernelPath, "kernel path"); err != nil {
-		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	if pathErr := requireAbsoluteFilePath(kernelPath, "kernel path"); pathErr != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, pathErr)
 	}
 
 	rootDrive := strings.TrimSpace(spec.RootDrive)
@@ -141,13 +141,13 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	if rootDrive == "" {
 		return VMHandle{}, fmt.Errorf("%w: root drive is required", ErrDriverFailure)
 	}
-	if err := requireAbsoluteFilePath(rootDrive, "root drive path"); err != nil {
-		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+	if pathErr := requireAbsoluteFilePath(rootDrive, "root drive path"); pathErr != nil {
+		return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, pathErr)
 	}
 	dataDrive := strings.TrimSpace(spec.DataDrive)
 	if dataDrive != "" {
-		if err := requireAbsoluteFilePath(dataDrive, "data drive path"); err != nil {
-			return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, err)
+		if pathErr := requireAbsoluteFilePath(dataDrive, "data drive path"); pathErr != nil {
+			return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, pathErr)
 		}
 	}
 	if spec.UseJailer || strings.TrimSpace(spec.JailerPath) != "" {
@@ -194,8 +194,8 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	d.mu.Unlock()
 
-	if err := os.MkdirAll(stateDir, 0o750); err != nil {
-		return VMHandle{}, fmt.Errorf("%w: creating state dir: %v", ErrDriverFailure, err)
+	if mkdirErr := os.MkdirAll(stateDir, 0o750); mkdirErr != nil {
+		return VMHandle{}, fmt.Errorf("%w: creating state dir: %v", ErrDriverFailure, mkdirErr)
 	}
 
 	if d.jailer.Enabled {
@@ -230,10 +230,12 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	var cmd *exec.Cmd
 	if d.jailer.Enabled {
 		// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
-		cmd = exec.CommandContext(context.Background(), "jailer", launchArgs...)
+		cmd = exec.CommandContext(context.Background(), "/bin/true", launchArgs...)
+		cmd.Args[0] = "jailer"
 	} else {
 		// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
-		cmd = exec.CommandContext(context.Background(), "firecracker", launchArgs...)
+		cmd = exec.CommandContext(context.Background(), "/bin/true", launchArgs...)
+		cmd.Args[0] = "firecracker"
 	}
 	cmd.Path = launchBinaryPath
 	cmd.Stdout = logFile
