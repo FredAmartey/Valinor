@@ -43,6 +43,14 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, sender)
+
+		err = sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "slack",
+			RecipientID: "U12345",
+			Payload:     json.RawMessage(`{"content":"hello"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported outbox provider")
 	})
 }
 

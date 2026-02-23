@@ -23,16 +23,12 @@ const (
 
 type routingOutboxSender struct {
 	byProvider map[string]channels.OutboxSender
-	fallback   channels.OutboxSender
 }
 
 func (s routingOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox) error {
 	provider := strings.ToLower(strings.TrimSpace(job.Provider))
 	if sender, ok := s.byProvider[provider]; ok {
 		return sender.Send(ctx, job)
-	}
-	if s.fallback != nil {
-		return s.fallback.Send(ctx, job)
 	}
 	return fmt.Errorf("unsupported outbox provider: %s", provider)
 }
@@ -56,7 +52,6 @@ func buildChannelOutboxSender(cfg config.ChannelsConfig) (channels.OutboxSender,
 
 	return routingOutboxSender{
 		byProvider: providers,
-		fallback:   noopOutboxSender{},
 	}, nil
 }
 
