@@ -132,3 +132,42 @@ Phase 8 cannot be marked complete unless:
 2. Policy decisions in section 1/3/6 are explicitly approved and recorded.
 3. Migration rollout plan (expand/backfill/contract) is documented and rehearsed.
 4. Global and per-provider kill switches are verified in non-prod.
+
+## Implementation Evidence (Current Branch)
+
+### Schema + RLS
+
+- `migrations/000010_channels_prereq_expand.up.sql`
+- `migrations/000010_channels_prereq_expand.down.sql`
+- `internal/platform/database/rls_test.go` (now includes `channel_links` and `channel_messages`)
+
+### Store + Verification + Ingress Pipeline
+
+- `internal/channels/channels.go`
+- `internal/channels/store.go`
+- `internal/channels/verifier.go`
+- `internal/channels/verifier_slack.go`
+- `internal/channels/verifier_whatsapp.go`
+- `internal/channels/verifier_telegram.go`
+- `internal/channels/ingress.go`
+
+### HTTP + Route Wiring
+
+- `internal/channels/handler.go`
+- `internal/platform/server/server.go`
+
+### Tests (Gate Coverage)
+
+- `internal/channels/store_test.go`
+- `internal/channels/verifier_test.go`
+- `internal/channels/ingress_test.go`
+- `internal/channels/audit_test.go`
+- `internal/channels/integration_test.go`
+- `internal/platform/server/server_test.go`
+- `internal/platform/config/config_test.go`
+- `cmd/valinor/main_test.go`
+
+### Operational Runbooks
+
+- `docs/runbooks/channels-webhook-verification.md`
+- `docs/runbooks/channels-rollout-killswitch.md`
