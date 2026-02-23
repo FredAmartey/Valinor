@@ -537,6 +537,89 @@ func TestMessageStore_GetMessageIDByIdempotencyKey_NotFound(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMessageStore_GetMessageByIdempotencyKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Msg Record', 'tenant-msg-record') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		firstSeen, insertErr := store.InsertIdempotency(
+			ctx,
+			q,
+			"whatsapp",
+			"+15550006666",
+			"wamid.record.1",
+			"idem-record-1",
+			"fp-record-1",
+			"corr-record-1",
+			time.Now().Add(24*time.Hour),
+		)
+		require.NoError(t, insertErr)
+		require.True(t, firstSeen)
+
+		updateErr := store.UpdateMessageStatus(
+			ctx,
+			q,
+			"whatsapp",
+			"idem-record-1",
+			channels.MessageStatusDispatchFailed,
+			json.RawMessage(`{"decision":"dispatch_failed","agent_id":"agent-1","response_content":"queued later","outbox_enqueue_failed":true}`),
+		)
+		require.NoError(t, updateErr)
+
+		record, lookupErr := store.GetMessageByIdempotencyKey(ctx, q, "whatsapp", "idem-record-1")
+		require.NoError(t, lookupErr)
+		require.NotNil(t, record)
+		assert.NotEqual(t, uuid.Nil, record.ID)
+		assert.Equal(t, "whatsapp", record.Platform)
+		assert.Equal(t, "+15550006666", record.PlatformUserID)
+		assert.Equal(t, "wamid.record.1", record.PlatformMessageID)
+		assert.Equal(t, "idem-record-1", record.IdempotencyKey)
+		assert.Equal(t, "corr-record-1", record.CorrelationID)
+		assert.Equal(t, channels.MessageStatusDispatchFailed, record.Status)
+		assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-1","response_content":"queued later","outbox_enqueue_failed":true}`, string(record.Metadata))
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestMessageStore_GetMessageByIdempotencyKey_NotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Msg Record Missing', 'tenant-msg-record-missing') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, lookupErr := store.GetMessageByIdempotencyKey(ctx, q, "whatsapp", "idem-missing-record")
+		require.ErrorIs(t, lookupErr, channels.ErrMessageNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestOutboxStore_EnqueueAndClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -743,16 +826,18 @@ func TestOutboxStore_MarkDead(t *testing.T) {
 
 	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 		var status string
+		var attemptCount int
 		var lastError *string
 		var sentAt *time.Time
 		rowErr := q.QueryRow(ctx,
-			`SELECT status, last_error, sent_at
+			`SELECT status, attempt_count, last_error, sent_at
 			 FROM channel_outbox
 			 WHERE id = $1`,
 			outboxID,
-		).Scan(&status, &lastError, &sentAt)
+		).Scan(&status, &attemptCount, &lastError, &sentAt)
 		require.NoError(t, rowErr)
 		assert.Equal(t, string(channels.OutboxStatusDead), status)
+		assert.Equal(t, 1, attemptCount)
 		require.NotNil(t, lastError)
 		assert.Equal(t, "permanent provider failure", *lastError)
 		assert.Nil(t, sentAt)

@@ -393,6 +393,45 @@ func (s *Store) GetMessageIDByIdempotencyKey(ctx context.Context, q database.Que
 	return messageID, nil
 }
 
+// GetMessageByIdempotencyKey resolves a tenant-scoped channel message row.
+func (s *Store) GetMessageByIdempotencyKey(ctx context.Context, q database.Querier, platform, idempotencyKey string) (*ChannelMessageRecord, error) {
+	if platform == "" {
+		return nil, ErrPlatformEmpty
+	}
+	if idempotencyKey == "" {
+		return nil, ErrIdempotencyKey
+	}
+
+	var record ChannelMessageRecord
+	err := q.QueryRow(ctx,
+		`SELECT id, platform, platform_user_id, COALESCE(platform_message_id, ''), idempotency_key,
+		        correlation_id, status, metadata
+		 FROM channel_messages
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND platform = $1
+		   AND idempotency_key = $2`,
+		platform,
+		idempotencyKey,
+	).Scan(
+		&record.ID,
+		&record.Platform,
+		&record.PlatformUserID,
+		&record.PlatformMessageID,
+		&record.IdempotencyKey,
+		&record.CorrelationID,
+		&record.Status,
+		&record.Metadata,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMessageNotFound
+		}
+		return nil, fmt.Errorf("resolving message by idempotency key: %w", err)
+	}
+
+	return &record, nil
+}
+
 // EnqueueOutbound inserts a new tenant-scoped outbox job for async provider send.
 func (s *Store) EnqueueOutbound(ctx context.Context, q database.Querier, params EnqueueOutboundParams) (*ChannelOutbox, error) {
 	messageIDValue := strings.TrimSpace(params.ChannelMessageID)
@@ -615,6 +654,7 @@ func (s *Store) MarkOutboxDead(ctx context.Context, q database.Querier, outboxID
 	cmd, err := q.Exec(ctx,
 		`UPDATE channel_outbox
 		 SET status = $2,
+		     attempt_count = attempt_count + 1,
 		     last_error = $3,
 		     locked_at = NULL,
 		     updated_at = now()

@@ -94,6 +94,18 @@ type ChannelOutbox struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
+// ChannelMessageRecord contains the persisted state for an inbound idempotency row.
+type ChannelMessageRecord struct {
+	ID                uuid.UUID       `json:"id"`
+	Platform          string          `json:"platform"`
+	PlatformUserID    string          `json:"platform_user_id"`
+	PlatformMessageID string          `json:"platform_message_id"`
+	IdempotencyKey    string          `json:"idempotency_key"`
+	CorrelationID     string          `json:"correlation_id"`
+	Status            string          `json:"status"`
+	Metadata          json.RawMessage `json:"metadata"`
+}
+
 // EnqueueOutboundParams defines input for inserting an outbox job.
 type EnqueueOutboundParams struct {
 	ChannelMessageID string

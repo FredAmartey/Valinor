@@ -336,7 +336,90 @@ func TestHandleWebhook_EnqueueFailureReturns500AndDispatchFailed(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "processing webhook failed")
 	assert.Equal(t, MessageStatusDispatchFailed, persistedStatus)
-	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123"}`, string(persistedMetadata))
+	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"response_content":"agent response body"}`, string(persistedMetadata))
+}
+
+func TestHandleWebhook_DuplicateDispatchFailedRequeuesWithoutReexecution(t *testing.T) {
+	insertCalls := 0
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			insertCalls++
+			return insertCalls == 1, nil
+		},
+	)
+
+	executeCalls := 0
+	enqueueCalls := 0
+	var persistedStatus string
+	var persistedMetadata json.RawMessage
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			executeCalls++
+			return ExecutionResult{
+				Decision:        IngressExecuted,
+				AgentID:         "agent-123",
+				ResponseContent: "agent response body",
+			}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _ string) error {
+		enqueueCalls++
+		if enqueueCalls == 1 {
+			return errors.New("enqueue failed")
+		}
+		return nil
+	}
+	h.updateMessageStatus = func(_ context.Context, _, _, _, status string, metadata json.RawMessage) error {
+		persistedStatus = status
+		persistedMetadata = append([]byte(nil), metadata...)
+		return nil
+	}
+	h.getMessageByIdempotencyKey = func(_ context.Context, _, _, _ string) (*ChannelMessageRecord, error) {
+		return &ChannelMessageRecord{
+			PlatformUserID: "+15550001111",
+			CorrelationID:  "corr-initial",
+			Status:         persistedStatus,
+			Metadata:       append([]byte(nil), persistedMetadata...),
+		}, nil
+	}
+
+	reqOne := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("outbox me")))
+	reqOne.SetPathValue("provider", "whatsapp")
+	reqOne.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	wOne := httptest.NewRecorder()
+
+	h.HandleWebhook(wOne, reqOne)
+
+	require.Equal(t, http.StatusInternalServerError, wOne.Code)
+	assert.Equal(t, 1, executeCalls)
+	assert.Equal(t, 1, enqueueCalls)
+	assert.Equal(t, MessageStatusDispatchFailed, persistedStatus)
+	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"response_content":"agent response body"}`, string(persistedMetadata))
+
+	reqTwo := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("outbox me")))
+	reqTwo.SetPathValue("provider", "whatsapp")
+	reqTwo.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	reqTwo.Header.Set("X-Request-ID", "req-retry")
+	wTwo := httptest.NewRecorder()
+
+	h.HandleWebhook(wTwo, reqTwo)
+
+	require.Equal(t, http.StatusOK, wTwo.Code)
+	assert.Equal(t, 1, executeCalls)
+	assert.Equal(t, 2, enqueueCalls)
+	assert.Equal(t, MessageStatusExecuted, persistedStatus)
+	assert.Contains(t, wTwo.Body.String(), string(IngressExecuted))
+	assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-123","outbox_enqueue_failed":false,"outbox_recovered":true,"response_content":"agent response body"}`, string(persistedMetadata))
 }
 
 func TestHandleWebhook_StatusPersistenceFailureReturns500(t *testing.T) {
