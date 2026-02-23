@@ -327,6 +327,7 @@ func TestFirecrackerDriver_StartStopCleanup_WithJailerDaemonize(t *testing.T) {
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 	t.Setenv(jailerTestArgsFileEnv, argsPath)
 
@@ -376,6 +377,7 @@ func TestFirecrackerDriver_ReattachDaemonizedJailerAfterDriverRestart(t *testing
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 
 	jailerCfg := FirecrackerJailerConfig{
@@ -426,6 +428,7 @@ func TestFirecrackerDriver_CleanupDaemonizedJailerAfterDriverRestart(t *testing.
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 
 	jailerCfg := FirecrackerJailerConfig{
