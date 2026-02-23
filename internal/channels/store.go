@@ -330,11 +330,11 @@ func (s *Store) UpdateMessageStatus(
 	if idempotencyKey == "" {
 		return ErrIdempotencyKey
 	}
-	if strings.TrimSpace(status) == "" {
+	statusValue := strings.TrimSpace(status)
+	if statusValue == "" {
 		return ErrStatusRequired
 	}
 
-	statusValue := strings.TrimSpace(status)
 	meta := metadata
 	if len(meta) == 0 {
 		meta = json.RawMessage(`{}`)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -245,6 +246,8 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if h.updateMessageStatus != nil {
+			// InsertIdempotency persists the initial "accepted" state. This
+			// best-effort write only records terminal execution outcomes.
 			if status, ok := messageStatusForDecision(messageDecision); ok {
 				statusMetadata := map[string]any{
 					"decision": string(messageDecision),
@@ -270,6 +273,27 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 					rawStatusMetadata,
 				)
 				if updateErr != nil {
+					if errors.Is(updateErr, ErrMessageNotFound) {
+						slog.Error(
+							"channel message status update missing idempotency row",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"decision", string(messageDecision),
+							"correlation_id", correlationID,
+							"error", updateErr,
+						)
+					} else {
+						slog.Error(
+							"channel message status update failed",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"decision", string(messageDecision),
+							"correlation_id", correlationID,
+							"error", updateErr,
+						)
+					}
 					writeJSON(w, http.StatusInternalServerError, map[string]string{
 						"error":          "processing webhook failed",
 						"correlation_id": correlationID,
@@ -302,8 +326,6 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 func messageStatusForDecision(decision IngressDecision) (string, bool) {
 	switch decision {
-	case IngressAccepted:
-		return MessageStatusAccepted, true
 	case IngressExecuted:
 		return MessageStatusExecuted, true
 	case IngressDeniedRBAC:
