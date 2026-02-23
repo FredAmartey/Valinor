@@ -94,7 +94,7 @@ func (s *telegramOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return fmt.Errorf("telegram send failed: status %d: %s", resp.StatusCode, msg)
+		return classifyOutboxHTTPStatus("telegram", resp.StatusCode, msg)
 	}
 
 	var response struct {
@@ -109,7 +109,7 @@ func (s *telegramOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		if errMsg == "" {
 			errMsg = "unknown error"
 		}
-		return fmt.Errorf("telegram send failed: %s", errMsg)
+		return channels.NewOutboxPermanentError(fmt.Errorf("telegram send failed: %s", errMsg))
 	}
 
 	return nil

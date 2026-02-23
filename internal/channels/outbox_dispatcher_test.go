@@ -177,6 +177,34 @@ func TestOutboxDispatcher_DeadLettersAfterMaxAttempts(t *testing.T) {
 	assert.Empty(t, store.markRetry)
 }
 
+func TestOutboxDispatcher_PermanentErrorDeadLettersImmediately(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{
+				{ID: jobID, AttemptCount: 0, MaxAttempts: 5},
+			},
+			{},
+		},
+	}
+	sender := &fakeOutboxSender{
+		sendErr: map[uuid.UUID]error{
+			jobID: NewOutboxPermanentError(errors.New("invalid provider credentials")),
+		},
+	}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 2})
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, store.markDead, 1)
+	assert.Equal(t, jobID, store.markDead[0].id)
+	assert.Equal(t, "invalid provider credentials", store.markDead[0].lastError)
+	assert.Empty(t, store.markSentIDs)
+	assert.Empty(t, store.markRetry)
+}
+
 func TestOutboxDispatcher_RecoversStaleSendingBeforeClaim(t *testing.T) {
 	fixedNow := time.Date(2026, 2, 23, 6, 20, 0, 0, time.UTC)
 	store := &fakeOutboxStore{

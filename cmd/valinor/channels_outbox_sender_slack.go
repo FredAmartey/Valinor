@@ -99,7 +99,7 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return fmt.Errorf("slack send failed: status %d: %s", resp.StatusCode, msg)
+		return classifyOutboxHTTPStatus("slack", resp.StatusCode, msg)
 	}
 
 	var response struct {
@@ -114,7 +114,7 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		if errMsg == "" {
 			errMsg = "unknown error"
 		}
-		return fmt.Errorf("slack send failed: %s", errMsg)
+		return channels.NewOutboxPermanentError(fmt.Errorf("slack send failed: %s", errMsg))
 	}
 
 	return nil
