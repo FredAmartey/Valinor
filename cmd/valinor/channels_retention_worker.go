@@ -68,7 +68,7 @@ func (w *channelRetentionWorker) Run(ctx context.Context) error {
 }
 
 func (w *channelRetentionWorker) sweep(ctx context.Context) {
-	tenantIDs, err := listTenantIDs(ctx, w.pool)
+	tenantIDs, err := listTenantIDs(ctx, w.pool, defaultTenantScanPageSize)
 	if err != nil {
 		slog.Error("channel retention worker failed to list tenants", "error", err)
 		return
