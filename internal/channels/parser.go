@@ -13,6 +13,12 @@ type ingressMetadata struct {
 	PlatformUserID    string
 	PlatformMessageID string
 	OccurredAt        time.Time
+	Control           *ingressControl
+}
+
+type ingressControl struct {
+	AcknowledgeOnly bool
+	SlackChallenge  string
 }
 
 func extractIngressMetadata(provider string, headers http.Header, body []byte, now time.Time) (ingressMetadata, error) {
@@ -30,18 +36,16 @@ func extractIngressMetadata(provider string, headers http.Header, body []byte, n
 
 func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time) (ingressMetadata, error) {
 	var payload struct {
-		EventID string `json:"event_id"`
-		Event   struct {
+		Type      string `json:"type"`
+		Challenge string `json:"challenge"`
+		EventID   string `json:"event_id"`
+		Event     struct {
 			User string `json:"user"`
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ingressMetadata{}, fmt.Errorf("parsing slack payload: %w", err)
 	}
-	if strings.TrimSpace(payload.Event.User) == "" {
-		return ingressMetadata{}, fmt.Errorf("parsing slack payload: %w", ErrIdentityEmpty)
-	}
-
 	occurredAt := now
 	if ts := strings.TrimSpace(headers.Get(slackTimestampHeader)); ts != "" {
 		unixTs, err := strconv.ParseInt(ts, 10, 64)
@@ -49,6 +53,23 @@ func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time
 			return ingressMetadata{}, fmt.Errorf("parsing slack timestamp: %w", err)
 		}
 		occurredAt = time.Unix(unixTs, 0)
+	}
+	if payload.Type != "" && payload.Type != "event_callback" {
+		return ingressMetadata{
+			OccurredAt: occurredAt,
+			Control: &ingressControl{
+				AcknowledgeOnly: true,
+				SlackChallenge:  strings.TrimSpace(payload.Challenge),
+			},
+		}, nil
+	}
+	if strings.TrimSpace(payload.Event.User) == "" {
+		return ingressMetadata{
+			OccurredAt: occurredAt,
+			Control: &ingressControl{
+				AcknowledgeOnly: true,
+			},
+		}, nil
 	}
 
 	return ingressMetadata{
@@ -68,6 +89,9 @@ func extractWhatsAppIngressMetadata(body []byte, now time.Time) (ingressMetadata
 						ID        string `json:"id"`
 						Timestamp string `json:"timestamp"`
 					} `json:"messages"`
+					Statuses []struct {
+						Timestamp string `json:"timestamp"`
+					} `json:"statuses"`
 				} `json:"value"`
 			} `json:"changes"`
 		} `json:"entry"`
@@ -75,13 +99,31 @@ func extractWhatsAppIngressMetadata(body []byte, now time.Time) (ingressMetadata
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ingressMetadata{}, fmt.Errorf("parsing whatsapp payload: %w", err)
 	}
-	if len(payload.Entry) == 0 ||
-		len(payload.Entry[0].Changes) == 0 ||
-		len(payload.Entry[0].Changes[0].Value.Messages) == 0 {
+	if len(payload.Entry) == 0 || len(payload.Entry[0].Changes) == 0 {
 		return ingressMetadata{}, fmt.Errorf("parsing whatsapp payload: missing messages")
 	}
 
-	message := payload.Entry[0].Changes[0].Value.Messages[0]
+	value := payload.Entry[0].Changes[0].Value
+	if len(value.Messages) == 0 {
+		occurredAt := now
+		if len(value.Statuses) > 0 {
+			if ts := strings.TrimSpace(value.Statuses[0].Timestamp); ts != "" {
+				unixTs, err := strconv.ParseInt(ts, 10, 64)
+				if err != nil {
+					return ingressMetadata{}, fmt.Errorf("parsing whatsapp status timestamp: %w", err)
+				}
+				occurredAt = time.Unix(unixTs, 0)
+			}
+		}
+		return ingressMetadata{
+			OccurredAt: occurredAt,
+			Control: &ingressControl{
+				AcknowledgeOnly: true,
+			},
+		}, nil
+	}
+
+	message := value.Messages[0]
 	if strings.TrimSpace(message.From) == "" {
 		return ingressMetadata{}, fmt.Errorf("parsing whatsapp payload: %w", ErrIdentityEmpty)
 	}

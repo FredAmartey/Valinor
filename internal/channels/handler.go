@@ -76,6 +76,29 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if meta.Control != nil && meta.Control.AcknowledgeOnly {
+		if verifyErr := guard.Verify(r.Header, body); verifyErr != nil {
+			if handled := writeIngressError(w, verifyErr, correlationID); handled {
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error":          "processing webhook failed",
+				"correlation_id": correlationID,
+			})
+			return
+		}
+		if meta.Control.SlackChallenge != "" {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(meta.Control.SlackChallenge))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"decision":       string(IngressIgnored),
+			"correlation_id": correlationID,
+		})
+		return
+	}
 
 	platformMessageID := meta.PlatformMessageID
 	platformUserID := meta.PlatformUserID
@@ -107,28 +130,13 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrInvalidSignature),
-			errors.Is(err, ErrMissingSignature),
-			errors.Is(err, ErrInvalidTimestamp),
-			errors.Is(err, ErrTimestampExpired):
-			writeJSON(w, http.StatusUnauthorized, map[string]string{
-				"error":          err.Error(),
-				"decision":       string(IngressRejectedSignature),
-				"correlation_id": correlationID,
-			})
-		case errors.Is(err, ErrLinkUnverified):
-			writeJSON(w, http.StatusForbidden, map[string]string{
-				"error":          err.Error(),
-				"decision":       string(IngressDeniedUnverified),
-				"correlation_id": correlationID,
-			})
-		default:
-			writeJSON(w, http.StatusInternalServerError, map[string]string{
-				"error":          "processing webhook failed",
-				"correlation_id": correlationID,
-			})
+		if handled := writeIngressError(w, err, correlationID); handled {
+			return
 		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error":          "processing webhook failed",
+			"correlation_id": correlationID,
+		})
 		return
 	}
 
@@ -185,6 +193,30 @@ func resolveWebhookTenantID(r *http.Request) (string, error) {
 		return "", errTenantPathInvalid
 	}
 	return tenantID, nil
+}
+
+func writeIngressError(w http.ResponseWriter, err error, correlationID string) bool {
+	switch {
+	case errors.Is(err, ErrInvalidSignature),
+		errors.Is(err, ErrMissingSignature),
+		errors.Is(err, ErrInvalidTimestamp),
+		errors.Is(err, ErrTimestampExpired):
+		writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error":          err.Error(),
+			"decision":       string(IngressRejectedSignature),
+			"correlation_id": correlationID,
+		})
+		return true
+	case errors.Is(err, ErrLinkUnverified):
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":          err.Error(),
+			"decision":       string(IngressDeniedUnverified),
+			"correlation_id": correlationID,
+		})
+		return true
+	default:
+		return false
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

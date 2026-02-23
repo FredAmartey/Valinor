@@ -203,3 +203,108 @@ func TestHandleWebhook_UsesPayloadIdentityOverHeader(t *testing.T) {
 	require.Len(t, seenUserIDs, 1)
 	assert.Equal(t, "+15550001111", seenUserIDs[0])
 }
+
+func TestHandleWebhook_SlackURLVerificationRespondsChallenge(t *testing.T) {
+	linkLookupCalled := false
+	insertCalled := false
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			linkLookupCalled = true
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			insertCalled = true
+			return true, nil
+		},
+	)
+	h := NewHandler(map[string]*IngressGuard{"slack": guard})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/slack/webhook", strings.NewReader(`{
+  "type":"url_verification",
+  "challenge":"slack-challenge-token"
+}`))
+	req.SetPathValue("provider", "slack")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Equal(t, "slack-challenge-token", w.Body.String())
+	assert.False(t, linkLookupCalled)
+	assert.False(t, insertCalled)
+}
+
+func TestHandleWebhook_ControlPayloadStillVerifiesSignature(t *testing.T) {
+	linkLookupCalled := false
+	insertCalled := false
+	guard := NewIngressGuard(
+		stubVerifier{verifyErr: ErrInvalidSignature},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			linkLookupCalled = true
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			insertCalled = true
+			return true, nil
+		},
+	)
+	h := NewHandler(map[string]*IngressGuard{"slack": guard})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/slack/webhook", strings.NewReader(`{
+  "type":"url_verification",
+  "challenge":"slack-challenge-token"
+}`))
+	req.SetPathValue("provider", "slack")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), string(IngressRejectedSignature))
+	assert.False(t, linkLookupCalled)
+	assert.False(t, insertCalled)
+}
+
+func TestHandleWebhook_WhatsAppStatusPayloadIgnored(t *testing.T) {
+	linkLookupCalled := false
+	insertCalled := false
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			linkLookupCalled = true
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			insertCalled = true
+			return true, nil
+		},
+	)
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(`{
+  "entry": [{
+    "changes": [{
+      "value": {
+        "statuses": [{"id":"wamid.status","status":"read"}]
+      }
+    }]
+  }]
+}`))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "ignored")
+	assert.False(t, linkLookupCalled)
+	assert.False(t, insertCalled)
+}

@@ -19,6 +19,7 @@ const (
 	IngressReplayBlocked     IngressDecision = "replay_blocked"
 	IngressRejectedSignature IngressDecision = "rejected_signature"
 	IngressDeniedUnverified  IngressDecision = "denied_unverified"
+	IngressIgnored           IngressDecision = "ignored"
 )
 
 // IngressMessage is the normalized inbound webhook payload metadata.
@@ -74,6 +75,11 @@ func NewIngressGuard(
 func (g *IngressGuard) WithAuditLogger(logger audit.Logger) *IngressGuard {
 	g.auditLogger = logger
 	return g
+}
+
+// Verify validates provider authenticity checks without executing link/idempotency stages.
+func (g *IngressGuard) Verify(headers http.Header, body []byte) error {
+	return g.verifier.Verify(headers, body, g.now())
 }
 
 // Process executes the required ingress checks in order:

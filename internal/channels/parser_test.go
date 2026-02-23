@@ -66,6 +66,48 @@ func TestExtractIngressMetadata_Telegram(t *testing.T) {
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
 }
 
+func TestExtractIngressMetadata_SlackURLVerification(t *testing.T) {
+	now := time.Unix(1730000050, 0)
+	headers := http.Header{
+		"X-Slack-Request-Timestamp": []string{"1730000000"},
+	}
+	body := []byte(`{
+	  "type":"url_verification",
+	  "challenge":"slack-challenge-token"
+	}`)
+
+	meta, err := extractIngressMetadata("slack", headers, body, now)
+	require.NoError(t, err)
+	require.NotNil(t, meta.Control)
+	assert.True(t, meta.Control.AcknowledgeOnly)
+	assert.Equal(t, "slack-challenge-token", meta.Control.SlackChallenge)
+	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
+}
+
+func TestExtractIngressMetadata_WhatsAppStatusUpdate(t *testing.T) {
+	now := time.Unix(1730000050, 0)
+	body := []byte(`{
+	  "entry": [{
+	    "changes": [{
+	      "value": {
+	        "statuses": [{
+	          "id": "wamid.status",
+	          "status": "read",
+	          "timestamp": "1730000001"
+	        }]
+	      }
+	    }]
+	  }]
+	}`)
+
+	meta, err := extractIngressMetadata("whatsapp", http.Header{}, body, now)
+	require.NoError(t, err)
+	require.NotNil(t, meta.Control)
+	assert.True(t, meta.Control.AcknowledgeOnly)
+	assert.Empty(t, meta.Control.SlackChallenge)
+	assert.Equal(t, int64(1730000001), meta.OccurredAt.Unix())
+}
+
 func TestExtractIngressMetadata_UnsupportedProvider(t *testing.T) {
 	_, err := extractIngressMetadata("discord", http.Header{}, []byte(`{}`), time.Now())
 	require.Error(t, err)
