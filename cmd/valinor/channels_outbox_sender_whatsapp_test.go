@@ -28,6 +28,19 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 		assert.Contains(t, err.Error(), "access token")
 	})
 
+	t.Run("whatsapp enabled missing phone number id fails", func(t *testing.T) {
+		_, err := buildChannelOutboxSender(config.ChannelsConfig{
+			Providers: config.ChannelsProvidersConfig{
+				WhatsApp: config.ChannelProviderConfig{
+					Enabled:     true,
+					AccessToken: "token-123",
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "phone number id")
+	})
+
 	t.Run("whatsapp enabled with outbound config returns sender", func(t *testing.T) {
 		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
 			Providers: config.ChannelsProvidersConfig{
@@ -47,6 +60,20 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 		err = sender.Send(context.Background(), channels.ChannelOutbox{
 			Provider:    "slack",
 			RecipientID: "U12345",
+			Payload:     json.RawMessage(`{"content":"hello"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported outbox provider")
+	})
+
+	t.Run("no supported provider config fails closed on send", func(t *testing.T) {
+		sender, err := buildChannelOutboxSender(config.ChannelsConfig{})
+		require.NoError(t, err)
+		require.NotNil(t, sender)
+
+		err = sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "whatsapp",
+			RecipientID: "15550009999",
 			Payload:     json.RawMessage(`{"content":"hello"}`),
 		})
 		require.Error(t, err)
@@ -148,5 +175,47 @@ func TestWhatsAppOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "decoding outbox payload")
+	})
+
+	t.Run("returns error for empty content", func(t *testing.T) {
+		sender := newWhatsAppOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:       true,
+				APIBaseURL:    "https://graph.example.com",
+				APIVersion:    "v22.0",
+				AccessToken:   "token-123",
+				PhoneNumberID: "987654321",
+			},
+			http.DefaultClient,
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "whatsapp",
+			RecipientID: "15550009999",
+			Payload:     json.RawMessage(`{"content":"  ","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "content is required")
+	})
+
+	t.Run("returns error for empty recipient id", func(t *testing.T) {
+		sender := newWhatsAppOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:       true,
+				APIBaseURL:    "https://graph.example.com",
+				APIVersion:    "v22.0",
+				AccessToken:   "token-123",
+				PhoneNumberID: "987654321",
+			},
+			http.DefaultClient,
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "whatsapp",
+			RecipientID: " ",
+			Payload:     json.RawMessage(`{"content":"hello","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "recipient id is required")
 	})
 }

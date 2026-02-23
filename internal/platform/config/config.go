@@ -133,7 +133,7 @@ type ChannelsProvidersConfig struct {
 	Telegram ChannelProviderConfig `koanf:"telegram"`
 }
 
-// ChannelProviderConfig stores provider enablement and shared secret settings.
+// ChannelProviderConfig stores provider enablement, verification secrets, and outbound API settings.
 type ChannelProviderConfig struct {
 	Enabled       bool   `koanf:"enabled"`
 	SigningSecret string `koanf:"signingsecret"`

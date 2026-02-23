@@ -47,7 +47,9 @@ func buildChannelOutboxSender(cfg config.ChannelsConfig) (channels.OutboxSender,
 	}
 
 	if len(providers) == 0 {
-		return noopOutboxSender{}, nil
+		return routingOutboxSender{
+			byProvider: providers,
+		}, nil
 	}
 
 	return routingOutboxSender{
@@ -76,6 +78,7 @@ func newWhatsAppOutboxSender(cfg config.ChannelProviderConfig, client *http.Clie
 		apiBaseURL = defaultWhatsAppAPIBaseURL
 	}
 
+	// Normalize values like "/v22.0/" and "v22.0/" to "v22.0".
 	apiVersion := strings.Trim(strings.TrimSpace(cfg.APIVersion), "/")
 	if apiVersion == "" {
 		apiVersion = defaultWhatsAppAPIVersion
@@ -109,13 +112,24 @@ func (s *whatsAppOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		return fmt.Errorf("outbox recipient id is required")
 	}
 
-	body, err := json.Marshal(map[string]any{
-		"messaging_product": "whatsapp",
-		"to":                recipientID,
-		"type":              "text",
-		"text": map[string]any{
-			"body":        content,
-			"preview_url": false,
+	type whatsAppTextPayload struct {
+		Body       string `json:"body"`
+		PreviewURL bool   `json:"preview_url"`
+	}
+	type whatsAppSendRequest struct {
+		MessagingProduct string              `json:"messaging_product"`
+		To               string              `json:"to"`
+		Type             string              `json:"type"`
+		Text             whatsAppTextPayload `json:"text"`
+	}
+
+	body, err := json.Marshal(whatsAppSendRequest{
+		MessagingProduct: "whatsapp",
+		To:               recipientID,
+		Type:             "text",
+		Text: whatsAppTextPayload{
+			Body:       content,
+			PreviewURL: false,
 		},
 	})
 	if err != nil {
