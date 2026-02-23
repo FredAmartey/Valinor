@@ -28,6 +28,9 @@ channels:
   ingress:
     enabled: false
     replaywindowseconds: 86400
+    retentioncleanupenabled: true
+    retentioncleanupintervalseconds: 3600
+    retentioncleanupbatchsize: 500
   providers:
     slack:
       enabled: false

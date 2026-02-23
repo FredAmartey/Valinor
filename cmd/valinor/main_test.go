@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -160,5 +161,66 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, worker)
 		assert.Contains(t, err.Error(), "access token")
+	})
+}
+
+func TestBuildChannelRetentionWorker(t *testing.T) {
+	pool := (*database.Pool)(&pgxpool.Pool{})
+
+	t.Run("disabled ingress returns nil worker", func(t *testing.T) {
+		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: false},
+		})
+		assert.Nil(t, worker)
+	})
+
+	t.Run("enabled ingress with cleanup disabled returns nil worker", func(t *testing.T) {
+		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled:                 true,
+				RetentionCleanupEnabled: false,
+			},
+		})
+		assert.Nil(t, worker)
+	})
+
+	t.Run("enabled ingress cleanup returns worker with defaults", func(t *testing.T) {
+		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled:                 true,
+				RetentionCleanupEnabled: true,
+			},
+		})
+		require.NotNil(t, worker)
+		assert.Equal(t, time.Hour, worker.interval)
+		assert.Equal(t, 500, worker.batchSize)
+	})
+
+	t.Run("non-positive cleanup settings fall back to defaults", func(t *testing.T) {
+		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled:                         true,
+				RetentionCleanupEnabled:         true,
+				RetentionCleanupIntervalSeconds: -1,
+				RetentionCleanupBatchSize:       0,
+			},
+		})
+		require.NotNil(t, worker)
+		assert.Equal(t, time.Hour, worker.interval)
+		assert.Equal(t, 500, worker.batchSize)
+	})
+
+	t.Run("explicit cleanup settings are respected", func(t *testing.T) {
+		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled:                         true,
+				RetentionCleanupEnabled:         true,
+				RetentionCleanupIntervalSeconds: 120,
+				RetentionCleanupBatchSize:       250,
+			},
+		})
+		require.NotNil(t, worker)
+		assert.Equal(t, 2*time.Minute, worker.interval)
+		assert.Equal(t, 250, worker.batchSize)
 	})
 }

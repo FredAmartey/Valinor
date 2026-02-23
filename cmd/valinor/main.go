@@ -125,6 +125,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("building channel handler: %w", err)
 	}
+	channelRetentionWorker := buildChannelRetentionWorker(pool, cfg.Channels)
 	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
 	if err != nil {
 		return fmt.Errorf("building channel outbox worker: %w", err)
@@ -313,6 +314,18 @@ func run() error {
 			}
 		}()
 		slog.Info("orchestrator started", "driver", cfg.Orchestrator.Driver, "warm_pool", cfg.Orchestrator.WarmPoolSize)
+	}
+	if channelRetentionWorker != nil {
+		go func() {
+			if err := channelRetentionWorker.Run(ctx); err != nil {
+				slog.Error("channel retention worker stopped", "error", err)
+			}
+		}()
+		slog.Info(
+			"channel retention worker started",
+			"interval", channelRetentionWorker.interval,
+			"batch_size", channelRetentionWorker.batchSize,
+		)
 	}
 	if channelOutboxWorker != nil {
 		go func() {
