@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/proxy"
@@ -33,6 +34,7 @@ type Dependencies struct {
 	AgentHandler      *orchestrator.Handler
 	ProxyHandler      *proxy.Handler
 	AuditHandler      *audit.Handler
+	ConnectorHandler  *connectors.Handler
 	RBACAuditLogger   rbac.AuditLogger
 	DevMode           bool
 	DevIdentity       *auth.Identity
@@ -231,6 +233,25 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("GET /api/v1/audit/events",
 			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
 				http.HandlerFunc(deps.AuditHandler.HandleListEvents),
+			),
+		)
+	}
+
+	// Connector routes (tenant-scoped, RBAC-protected)
+	if deps.ConnectorHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("POST /api/v1/connectors",
+			rbac.RequirePermission(deps.RBAC, "connectors:write", rbacOpts...)(
+				http.HandlerFunc(deps.ConnectorHandler.HandleCreate),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/connectors",
+			rbac.RequirePermission(deps.RBAC, "connectors:read", rbacOpts...)(
+				http.HandlerFunc(deps.ConnectorHandler.HandleList),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/connectors/{id}",
+			rbac.RequirePermission(deps.RBAC, "connectors:write", rbacOpts...)(
+				http.HandlerFunc(deps.ConnectorHandler.HandleDelete),
 			),
 		)
 	}

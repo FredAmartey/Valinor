@@ -73,15 +73,18 @@ type Handler struct {
 
 | Method | Path | Permission | Description |
 |--------|------|------------|-------------|
-| POST | `/api/v1/tenants/{tenantID}/connectors` | `connectors:write` | Register MCP server |
-| GET | `/api/v1/tenants/{tenantID}/connectors` | `connectors:read` | List tenant's connectors |
+| POST | `/api/v1/connectors` | `connectors:write` | Register MCP server |
+| GET | `/api/v1/connectors` | `connectors:read` | List tenant's connectors |
 | DELETE | `/api/v1/connectors/{id}` | `connectors:write` | Remove connector |
+
+Tenant selection comes from authenticated tenant context, not URL path.
+If a legacy route still provides `{tenantID}`, handler must reject mismatches against authenticated tenant.
 
 ### Request Validation
 
 **HandleCreate:**
 - `name` required, non-empty
-- `endpoint` required, must be valid URL
+- `endpoint` required, non-empty (URL validation deferred)
 - `connector_type` defaults to `"mcp"` if omitted
 - `auth_config` defaults to `{}` if omitted
 - `tools` defaults to `[]` if omitted
@@ -89,6 +92,7 @@ type Handler struct {
 **HandleDelete:**
 - Connector ID must be valid UUID
 - Returns 404 if connector not found within tenant scope
+- Returns 403 if a provided `{tenantID}` path value does not match authenticated tenant context
 
 ### Auth Config in Responses
 
@@ -98,8 +102,8 @@ Returned as-is (plaintext JSONB). Future phase will redact secrets in API respon
 
 ```go
 if deps.ConnectorHandler != nil && deps.RBAC != nil {
-    protectedMux.Handle("POST /api/v1/tenants/{tenantID}/connectors", ...)
-    protectedMux.Handle("GET /api/v1/tenants/{tenantID}/connectors", ...)
+    protectedMux.Handle("POST /api/v1/connectors", ...)
+    protectedMux.Handle("GET /api/v1/connectors", ...)
     protectedMux.Handle("DELETE /api/v1/connectors/{id}", ...)
 }
 ```
@@ -116,7 +120,7 @@ Added to default roles:
 
 ### Flow
 
-1. Admin registers connector via `POST /api/v1/tenants/:id/connectors`
+1. Admin registers connector via `POST /api/v1/connectors`
 2. Admin configures agent via `POST /api/v1/agents/:id/configure`
 3. Orchestrator handler queries tenant's connectors from store
 4. config_update frame includes `connectors` field:

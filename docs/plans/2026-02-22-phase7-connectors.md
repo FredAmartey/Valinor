@@ -8,6 +8,8 @@
 
 **Tech Stack:** Go, PostgreSQL (existing `connectors` table with RLS), `pgx/v5`, `database.Querier` + `WithTenantConnection` for tenant isolation.
 
+**Implementation note (2026-02-22 update):** Connector routes are normalized to `/api/v1/connectors` (no tenant ID in path). Tenant scope is derived from authenticated context. If a `{tenantID}` path value is present (legacy route), handlers must reject mismatches with `403`.
+
 ---
 
 ### Task 1: Connector Domain Types
@@ -338,7 +340,7 @@ import (
 func TestHandleCreate_MissingName(t *testing.T) {
 	handler := connectors.NewHandler(nil, connectors.NewStore())
 	body := `{"endpoint": "https://example.com"}`
-	req := httptest.NewRequest("POST", "/api/v1/tenants/test-tenant/connectors", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/v1/connectors", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
 	handler.HandleCreate(w, req)
@@ -381,7 +383,7 @@ func NewHandler(pool *pgxpool.Pool, store *Store) *Handler {
 }
 
 // HandleCreate registers a new MCP connector for the tenant.
-// POST /api/v1/tenants/{tenantID}/connectors
+// POST /api/v1/connectors
 func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
 
@@ -478,7 +480,7 @@ Append to `handler.go`:
 
 ```go
 // HandleList returns all connectors for the tenant.
-// GET /api/v1/tenants/{tenantID}/connectors
+// GET /api/v1/connectors
 func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
@@ -574,12 +576,12 @@ ConnectorHandler *connectors.Handler
 ```go
 // Connector routes (tenant-scoped, RBAC-protected)
 if deps.ConnectorHandler != nil && deps.RBAC != nil {
-    protectedMux.Handle("POST /api/v1/tenants/{tenantID}/connectors",
+    protectedMux.Handle("POST /api/v1/connectors",
         rbac.RequirePermission(deps.RBAC, "connectors:write", rbacOpts...)(
             http.HandlerFunc(deps.ConnectorHandler.HandleCreate),
         ),
     )
-    protectedMux.Handle("GET /api/v1/tenants/{tenantID}/connectors",
+    protectedMux.Handle("GET /api/v1/connectors",
         rbac.RequirePermission(deps.RBAC, "connectors:read", rbacOpts...)(
             http.HandlerFunc(deps.ConnectorHandler.HandleList),
         ),

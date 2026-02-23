@@ -11,6 +11,7 @@ import (
 
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 	"github.com/valinor-ai/valinor/internal/platform/database"
@@ -117,6 +118,7 @@ func run() error {
 		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
 		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
 	}
+	connectorHandler := buildConnectorHandler(pool)
 
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)
@@ -177,7 +179,10 @@ func run() error {
 	var connPool *proxy.ConnPool
 	if pool != nil {
 		orchStore := orchestrator.NewStore()
-		orchDriver := orchestrator.NewMockDriver() // TODO: select driver from config
+		orchDriver, err := selectVMDriver(cfg.Orchestrator, cfg.Auth.DevMode)
+		if err != nil {
+			return fmt.Errorf("selecting orchestrator driver: %w", err)
+		}
 		orchCfg := orchestrator.ManagerConfig{
 			Driver:                 cfg.Orchestrator.Driver,
 			WarmPoolSize:           cfg.Orchestrator.WarmPoolSize,
@@ -233,6 +238,7 @@ func run() error {
 		AgentHandler:      agentHandler,
 		ProxyHandler:      proxyHandler,
 		AuditHandler:      auditHandler,
+		ConnectorHandler:  connectorHandler,
 		RBACAuditLogger:   &rbacAuditAdapter{l: auditLogger},
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
@@ -255,6 +261,13 @@ func run() error {
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)
 	return srv.Start(ctx)
+}
+
+func buildConnectorHandler(pool *database.Pool) *connectors.Handler {
+	if pool == nil {
+		return nil
+	}
+	return connectors.NewHandler(pool, connectors.NewStore())
 }
 
 // configPusherAdapter wraps proxy.ConnPool to implement orchestrator.ConfigPusher.

@@ -148,6 +148,42 @@ func TestHandleMessage_AgentNotRunning(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
+func TestIsolationProof_HandleMessage_CrossTenantDenied(t *testing.T) {
+	transport := proxy.NewTCPTransport(9825)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	agentID := "agent-cross-tenant"
+	agentTenantID := "tenant-a"
+	requestTenantID := "tenant-b"
+	cid := uint32(7)
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &agentTenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil)
+
+	body := `{"role":"user","content":"hello"}`
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(body))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, requestTenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
 func TestHandleStream_SSE(t *testing.T) {
 	transport := proxy.NewTCPTransport(9830)
 	pool := proxy.NewConnPool(transport)

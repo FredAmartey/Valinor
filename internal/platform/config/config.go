@@ -69,9 +69,20 @@ type OrchestratorConfig struct {
 }
 
 type FirecrackerConfig struct {
-	KernelPath string `koanf:"kernel_path"`
-	RootDrive  string `koanf:"root_drive"`
-	JailerPath string `koanf:"jailer_path"`
+	KernelPath string       `koanf:"kernel_path"`
+	RootDrive  string       `koanf:"root_drive"`
+	JailerPath string       `koanf:"jailer_path"`
+	Jailer     JailerConfig `koanf:"jailer"`
+}
+
+type JailerConfig struct {
+	Enabled       bool   `koanf:"enabled"`
+	BinaryPath    string `koanf:"binary_path"`
+	ChrootBaseDir string `koanf:"chroot_base_dir"`
+	UID           int    `koanf:"uid"`
+	GID           int    `koanf:"gid"`
+	NetNSPath     string `koanf:"netns_path"`
+	Daemonize     bool   `koanf:"daemonize"`
 }
 
 type DockerConfig struct {
@@ -106,35 +117,37 @@ func Load(configPaths ...string) (*Config, error) {
 
 	// Defaults
 	_ = k.Load(confmap.Provider(map[string]any{
-		"server.port":                           8080,
-		"server.host":                           "0.0.0.0",
-		"server.base_domain":                    "localhost",
-		"database.max_conns":                    25,
-		"database.migrations_path":              "migrations",
-		"log.level":                             "info",
-		"log.format":                            "json",
-		"auth.devmode":                          false,
-		"auth.jwt.issuer":                       "valinor",
-		"auth.jwt.expiryhours":                  24,
-		"auth.jwt.refreshexpiryhours":           168,
-		"auth.oidc.redirecturl":                 "http://localhost:8080/auth/callback",
-		"orchestrator.driver":                   "mock",
-		"orchestrator.warm_pool_size":           2,
-		"orchestrator.health_interval_secs":     10,
-		"orchestrator.reconcile_interval_secs":  30,
-		"orchestrator.max_consecutive_failures": 3,
-		"orchestrator.docker.image":             "valinor-agent:latest",
-		"proxy.transport":                       "tcp",
-		"proxy.tcp_base_port":                   9100,
-		"proxy.message_timeout":                 60,
-		"proxy.config_timeout":                  5,
-		"proxy.ping_timeout":                    3,
-		"sentinel.enabled":                      true,
-		"sentinel.llm_enabled":                  false,
-		"sentinel.block_threshold":              0.85,
-		"audit.buffer_size":                     4096,
-		"audit.batch_size":                      100,
-		"audit.flush_interval_ms":               500,
+		"server.port":                               8080,
+		"server.host":                               "0.0.0.0",
+		"server.base_domain":                        "localhost",
+		"database.max_conns":                        25,
+		"database.migrations_path":                  "migrations",
+		"log.level":                                 "info",
+		"log.format":                                "json",
+		"auth.devmode":                              false,
+		"auth.jwt.issuer":                           "valinor",
+		"auth.jwt.expiryhours":                      24,
+		"auth.jwt.refreshexpiryhours":               168,
+		"auth.oidc.redirecturl":                     "http://localhost:8080/auth/callback",
+		"orchestrator.driver":                       "mock",
+		"orchestrator.warm_pool_size":               2,
+		"orchestrator.health_interval_secs":         10,
+		"orchestrator.reconcile_interval_secs":      30,
+		"orchestrator.max_consecutive_failures":     3,
+		"orchestrator.docker.image":                 "valinor-agent:latest",
+		"orchestrator.firecracker.jailer.enabled":   false,
+		"orchestrator.firecracker.jailer.daemonize": false,
+		"proxy.transport":                           "tcp",
+		"proxy.tcp_base_port":                       9100,
+		"proxy.message_timeout":                     60,
+		"proxy.config_timeout":                      5,
+		"proxy.ping_timeout":                        3,
+		"sentinel.enabled":                          true,
+		"sentinel.llm_enabled":                      false,
+		"sentinel.block_threshold":                  0.85,
+		"audit.buffer_size":                         4096,
+		"audit.batch_size":                          100,
+		"audit.flush_interval_ms":                   500,
 	}, "."), nil)
 
 	// YAML file (optional)
