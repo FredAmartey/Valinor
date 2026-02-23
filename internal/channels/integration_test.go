@@ -2,6 +2,7 @@ package channels_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -218,4 +219,111 @@ func TestIngress_CrossTenantIsolation_SamePlatformIdentity(t *testing.T) {
 	assert.Equal(t, tenantA, resA.Link.TenantID.String())
 	assert.Equal(t, tenantB, resB.Link.TenantID.String())
 	assert.NotEqual(t, resA.Link.UserID, resB.Link.UserID)
+}
+
+func TestOutbox_MultiTenantIsolationAndSingleClaim(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantA, tenantB string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Outbox Tenant IA', 'outbox-tenant-ia') RETURNING id",
+	).Scan(&tenantA)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Outbox Tenant IB', 'outbox-tenant-ib') RETURNING id",
+	).Scan(&tenantB)
+	require.NoError(t, err)
+
+	var messageAID, messageBID string
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		if scanErr := q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550001111', 'msg-outbox-ia', 'idem-outbox-ia',
+				'fp-outbox-ia', 'corr-outbox-ia', 'executed', now() + interval '1 day'
+			) RETURNING id`,
+		).Scan(&messageAID); scanErr != nil {
+			return scanErr
+		}
+
+		_, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageAID,
+			Provider:         "whatsapp",
+			RecipientID:      "+15550001111",
+			Payload:          json.RawMessage(`{"content":"tenant a response"}`),
+		})
+		return enqueueErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		if scanErr := q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-outbox-ib', 'idem-outbox-ib',
+				'fp-outbox-ib', 'corr-outbox-ib', 'executed', now() + interval '1 day'
+			) RETURNING id`,
+		).Scan(&messageBID); scanErr != nil {
+			return scanErr
+		}
+
+		_, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageBID,
+			Provider:         "whatsapp",
+			RecipientID:      "+15550002222",
+			Payload:          json.RawMessage(`{"content":"tenant b response"}`),
+		})
+		return enqueueErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		_, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageAID,
+			Provider:         "whatsapp",
+			RecipientID:      "+15550003333",
+			Payload:          json.RawMessage(`{"content":"cross-tenant-forbidden"}`),
+		})
+		require.ErrorIs(t, enqueueErr, channels.ErrMessageNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		firstClaim, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 10)
+		require.NoError(t, claimErr)
+		require.Len(t, firstClaim, 1)
+		assert.Equal(t, tenantA, firstClaim[0].TenantID.String())
+		assert.Equal(t, messageAID, firstClaim[0].ChannelMessageID.String())
+
+		secondClaim, secondErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 10)
+		require.NoError(t, secondErr)
+		assert.Empty(t, secondClaim)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		claim, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 10)
+		require.NoError(t, claimErr)
+		require.Len(t, claim, 1)
+		assert.Equal(t, tenantB, claim[0].TenantID.String())
+		assert.Equal(t, messageBID, claim[0].ChannelMessageID.String())
+		return nil
+	})
+	require.NoError(t, err)
 }

@@ -409,10 +409,13 @@ func (s *Store) EnqueueOutbound(ctx context.Context, q database.Querier, params 
 			status,
 			max_attempts
 		)
-		VALUES (
+		SELECT
 			current_setting('app.current_tenant_id', true)::UUID,
-			$1, $2, $3, $4::jsonb, $5, $6
-		)
+			msg.id,
+			$2, $3, $4::jsonb, $5, $6
+		FROM channel_messages msg
+		WHERE msg.id = $1
+		  AND msg.tenant_id = current_setting('app.current_tenant_id', true)::UUID
 		RETURNING id, tenant_id, channel_message_id, provider, recipient_id, payload, status,
 		          attempt_count, max_attempts, next_attempt_at, last_error, locked_at, sent_at, created_at, updated_at`,
 		messageID,
