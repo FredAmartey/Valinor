@@ -17,14 +17,6 @@ type channelOutboxWorker struct {
 	pollInterval time.Duration
 }
 
-type noopOutboxSender struct{}
-
-func (noopOutboxSender) Send(_ context.Context, _ channels.ChannelOutbox) error {
-	// TODO(v2): replace this stub with real provider dispatch.
-	// V1 adapter stub: successful no-op send for infrastructure wiring.
-	return nil
-}
-
 func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*channelOutboxWorker, error) {
 	if pool == nil || !cfg.Ingress.Enabled || !cfg.Outbox.Enabled {
 		return nil, nil
