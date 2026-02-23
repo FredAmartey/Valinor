@@ -26,6 +26,7 @@ func TestExtractIngressMetadata_Slack(t *testing.T) {
 	assert.Equal(t, "U12345", meta.PlatformUserID)
 	assert.Equal(t, "Ev123", meta.PlatformMessageID)
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
+	assert.Equal(t, "hello", meta.Content)
 }
 
 func TestExtractIngressMetadata_WhatsApp(t *testing.T) {
@@ -37,7 +38,8 @@ func TestExtractIngressMetadata_WhatsApp(t *testing.T) {
 	        "messages": [{
 	          "from": "+15550001111",
 	          "id": "wamid.abc123",
-	          "timestamp": "1730000000"
+	          "timestamp": "1730000000",
+	          "text": {"body": "whatsapp hello"}
 	        }]
 	      }
 	    }]
@@ -51,6 +53,7 @@ func TestExtractIngressMetadata_WhatsApp(t *testing.T) {
 	assert.Equal(t, "+15550001111", meta.PlatformUserID)
 	assert.Equal(t, "wamid.abc123", meta.PlatformMessageID)
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
+	assert.Equal(t, "whatsapp hello", meta.Content)
 }
 
 func TestExtractIngressMetadata_Telegram(t *testing.T) {
@@ -59,6 +62,7 @@ func TestExtractIngressMetadata_Telegram(t *testing.T) {
 	  "message": {
 	    "message_id": 321,
 	    "date": 1730000000,
+	    "text": "telegram hello",
 	    "from": {"id": 987654}
 	  }
 	}`)
@@ -70,6 +74,7 @@ func TestExtractIngressMetadata_Telegram(t *testing.T) {
 	assert.Equal(t, "987654", meta.PlatformUserID)
 	assert.Equal(t, "321", meta.PlatformMessageID)
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
+	assert.Equal(t, "telegram hello", meta.Content)
 }
 
 func TestExtractIngressMetadata_SlackURLVerification(t *testing.T) {
@@ -109,6 +114,7 @@ func TestExtractIngressMetadata_SlackBotEventUsesBotID(t *testing.T) {
 	assert.Equal(t, "B12345", meta.PlatformUserID)
 	assert.Equal(t, "Ev456", meta.PlatformMessageID)
 	assert.Equal(t, int64(1730000000), meta.OccurredAt.Unix())
+	assert.Equal(t, "hello", meta.Content)
 }
 
 func TestExtractIngressMetadata_WhatsAppStatusUpdate(t *testing.T) {
