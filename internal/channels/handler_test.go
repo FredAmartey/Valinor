@@ -232,8 +232,8 @@ func TestHandleWebhook_SlackURLVerificationRespondsChallenge(t *testing.T) {
 	h.HandleWebhook(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
-	assert.Equal(t, "slack-challenge-token", w.Body.String())
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	assert.Contains(t, w.Body.String(), "\"challenge\":\"slack-challenge-token\"")
 	assert.False(t, linkLookupCalled)
 	assert.False(t, insertCalled)
 }

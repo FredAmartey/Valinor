@@ -88,9 +88,9 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if meta.Control.SlackChallenge != "" {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(meta.Control.SlackChallenge))
+			writeJSON(w, http.StatusOK, map[string]string{
+				"challenge": meta.Control.SlackChallenge,
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{
