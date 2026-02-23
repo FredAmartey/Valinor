@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -233,4 +234,39 @@ func TestServer_ChannelsLinks_LegacyTenantPathNotRegistered(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestServer_ChannelsWebhook_TenantScopedRouteRegistered(t *testing.T) {
+	deps, _ := newTestDeps()
+	srv := server.New(":0", deps)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	// Route should resolve to channel handler (which returns JSON 4xx), not mux 404 plain text.
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+}
+
+func TestServer_ChannelsWebhook_LegacyPathNotRegistered(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID: "user-channels",
+		Roles:  []string{"channels_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/whatsapp/webhook", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "404 page not found")
 }

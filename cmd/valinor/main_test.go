@@ -19,13 +19,30 @@ func TestBuildConnectorHandler(t *testing.T) {
 
 func TestBuildChannelHandler(t *testing.T) {
 	t.Run("disabled ingress returns nil handler", func(t *testing.T) {
-		handler, err := buildChannelHandler(config.ChannelsConfig{})
+		handler, err := buildChannelHandler(nil, config.ChannelsConfig{})
 		require.NoError(t, err)
 		assert.Nil(t, handler)
 	})
 
+	t.Run("enabled ingress without database pool fails", func(t *testing.T) {
+		_, err := buildChannelHandler(nil, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled: true,
+			},
+			Providers: config.ChannelsProvidersConfig{
+				Slack: config.ChannelProviderConfig{
+					Enabled:       true,
+					SigningSecret: "slack-secret",
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database")
+	})
+
 	t.Run("enabled provider missing secret fails", func(t *testing.T) {
-		_, err := buildChannelHandler(config.ChannelsConfig{
+		pool := (*database.Pool)(&pgxpool.Pool{})
+		_, err := buildChannelHandler(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{
 				Enabled: true,
 			},
@@ -39,8 +56,20 @@ func TestBuildChannelHandler(t *testing.T) {
 		assert.Contains(t, err.Error(), "signing secret")
 	})
 
+	t.Run("enabled ingress with no providers fails", func(t *testing.T) {
+		pool := (*database.Pool)(&pgxpool.Pool{})
+		_, err := buildChannelHandler(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled: true,
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no providers")
+	})
+
 	t.Run("enabled provider with secret returns handler", func(t *testing.T) {
-		handler, err := buildChannelHandler(config.ChannelsConfig{
+		pool := (*database.Pool)(&pgxpool.Pool{})
+		handler, err := buildChannelHandler(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{
 				Enabled: true,
 			},

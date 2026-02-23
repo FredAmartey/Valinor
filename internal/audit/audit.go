@@ -21,6 +21,7 @@ const (
 	ActionChannelMessageAccepted          = "channel.message.accepted"
 	ActionChannelMessageDuplicate         = "channel.message.duplicate"
 	ActionChannelMessageReplayBlocked     = "channel.message.replay_blocked"
+	ActionChannelWebhookIgnored           = "channel.webhook.ignored"
 	ActionChannelWebhookRejectedSignature = "channel.webhook.rejected_signature"
 	ActionChannelActionDeniedUnverified   = "channel.action_denied_unverified"
 )

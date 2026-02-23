@@ -86,7 +86,7 @@ func New(addr string, deps Dependencies) *Server {
 		deps.AuthHandler.RegisterRoutes(topMux)
 	}
 	if deps.ChannelHandler != nil {
-		topMux.Handle("POST /api/v1/channels/{provider}/webhook",
+		topMux.Handle("POST /api/v1/tenants/{tenantID}/channels/{provider}/webhook",
 			http.HandlerFunc(deps.ChannelHandler.HandleWebhook),
 		)
 	}
