@@ -35,6 +35,13 @@ func (s routingOutboxSender) Send(ctx context.Context, job channels.ChannelOutbo
 
 func buildChannelOutboxSender(cfg config.ChannelsConfig) (channels.OutboxSender, error) {
 	providers := make(map[string]channels.OutboxSender)
+	if cfg.Providers.Slack.Enabled {
+		slackCfg := cfg.Providers.Slack
+		if strings.TrimSpace(slackCfg.AccessToken) == "" {
+			return nil, fmt.Errorf("slack access token is required for outbox sender")
+		}
+		providers["slack"] = newSlackOutboxSender(slackCfg, nil)
+	}
 	if cfg.Providers.WhatsApp.Enabled {
 		waCfg := cfg.Providers.WhatsApp
 		if strings.TrimSpace(waCfg.AccessToken) == "" {
