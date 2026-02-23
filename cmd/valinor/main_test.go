@@ -239,6 +239,22 @@ func TestBuildChannelRetentionWorker(t *testing.T) {
 		assert.Equal(t, 500, worker.tenantScanPageSize)
 	})
 
+	t.Run("non-positive tenant scan page size falls back to default", func(t *testing.T) {
+		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled:                         true,
+				RetentionCleanupEnabled:         true,
+				RetentionCleanupIntervalSeconds: 120,
+				RetentionCleanupBatchSize:       250,
+				TenantScanPageSize:              0,
+			},
+		})
+		require.NotNil(t, worker)
+		assert.Equal(t, 2*time.Minute, worker.interval)
+		assert.Equal(t, 250, worker.batchSize)
+		assert.Equal(t, 500, worker.tenantScanPageSize)
+	})
+
 	t.Run("explicit cleanup settings are respected", func(t *testing.T) {
 		worker := buildChannelRetentionWorker(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{

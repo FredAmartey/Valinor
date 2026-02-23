@@ -124,10 +124,10 @@ type ChannelsConfig struct {
 type ChannelsIngressConfig struct {
 	Enabled                         bool `koanf:"enabled"`
 	ReplayWindowSeconds             int  `koanf:"replaywindowseconds"`
+	TenantScanPageSize              int  `koanf:"tenantscanpagesize"`
 	RetentionCleanupEnabled         bool `koanf:"retentioncleanupenabled"`
 	RetentionCleanupIntervalSeconds int  `koanf:"retentioncleanupintervalseconds"`
 	RetentionCleanupBatchSize       int  `koanf:"retentioncleanupbatchsize"`
-	TenantScanPageSize              int  `koanf:"tenantscanpagesize"`
 }
 
 // ChannelsProvidersConfig controls per-provider channel settings.
@@ -200,10 +200,10 @@ func Load(configPaths ...string) (*Config, error) {
 		"audit.flush_interval_ms":                          500,
 		"channels.ingress.enabled":                         false,
 		"channels.ingress.replaywindowseconds":             86400,
+		"channels.ingress.tenantscanpagesize":              500,
 		"channels.ingress.retentioncleanupenabled":         true,
 		"channels.ingress.retentioncleanupintervalseconds": 3600,
 		"channels.ingress.retentioncleanupbatchsize":       500,
-		"channels.ingress.tenantscanpagesize":              500,
 		"channels.providers.slack.enabled":                 false,
 		"channels.providers.slack.apibaseurl":              "https://slack.com",
 		"channels.providers.whatsapp.enabled":              false,

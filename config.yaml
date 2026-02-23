@@ -28,10 +28,10 @@ channels:
   ingress:
     enabled: false
     replaywindowseconds: 86400
+    tenantscanpagesize: 500
     retentioncleanupenabled: true
     retentioncleanupintervalseconds: 3600
     retentioncleanupbatchsize: 500
-    tenantscanpagesize: 500
   providers:
     slack:
       enabled: false

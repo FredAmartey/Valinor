@@ -13,8 +13,6 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
-const defaultTenantScanPageSize = 500
-
 type channelOutboxWorker struct {
 	pool               *database.Pool
 	dispatcher         *channels.OutboxDispatcher
@@ -107,7 +105,7 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 
 func listTenantIDs(ctx context.Context, pool *database.Pool, pageSize int) ([]string, error) {
 	if pageSize <= 0 {
-		pageSize = defaultTenantScanPageSize
+		return nil, fmt.Errorf("tenant scan page size must be positive")
 	}
 
 	tenantIDs := make([]string, 0, pageSize)
