@@ -196,6 +196,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.ingress.enabled":                  false,
 		"channels.ingress.replaywindowseconds":      86400,
 		"channels.providers.slack.enabled":          false,
+		"channels.providers.slack.apibaseurl":       "https://slack.com",
 		"channels.providers.whatsapp.enabled":       false,
 		"channels.providers.whatsapp.apibaseurl":    "https://graph.facebook.com",
 		"channels.providers.whatsapp.apiversion":    "v22.0",

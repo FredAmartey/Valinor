@@ -74,6 +74,7 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 	assert.False(t, cfg.Channels.Ingress.Enabled)
 	assert.Equal(t, 86400, cfg.Channels.Ingress.ReplayWindowSeconds)
 	assert.False(t, cfg.Channels.Providers.Slack.Enabled)
+	assert.Equal(t, "https://slack.com", cfg.Channels.Providers.Slack.APIBaseURL)
 	assert.False(t, cfg.Channels.Providers.WhatsApp.Enabled)
 	assert.Equal(t, "https://graph.facebook.com", cfg.Channels.Providers.WhatsApp.APIBaseURL)
 	assert.Equal(t, "v22.0", cfg.Channels.Providers.WhatsApp.APIVersion)
@@ -82,6 +83,9 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 
 func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_INGRESS_ENABLED", "true")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ENABLED", "true")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_SLACK_APIBASEURL", "https://slack.test")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ACCESSTOKEN", "xoxb-slack-token")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ENABLED", "true")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_SIGNINGSECRET", "wa-secret")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIBASEURL", "https://graph.test")
@@ -90,6 +94,9 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_PHONENUMBERID", "123456789")
 	defer func() {
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_APIBASEURL")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ACCESSTOKEN")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_SIGNINGSECRET")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIBASEURL")
@@ -102,6 +109,9 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, cfg.Channels.Ingress.Enabled)
+	assert.True(t, cfg.Channels.Providers.Slack.Enabled)
+	assert.Equal(t, "https://slack.test", cfg.Channels.Providers.Slack.APIBaseURL)
+	assert.Equal(t, "xoxb-slack-token", cfg.Channels.Providers.Slack.AccessToken)
 	assert.True(t, cfg.Channels.Providers.WhatsApp.Enabled)
 	assert.Equal(t, "wa-secret", cfg.Channels.Providers.WhatsApp.SigningSecret)
 	assert.Equal(t, "https://graph.test", cfg.Channels.Providers.WhatsApp.APIBaseURL)

@@ -248,6 +248,7 @@ func TestHandleWebhook_ExecutedEnqueuesOutbox(t *testing.T) {
 		platform       string
 		idempotencyKey string
 		recipientID    string
+		outboxThreadTS string
 		correlationID  string
 		content        string
 	}
@@ -262,12 +263,13 @@ func TestHandleWebhook_ExecutedEnqueuesOutbox(t *testing.T) {
 			}
 		},
 	)
-	h.enqueueOutbound = func(_ context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error {
+	h.enqueueOutbound = func(_ context.Context, tenantID, platform, idempotencyKey, recipientID, outboxThreadTS, correlationID, responseContent string) error {
 		enqueuedCalled = true
 		enqueued.tenantID = tenantID
 		enqueued.platform = platform
 		enqueued.idempotencyKey = idempotencyKey
 		enqueued.recipientID = recipientID
+		enqueued.outboxThreadTS = outboxThreadTS
 		enqueued.correlationID = correlationID
 		enqueued.content = responseContent
 		return nil
@@ -317,7 +319,7 @@ func TestHandleWebhook_EnqueueFailureReturns500AndDispatchFailed(t *testing.T) {
 			}
 		},
 	)
-	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _ string) error {
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _, _ string) error {
 		return errors.New("enqueue failed")
 	}
 	h.updateMessageStatus = func(_ context.Context, _, _, _, status string, metadata json.RawMessage) error {
@@ -336,7 +338,7 @@ func TestHandleWebhook_EnqueueFailureReturns500AndDispatchFailed(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "processing webhook failed")
 	assert.Equal(t, MessageStatusDispatchFailed, persistedStatus)
-	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"response_content":"agent response body"}`, string(persistedMetadata))
+	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550001111","response_content":"agent response body"}`, string(persistedMetadata))
 }
 
 func TestHandleWebhook_DuplicateDispatchFailedRequeuesWithoutReexecution(t *testing.T) {
@@ -372,7 +374,7 @@ func TestHandleWebhook_DuplicateDispatchFailedRequeuesWithoutReexecution(t *test
 			}
 		},
 	)
-	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _ string) error {
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _, _ string) error {
 		enqueueCalls++
 		if enqueueCalls == 1 {
 			return errors.New("enqueue failed")
@@ -404,7 +406,7 @@ func TestHandleWebhook_DuplicateDispatchFailedRequeuesWithoutReexecution(t *test
 	assert.Equal(t, 1, executeCalls)
 	assert.Equal(t, 1, enqueueCalls)
 	assert.Equal(t, MessageStatusDispatchFailed, persistedStatus)
-	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"response_content":"agent response body"}`, string(persistedMetadata))
+	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550001111","response_content":"agent response body"}`, string(persistedMetadata))
 
 	reqTwo := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("outbox me")))
 	reqTwo.SetPathValue("provider", "whatsapp")
@@ -419,7 +421,7 @@ func TestHandleWebhook_DuplicateDispatchFailedRequeuesWithoutReexecution(t *test
 	assert.Equal(t, 2, enqueueCalls)
 	assert.Equal(t, MessageStatusExecuted, persistedStatus)
 	assert.Contains(t, wTwo.Body.String(), string(IngressExecuted))
-	assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-123","outbox_enqueue_failed":false,"outbox_recovered":true,"response_content":"agent response body"}`, string(persistedMetadata))
+	assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-123","outbox_enqueue_failed":false,"outbox_recovered":true,"outbox_recipient_id":"+15550001111","response_content":"agent response body"}`, string(persistedMetadata))
 }
 
 func TestHandleWebhook_StatusPersistenceFailureReturns500(t *testing.T) {
@@ -702,6 +704,108 @@ func TestHandleWebhook_SlackBotEventUsesBotID(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "accepted")
 	require.Len(t, seenUserIDs, 1)
 	assert.Equal(t, "B12345", seenUserIDs[0])
+}
+
+func TestHandleWebhook_SlackExecutedEnqueuesOutboxChannelAndThread(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	var enqueuedRecipientID string
+	var enqueuedThreadTS string
+	h := NewHandler(map[string]*IngressGuard{"slack": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{
+				Decision:        IngressExecuted,
+				AgentID:         "agent-123",
+				ResponseContent: "agent response body",
+			}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, _, _, _, recipientID, outboxThreadTS, _, _ string) error {
+		enqueuedRecipientID = recipientID
+		enqueuedThreadTS = outboxThreadTS
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/slack/webhook", strings.NewReader(`{
+  "event_id":"Ev901",
+  "event":{"user":"U12345","text":"hello","channel":"C12345","thread_ts":"1730000010.000100"}
+}`))
+	req.SetPathValue("provider", "slack")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), string(IngressExecuted))
+	assert.Equal(t, "C12345", enqueuedRecipientID)
+	assert.Equal(t, "1730000010.000100", enqueuedThreadTS)
+}
+
+func TestHandleWebhook_SlackExecutedWithoutChannelReturnsDispatchFailed(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	enqueueCalled := false
+	var persistedStatus string
+	var persistedMetadata json.RawMessage
+
+	h := NewHandler(map[string]*IngressGuard{"slack": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{
+				Decision:        IngressExecuted,
+				AgentID:         "agent-123",
+				ResponseContent: "agent response body",
+			}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _, _ string) error {
+		enqueueCalled = true
+		return nil
+	}
+	h.updateMessageStatus = func(_ context.Context, _, _, _, status string, metadata json.RawMessage) error {
+		persistedStatus = status
+		persistedMetadata = append([]byte(nil), metadata...)
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/slack/webhook", strings.NewReader(`{
+  "event_id":"Ev902",
+  "event":{"user":"U12345","text":"hello"}
+}`))
+	req.SetPathValue("provider", "slack")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.False(t, enqueueCalled)
+	assert.Equal(t, MessageStatusDispatchFailed, persistedStatus)
+	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"response_content":"agent response body"}`, string(persistedMetadata))
 }
 
 func TestHandleWebhook_ControlPayloadStillVerifiesSignature(t *testing.T) {

@@ -10,11 +10,13 @@ import (
 )
 
 type ingressMetadata struct {
-	PlatformUserID    string
-	PlatformMessageID string
-	OccurredAt        time.Time
-	Content           string
-	Control           *ingressControl
+	PlatformUserID      string
+	PlatformMessageID   string
+	OccurredAt          time.Time
+	Content             string
+	OutboundRecipientID string
+	OutboundThreadTS    string
+	Control             *ingressControl
 }
 
 type ingressControl struct {
@@ -41,10 +43,12 @@ func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time
 		Challenge string `json:"challenge"`
 		EventID   string `json:"event_id"`
 		Event     struct {
-			Type  string `json:"type"`
-			User  string `json:"user"`
-			BotID string `json:"bot_id"`
-			Text  string `json:"text"`
+			Type     string `json:"type"`
+			User     string `json:"user"`
+			BotID    string `json:"bot_id"`
+			Text     string `json:"text"`
+			Channel  string `json:"channel"`
+			ThreadTS string `json:"thread_ts"`
 		} `json:"event"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -82,10 +86,12 @@ func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time
 	}
 
 	return []ingressMetadata{{
-		PlatformUserID:    platformIdentity,
-		PlatformMessageID: strings.TrimSpace(payload.EventID),
-		OccurredAt:        occurredAt,
-		Content:           strings.TrimSpace(payload.Event.Text),
+		PlatformUserID:      platformIdentity,
+		PlatformMessageID:   strings.TrimSpace(payload.EventID),
+		OccurredAt:          occurredAt,
+		Content:             strings.TrimSpace(payload.Event.Text),
+		OutboundRecipientID: strings.TrimSpace(payload.Event.Channel),
+		OutboundThreadTS:    strings.TrimSpace(payload.Event.ThreadTS),
 	}}, nil
 }
 

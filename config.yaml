@@ -32,6 +32,8 @@ channels:
     slack:
       enabled: false
       signingsecret: ""
+      apibaseurl: "https://slack.com"
+      accesstoken: ""
     whatsapp:
       enabled: false
       signingsecret: ""

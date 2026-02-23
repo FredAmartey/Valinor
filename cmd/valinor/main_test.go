@@ -125,4 +125,22 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		assert.Nil(t, worker)
 		assert.Contains(t, err.Error(), "access token")
 	})
+
+	t.Run("slack enabled without outbound credentials fails", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled: true,
+			},
+			Providers: config.ChannelsProvidersConfig{
+				Slack: config.ChannelProviderConfig{
+					Enabled:       true,
+					SigningSecret: "slack-signing-secret",
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Nil(t, worker)
+		assert.Contains(t, err.Error(), "access token")
+	})
 }

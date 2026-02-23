@@ -28,7 +28,7 @@ type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platfo
 type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
 type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
 type getMessageByIdempotencyKeyFunc func(ctx context.Context, tenantID, platform, idempotencyKey string) (*ChannelMessageRecord, error)
-type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error
+type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, outboxThreadTS, correlationID, responseContent string) error
 
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
@@ -111,17 +111,22 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		return record, err
 	}
 
-	h.enqueueOutbound = func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error {
+	h.enqueueOutbound = func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, outboxThreadTS, correlationID, responseContent string) error {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			messageID, err := store.GetMessageIDByIdempotencyKey(ctx, q, platform, idempotencyKey)
 			if err != nil {
 				return fmt.Errorf("resolving channel message for outbox enqueue: %w", err)
 			}
 
-			payload, err := json.Marshal(map[string]string{
+			payloadBody := map[string]string{
 				"content":        responseContent,
 				"correlation_id": correlationID,
-			})
+			}
+			if threadTS := strings.TrimSpace(outboxThreadTS); threadTS != "" {
+				payloadBody["thread_ts"] = threadTS
+			}
+
+			payload, err := json.Marshal(payloadBody)
 			if err != nil {
 				return fmt.Errorf("marshaling outbox payload: %w", err)
 			}
@@ -237,6 +242,11 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 		platformMessageID := meta.PlatformMessageID
 		platformUserID := meta.PlatformUserID
+		outboundRecipientID := strings.TrimSpace(meta.OutboundRecipientID)
+		outboundThreadTS := strings.TrimSpace(meta.OutboundThreadTS)
+		if outboundRecipientID == "" && provider != "slack" {
+			outboundRecipientID = strings.TrimSpace(platformUserID)
+		}
 		idempotencyKey := strings.TrimSpace(platformMessageID)
 		if idempotencyKey == "" {
 			idempotencyKey = strings.TrimSpace(r.Header.Get("X-Idempotency-Key"))
@@ -278,7 +288,8 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				tenantID,
 				provider,
 				idempotencyKey,
-				platformUserID,
+				outboundRecipientID,
+				outboundThreadTS,
 				correlationID,
 			)
 			if recoverErr != nil {
@@ -305,6 +316,12 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				}
 				statusMetadataExtra["outbox_enqueue_failed"] = false
 				statusMetadataExtra["outbox_recovered"] = true
+				if outboundRecipientID != "" {
+					statusMetadataExtra["outbox_recipient_id"] = outboundRecipientID
+				}
+				if outboundThreadTS != "" {
+					statusMetadataExtra["outbox_thread_ts"] = outboundThreadTS
+				}
 				if recoveredResponse != "" {
 					statusMetadataExtra["response_content"] = recoveredResponse
 				}
@@ -331,12 +348,32 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				}
 				messageResponseContent = execResult.ResponseContent
 				if messageDecision == IngressExecuted && h.enqueueOutbound != nil {
+					if provider == "slack" && outboundRecipientID == "" {
+						slog.Error(
+							"channel outbox enqueue target resolution failed",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"platform_user_id", platformUserID,
+							"correlation_id", correlationID,
+							"error", "missing slack outbound channel",
+						)
+						messageDecision = IngressDispatchFailed
+						statusMetadataExtra["outbox_enqueue_failed"] = true
+						if messageResponseContent != "" {
+							statusMetadataExtra["response_content"] = messageResponseContent
+						}
+						enqueueFailed = true
+					}
+				}
+				if messageDecision == IngressExecuted && h.enqueueOutbound != nil && !enqueueFailed {
 					enqueueErr := h.enqueueOutbound(
 						ctx,
 						tenantID,
 						provider,
 						idempotencyKey,
-						platformUserID,
+						outboundRecipientID,
+						outboundThreadTS,
 						correlationID,
 						messageResponseContent,
 					)
@@ -352,6 +389,12 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 						)
 						messageDecision = IngressDispatchFailed
 						statusMetadataExtra["outbox_enqueue_failed"] = true
+						if outboundRecipientID != "" {
+							statusMetadataExtra["outbox_recipient_id"] = outboundRecipientID
+						}
+						if outboundThreadTS != "" {
+							statusMetadataExtra["outbox_thread_ts"] = outboundThreadTS
+						}
 						if messageResponseContent != "" {
 							statusMetadataExtra["response_content"] = messageResponseContent
 						}
@@ -470,6 +513,8 @@ type dispatchFailureMetadata struct {
 	AgentID             string `json:"agent_id"`
 	ResponseContent     string `json:"response_content"`
 	OutboxEnqueueFailed bool   `json:"outbox_enqueue_failed"`
+	OutboxRecipientID   string `json:"outbox_recipient_id"`
+	OutboxThreadTS      string `json:"outbox_thread_ts"`
 }
 
 func (h *Handler) recoverDuplicateDispatchFailure(
@@ -477,7 +522,8 @@ func (h *Handler) recoverDuplicateDispatchFailure(
 	tenantID string,
 	provider string,
 	idempotencyKey string,
-	platformUserID string,
+	fallbackRecipientID string,
+	fallbackThreadTS string,
 	correlationID string,
 ) (string, string, bool, error) {
 	record, err := h.getMessageByIdempotencyKey(ctx, tenantID, provider, idempotencyKey)
@@ -509,12 +555,19 @@ func (h *Handler) recoverDuplicateDispatchFailure(
 		return "", "", false, nil
 	}
 
-	recipientID := strings.TrimSpace(record.PlatformUserID)
+	recipientID := strings.TrimSpace(metadata.OutboxRecipientID)
 	if recipientID == "" {
-		recipientID = strings.TrimSpace(platformUserID)
+		recipientID = strings.TrimSpace(fallbackRecipientID)
+	}
+	if recipientID == "" && provider != "slack" {
+		recipientID = strings.TrimSpace(record.PlatformUserID)
 	}
 	if recipientID == "" {
 		return "", "", false, fmt.Errorf("missing recipient id for duplicate dispatch recovery")
+	}
+	threadTS := strings.TrimSpace(metadata.OutboxThreadTS)
+	if threadTS == "" {
+		threadTS = strings.TrimSpace(fallbackThreadTS)
 	}
 
 	outboundCorrelationID := strings.TrimSpace(record.CorrelationID)
@@ -531,6 +584,7 @@ func (h *Handler) recoverDuplicateDispatchFailure(
 		provider,
 		idempotencyKey,
 		recipientID,
+		threadTS,
 		outboundCorrelationID,
 		responseContent,
 	); err != nil {
