@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
+
+const defaultTenantScanPageSize = 500
 
 type channelOutboxWorker struct {
 	pool         *database.Pool
@@ -70,7 +74,7 @@ func (w *channelOutboxWorker) Run(ctx context.Context) error {
 }
 
 func (w *channelOutboxWorker) sweep(ctx context.Context) {
-	tenantIDs, err := listTenantIDs(ctx, w.pool)
+	tenantIDs, err := listTenantIDs(ctx, w.pool, defaultTenantScanPageSize)
 	if err != nil {
 		slog.Error("channel outbox worker failed to list tenants", "error", err)
 		return
@@ -95,24 +99,71 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 	}
 }
 
-func listTenantIDs(ctx context.Context, pool *database.Pool) ([]string, error) {
-	// TODO: paginate tenant scanning when tenant count grows large.
-	rows, err := pool.Query(ctx, `SELECT id::text FROM tenants ORDER BY created_at ASC`)
-	if err != nil {
-		return nil, err
+func listTenantIDs(ctx context.Context, pool *database.Pool, pageSize int) ([]string, error) {
+	if pageSize <= 0 {
+		pageSize = defaultTenantScanPageSize
 	}
-	defer rows.Close()
 
-	tenantIDs := make([]string, 0)
-	for rows.Next() {
-		var tenantID string
-		if scanErr := rows.Scan(&tenantID); scanErr != nil {
-			return nil, scanErr
+	tenantIDs := make([]string, 0, pageSize)
+	var cursor uuid.UUID
+	hasCursor := false
+
+	for {
+		var (
+			rows pgx.Rows
+			err  error
+		)
+		if hasCursor {
+			rows, err = pool.Query(ctx,
+				`SELECT id::text
+				 FROM tenants
+				 WHERE id > $1
+				 ORDER BY id ASC
+				 LIMIT $2`,
+				cursor,
+				pageSize,
+			)
+		} else {
+			rows, err = pool.Query(ctx,
+				`SELECT id::text
+				 FROM tenants
+				 ORDER BY id ASC
+				 LIMIT $1`,
+				pageSize,
+			)
 		}
-		tenantIDs = append(tenantIDs, tenantID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+
+		pageCount := 0
+		lastCursor := cursor
+		for rows.Next() {
+			var tenantID string
+			if scanErr := rows.Scan(&tenantID); scanErr != nil {
+				rows.Close()
+				return nil, scanErr
+			}
+			parsedID, parseErr := uuid.Parse(tenantID)
+			if parseErr != nil {
+				rows.Close()
+				return nil, fmt.Errorf("parsing tenant id: %w", parseErr)
+			}
+			tenantIDs = append(tenantIDs, tenantID)
+			lastCursor = parsedID
+			pageCount++
+		}
+		if rowsErr := rows.Err(); rowsErr != nil {
+			rows.Close()
+			return nil, rowsErr
+		}
+		rows.Close()
+
+		if pageCount < pageSize {
+			break
+		}
+		cursor = lastCursor
+		hasCursor = true
 	}
 
 	return tenantIDs, nil
