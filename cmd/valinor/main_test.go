@@ -143,4 +143,22 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		assert.Nil(t, worker)
 		assert.Contains(t, err.Error(), "access token")
 	})
+
+	t.Run("telegram enabled without outbound credentials fails", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled: true,
+			},
+			Providers: config.ChannelsProvidersConfig{
+				Telegram: config.ChannelProviderConfig{
+					Enabled:     true,
+					SecretToken: "telegram-secret-token",
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Nil(t, worker)
+		assert.Contains(t, err.Error(), "access token")
+	})
 }

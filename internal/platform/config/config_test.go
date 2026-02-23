@@ -79,6 +79,7 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 	assert.Equal(t, "https://graph.facebook.com", cfg.Channels.Providers.WhatsApp.APIBaseURL)
 	assert.Equal(t, "v22.0", cfg.Channels.Providers.WhatsApp.APIVersion)
 	assert.False(t, cfg.Channels.Providers.Telegram.Enabled)
+	assert.Equal(t, "https://api.telegram.org", cfg.Channels.Providers.Telegram.APIBaseURL)
 }
 
 func TestLoad_ChannelsEnvOverrides(t *testing.T) {
@@ -92,6 +93,9 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIVERSION", "v99.0")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ACCESSTOKEN", "wa-access-token")
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_PHONENUMBERID", "123456789")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_ENABLED", "true")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_APIBASEURL", "https://telegram.test")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_ACCESSTOKEN", "123456:ABCDEF")
 	defer func() {
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_ENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_SLACK_ENABLED")
@@ -103,6 +107,9 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_APIVERSION")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ACCESSTOKEN")
 		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_PHONENUMBERID")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_APIBASEURL")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_ACCESSTOKEN")
 	}()
 
 	cfg, err := config.Load()
@@ -118,6 +125,9 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	assert.Equal(t, "v99.0", cfg.Channels.Providers.WhatsApp.APIVersion)
 	assert.Equal(t, "wa-access-token", cfg.Channels.Providers.WhatsApp.AccessToken)
 	assert.Equal(t, "123456789", cfg.Channels.Providers.WhatsApp.PhoneNumberID)
+	assert.True(t, cfg.Channels.Providers.Telegram.Enabled)
+	assert.Equal(t, "https://telegram.test", cfg.Channels.Providers.Telegram.APIBaseURL)
+	assert.Equal(t, "123456:ABCDEF", cfg.Channels.Providers.Telegram.AccessToken)
 }
 
 func TestLoad_ChannelsOutboxDefaults(t *testing.T) {

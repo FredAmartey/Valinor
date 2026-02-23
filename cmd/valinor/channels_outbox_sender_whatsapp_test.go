@@ -40,6 +40,32 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 		require.NotNil(t, sender)
 	})
 
+	t.Run("telegram enabled missing access token fails", func(t *testing.T) {
+		_, err := buildChannelOutboxSender(config.ChannelsConfig{
+			Providers: config.ChannelsProvidersConfig{
+				Telegram: config.ChannelProviderConfig{
+					Enabled: true,
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "telegram access token")
+	})
+
+	t.Run("telegram enabled with access token returns sender", func(t *testing.T) {
+		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
+			Providers: config.ChannelsProvidersConfig{
+				Telegram: config.ChannelProviderConfig{
+					Enabled:     true,
+					AccessToken: "123456:ABCDEF",
+					APIBaseURL:  "https://telegram.example.com",
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, sender)
+	})
+
 	t.Run("whatsapp enabled missing access token fails", func(t *testing.T) {
 		_, err := buildChannelOutboxSender(config.ChannelsConfig{
 			Providers: config.ChannelsProvidersConfig{
@@ -389,6 +415,151 @@ func TestWhatsAppOutboxSender_Send(t *testing.T) {
 			Provider:    "whatsapp",
 			RecipientID: " ",
 			Payload:     json.RawMessage(`{"content":"hello","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "recipient id is required")
+	})
+}
+
+func TestTelegramOutboxSender_Send(t *testing.T) {
+	t.Run("sends telegram sendMessage payload", func(t *testing.T) {
+		var seenPath string
+		var seenBody map[string]any
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seenPath = r.URL.Path
+			defer r.Body.Close()
+
+			decoder := json.NewDecoder(r.Body)
+			require.NoError(t, decoder.Decode(&seenBody))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":42}}`))
+		}))
+		defer srv.Close()
+
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "123456:ABCDEF",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "/bot123456:ABCDEF/sendMessage", seenPath)
+		assert.Equal(t, "987654321", seenBody["chat_id"])
+		assert.Equal(t, "hello from outbox", seenBody["text"])
+		assert.Equal(t, true, seenBody["disable_web_page_preview"])
+	})
+
+	t.Run("returns error when telegram API returns non-2xx status", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"Unauthorized"}`))
+		}))
+		defer srv.Close()
+
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "123456:ABCDEF",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "status 401")
+	})
+
+	t.Run("returns error when telegram API rejects request", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"Bad Request: chat not found"}`))
+		}))
+		defer srv.Close()
+
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "123456:ABCDEF",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "chat not found")
+	})
+
+	t.Run("returns error for malformed outbox payload", func(t *testing.T) {
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  "https://telegram.example.com",
+				AccessToken: "123456:ABCDEF",
+			},
+			http.DefaultClient,
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "decoding outbox payload")
+	})
+
+	t.Run("returns error for empty content", func(t *testing.T) {
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  "https://telegram.example.com",
+				AccessToken: "123456:ABCDEF",
+			},
+			http.DefaultClient,
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"  ","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "content is required")
+	})
+
+	t.Run("returns error for empty recipient id", func(t *testing.T) {
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  "https://telegram.example.com",
+				AccessToken: "123456:ABCDEF",
+			},
+			http.DefaultClient,
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: " ",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "recipient id is required")
