@@ -167,6 +167,30 @@ func seedTwoTenants(t *testing.T, superConnStr string) (tenantA, tenantB string)
 		userBID, deptBID)
 	require.NoError(t, err)
 
+	// channel_links
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_links (tenant_id, user_id, platform, platform_user_id, state, verified)
+		 VALUES ($1, $2, 'whatsapp', 'wa-user-a', 'verified', true)`,
+		tenantA, userAID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_links (tenant_id, user_id, platform, platform_user_id, state, verified)
+		 VALUES ($1, $2, 'whatsapp', 'wa-user-b', 'verified', true)`,
+		tenantB, userBID)
+	require.NoError(t, err)
+
+	// channel_messages
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_messages (tenant_id, platform, platform_user_id, platform_message_id, idempotency_key, payload_fingerprint, correlation_id, status, expires_at)
+		 VALUES ($1, 'whatsapp', 'wa-user-a', 'msg-a', 'idem-a', 'fp-a', 'corr-a', 'accepted', now() + interval '1 day')`,
+		tenantA)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_messages (tenant_id, platform, platform_user_id, platform_message_id, idempotency_key, payload_fingerprint, correlation_id, status, expires_at)
+		 VALUES ($1, 'whatsapp', 'wa-user-b', 'msg-b', 'idem-b', 'fp-b', 'corr-b', 'accepted', now() + interval '1 day')`,
+		tenantB)
+	require.NoError(t, err)
+
 	return tenantA, tenantB
 }
 
@@ -191,7 +215,18 @@ func TestRLS_TenantIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	// Tables with tenant_id-based RLS policies
-	tables := []string{"users", "departments", "roles", "agent_instances", "connectors", "resource_policies", "user_roles", "user_departments"}
+	tables := []string{
+		"users",
+		"departments",
+		"roles",
+		"agent_instances",
+		"connectors",
+		"resource_policies",
+		"user_roles",
+		"user_departments",
+		"channel_links",
+		"channel_messages",
+	}
 
 	for _, table := range tables {
 		t.Run(table+"_tenant_a_sees_only_own", func(t *testing.T) {
