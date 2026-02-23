@@ -203,3 +203,16 @@ func TestOutboxDispatcher_RecoversStaleSendingBeforeClaim(t *testing.T) {
 	require.GreaterOrEqual(t, len(store.callOrder), 2)
 	assert.Equal(t, "claim", store.callOrder[1])
 }
+
+func TestOutboxDispatcher_CryptoRandomUnitInterval(t *testing.T) {
+	nonZeroSeen := false
+	for i := 0; i < 256; i++ {
+		v := cryptoRandomUnitFloat64()
+		assert.GreaterOrEqual(t, v, 0.0)
+		assert.Less(t, v, 1.0)
+		if v > 0 {
+			nonZeroSeen = true
+		}
+	}
+	assert.True(t, nonZeroSeen)
+}

@@ -2,9 +2,10 @@ package channels
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"time"
 
@@ -72,14 +73,12 @@ func NewOutboxDispatcher(store outboxStore, sender OutboxSender, cfg OutboxDispa
 		cfg.JitterFraction = 1
 	}
 
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	return &OutboxDispatcher{
 		store:  store,
 		sender: sender,
 		cfg:    cfg,
 		now:    time.Now,
-		jitter: func() float64 { return rng.Float64() },
+		jitter: cryptoRandomUnitFloat64,
 	}
 }
 
@@ -165,4 +164,16 @@ func (d *OutboxDispatcher) retryDelay(attemptsAfterFailure int) time.Duration {
 		return d.cfg.MaxRetryDelay
 	}
 	return jittered
+}
+
+func cryptoRandomUnitFloat64() float64 {
+	var randomBytes [8]byte
+	if _, err := cryptorand.Read(randomBytes[:]); err != nil {
+		return 0
+	}
+
+	const mantissaDenominator = 1 << 53
+	// Keep the top 53 bits for uniform mapping into [0, 1).
+	mantissa := binary.BigEndian.Uint64(randomBytes[:]) >> 11
+	return float64(mantissa) / float64(mantissaDenominator)
 }
