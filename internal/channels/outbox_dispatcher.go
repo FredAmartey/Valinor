@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -26,12 +27,13 @@ type outboxStore interface {
 
 // OutboxDispatcherConfig controls claim/retry behavior.
 type OutboxDispatcherConfig struct {
-	ClaimBatchSize int
-	LockTimeout    time.Duration
-	MaxAttempts    int
-	BaseRetryDelay time.Duration
-	MaxRetryDelay  time.Duration
-	JitterFraction float64
+	ClaimBatchSize    int
+	RecoveryBatchSize int
+	LockTimeout       time.Duration
+	MaxAttempts       int
+	BaseRetryDelay    time.Duration
+	MaxRetryDelay     time.Duration
+	JitterFraction    float64
 }
 
 // OutboxDispatcher processes pending outbox jobs using store transitions.
@@ -47,6 +49,9 @@ type OutboxDispatcher struct {
 func NewOutboxDispatcher(store outboxStore, sender OutboxSender, cfg OutboxDispatcherConfig) *OutboxDispatcher {
 	if cfg.ClaimBatchSize <= 0 {
 		cfg.ClaimBatchSize = 10
+	}
+	if cfg.RecoveryBatchSize <= 0 {
+		cfg.RecoveryBatchSize = cfg.ClaimBatchSize
 	}
 	if cfg.LockTimeout <= 0 {
 		cfg.LockTimeout = 30 * time.Second
@@ -67,19 +72,21 @@ func NewOutboxDispatcher(store outboxStore, sender OutboxSender, cfg OutboxDispa
 		cfg.JitterFraction = 1
 	}
 
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	return &OutboxDispatcher{
 		store:  store,
 		sender: sender,
 		cfg:    cfg,
 		now:    time.Now,
-		jitter: func() float64 { return 0.5 },
+		jitter: func() float64 { return rng.Float64() },
 	}
 }
 
 // DispatchOnce recovers stale locks, claims due jobs, and applies transitions.
 func (d *OutboxDispatcher) DispatchOnce(ctx context.Context, q database.Querier) (int, error) {
 	now := d.now().UTC()
-	if _, err := d.store.RecoverStaleSending(ctx, q, now.Add(-d.cfg.LockTimeout), d.cfg.ClaimBatchSize); err != nil {
+	if _, err := d.store.RecoverStaleSending(ctx, q, now.Add(-d.cfg.LockTimeout), d.cfg.RecoveryBatchSize); err != nil {
 		return 0, fmt.Errorf("recovering stale outbox jobs: %w", err)
 	}
 
@@ -95,7 +102,6 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context, q database.Querier)
 
 		for _, job := range claimed {
 			if err := d.sender.Send(ctx, job); err != nil {
-				processed++
 				attemptsAfter := job.AttemptCount + 1
 				maxAttempts := job.MaxAttempts
 				if maxAttempts <= 0 {
@@ -111,6 +117,7 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context, q database.Querier)
 					if deadErr := d.store.MarkOutboxDead(ctx, q, job.ID, errText); deadErr != nil {
 						return processed, fmt.Errorf("marking outbox dead: %w", deadErr)
 					}
+					processed++
 					continue
 				}
 
@@ -118,6 +125,7 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context, q database.Querier)
 				if retryErr := d.store.MarkOutboxRetry(ctx, q, job.ID, nextAttempt, errText); retryErr != nil {
 					return processed, fmt.Errorf("marking outbox retry: %w", retryErr)
 				}
+				processed++
 				continue
 			}
 

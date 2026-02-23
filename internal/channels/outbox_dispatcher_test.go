@@ -187,8 +187,9 @@ func TestOutboxDispatcher_RecoversStaleSendingBeforeClaim(t *testing.T) {
 	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
 
 	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{
-		ClaimBatchSize: 3,
-		LockTimeout:    45 * time.Second,
+		ClaimBatchSize:    3,
+		RecoveryBatchSize: 7,
+		LockTimeout:       45 * time.Second,
 	})
 	dispatcher.now = func() time.Time { return fixedNow }
 
@@ -198,7 +199,7 @@ func TestOutboxDispatcher_RecoversStaleSendingBeforeClaim(t *testing.T) {
 	require.NotEmpty(t, store.callOrder)
 	assert.Equal(t, "recover", store.callOrder[0])
 	assert.WithinDuration(t, fixedNow.Add(-45*time.Second), store.recoveredAt, time.Second)
-	assert.Equal(t, 3, store.recoveredLimit)
+	assert.Equal(t, 7, store.recoveredLimit)
 	require.GreaterOrEqual(t, len(store.callOrder), 2)
 	assert.Equal(t, "claim", store.callOrder[1])
 }

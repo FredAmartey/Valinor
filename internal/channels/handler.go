@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -101,19 +100,8 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 
 	h.enqueueOutbound = func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, correlationID, responseContent string) error {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
-			var messageID uuid.UUID
-			if err := q.QueryRow(ctx,
-				`SELECT id
-				 FROM channel_messages
-				 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
-				   AND platform = $1
-				   AND idempotency_key = $2`,
-				platform,
-				idempotencyKey,
-			).Scan(&messageID); err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return ErrMessageNotFound
-				}
+			messageID, err := store.GetMessageIDByIdempotencyKey(ctx, q, platform, idempotencyKey)
+			if err != nil {
 				return fmt.Errorf("resolving channel message for outbox enqueue: %w", err)
 			}
 

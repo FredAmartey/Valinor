@@ -145,6 +145,7 @@ type ChannelsOutboxConfig struct {
 	Enabled             bool    `koanf:"enabled"`
 	PollIntervalSeconds int     `koanf:"pollintervalseconds"`
 	ClaimBatchSize      int     `koanf:"claimbatchsize"`
+	RecoveryBatchSize   int     `koanf:"recoverybatchsize"`
 	LockTimeoutSeconds  int     `koanf:"locktimeoutseconds"`
 	MaxAttempts         int     `koanf:"maxattempts"`
 	BaseRetrySeconds    int     `koanf:"baseretryseconds"`
@@ -196,6 +197,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.outbox.enabled":                   true,
 		"channels.outbox.pollintervalseconds":       2,
 		"channels.outbox.claimbatchsize":            10,
+		"channels.outbox.recoverybatchsize":         10,
 		"channels.outbox.locktimeoutseconds":        30,
 		"channels.outbox.maxattempts":               5,
 		"channels.outbox.baseretryseconds":          5,

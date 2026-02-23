@@ -472,6 +472,71 @@ func TestMessageStore_UpdateMessageStatus_NotFound(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMessageStore_GetMessageIDByIdempotencyKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Msg Lookup', 'tenant-msg-lookup') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		firstSeen, insertErr := store.InsertIdempotency(
+			ctx,
+			q,
+			"whatsapp",
+			"+15550004444",
+			"wamid.lookup.1",
+			"idem-lookup-1",
+			"fp-lookup-1",
+			"corr-lookup-1",
+			time.Now().Add(24*time.Hour),
+		)
+		require.NoError(t, insertErr)
+		require.True(t, firstSeen)
+
+		messageID, lookupErr := store.GetMessageIDByIdempotencyKey(ctx, q, "whatsapp", "idem-lookup-1")
+		require.NoError(t, lookupErr)
+		assert.NotEqual(t, uuid.Nil, messageID)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestMessageStore_GetMessageIDByIdempotencyKey_NotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Msg Lookup Missing', 'tenant-msg-lookup-missing') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, lookupErr := store.GetMessageIDByIdempotencyKey(ctx, q, "whatsapp", "idem-missing")
+		require.ErrorIs(t, lookupErr, channels.ErrMessageNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestOutboxStore_EnqueueAndClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

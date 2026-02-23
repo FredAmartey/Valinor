@@ -364,6 +364,35 @@ func (s *Store) UpdateMessageStatus(
 	return nil
 }
 
+// GetMessageIDByIdempotencyKey resolves a tenant-scoped channel message ID.
+func (s *Store) GetMessageIDByIdempotencyKey(ctx context.Context, q database.Querier, platform, idempotencyKey string) (uuid.UUID, error) {
+	if platform == "" {
+		return uuid.Nil, ErrPlatformEmpty
+	}
+	if idempotencyKey == "" {
+		return uuid.Nil, ErrIdempotencyKey
+	}
+
+	var messageID uuid.UUID
+	err := q.QueryRow(ctx,
+		`SELECT id
+		 FROM channel_messages
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND platform = $1
+		   AND idempotency_key = $2`,
+		platform,
+		idempotencyKey,
+	).Scan(&messageID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrMessageNotFound
+		}
+		return uuid.Nil, fmt.Errorf("resolving message id by idempotency key: %w", err)
+	}
+
+	return messageID, nil
+}
+
 // EnqueueOutbound inserts a new tenant-scoped outbox job for async provider send.
 func (s *Store) EnqueueOutbound(ctx context.Context, q database.Querier, params EnqueueOutboundParams) (*ChannelOutbox, error) {
 	messageIDValue := strings.TrimSpace(params.ChannelMessageID)

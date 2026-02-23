@@ -19,6 +19,7 @@ type channelOutboxWorker struct {
 type noopOutboxSender struct{}
 
 func (noopOutboxSender) Send(_ context.Context, _ channels.ChannelOutbox) error {
+	// TODO(v2): replace this stub with real provider dispatch.
 	// V1 adapter stub: successful no-op send for infrastructure wiring.
 	return nil
 }
@@ -34,12 +35,13 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 	}
 
 	dispatcher := channels.NewOutboxDispatcher(channels.NewStore(), noopOutboxSender{}, channels.OutboxDispatcherConfig{
-		ClaimBatchSize: cfg.Outbox.ClaimBatchSize,
-		LockTimeout:    time.Duration(cfg.Outbox.LockTimeoutSeconds) * time.Second,
-		MaxAttempts:    cfg.Outbox.MaxAttempts,
-		BaseRetryDelay: time.Duration(cfg.Outbox.BaseRetrySeconds) * time.Second,
-		MaxRetryDelay:  time.Duration(cfg.Outbox.MaxRetrySeconds) * time.Second,
-		JitterFraction: cfg.Outbox.JitterFraction,
+		ClaimBatchSize:    cfg.Outbox.ClaimBatchSize,
+		RecoveryBatchSize: cfg.Outbox.RecoveryBatchSize,
+		LockTimeout:       time.Duration(cfg.Outbox.LockTimeoutSeconds) * time.Second,
+		MaxAttempts:       cfg.Outbox.MaxAttempts,
+		BaseRetryDelay:    time.Duration(cfg.Outbox.BaseRetrySeconds) * time.Second,
+		MaxRetryDelay:     time.Duration(cfg.Outbox.MaxRetrySeconds) * time.Second,
+		JitterFraction:    cfg.Outbox.JitterFraction,
 	})
 
 	return &channelOutboxWorker{
@@ -96,6 +98,7 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 }
 
 func listTenantIDs(ctx context.Context, pool *database.Pool) ([]string, error) {
+	// TODO: paginate tenant scanning when tenant count grows large.
 	rows, err := pool.Query(ctx, `SELECT id::text FROM tenants ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
