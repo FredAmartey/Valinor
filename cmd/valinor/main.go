@@ -289,9 +289,11 @@ func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
 		replayWindow = 24 * time.Hour
 	}
 
+	// Phase-8 prerequisite behavior: fail-closed until real tenant-scoped link resolution is wired.
 	denyUnverifiedLink := func(_ context.Context, _, _ string) (*channels.ChannelLink, error) {
 		return &channels.ChannelLink{State: channels.LinkStatePendingVerification}, nil
 	}
+	// Phase-8 prerequisite behavior: deterministic idempotency storage is wired in follow-up phase.
 	recordNoopIdempotency := func(_ context.Context, _ channels.IngressMessage) (bool, error) {
 		return true, nil
 	}
@@ -335,6 +337,7 @@ func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
 	}
 
 	if len(ingressByProvider) == 0 {
+		slog.Warn("channels ingress enabled but no providers configured")
 		return nil, nil
 	}
 

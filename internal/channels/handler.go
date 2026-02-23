@@ -59,15 +59,20 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	platformMessageID := r.Header.Get("X-Provider-Message-ID")
-	idempotencyKey := platformMessageID
-	if idempotencyKey == "" {
-		idempotencyKey = r.Header.Get("X-Idempotency-Key")
-	}
-	if idempotencyKey == "" {
-		idempotencyKey = correlationID
-	}
+	platformUserID := strings.TrimSpace(r.Header.Get("X-Platform-User-ID"))
 	digest := sha256.Sum256(body)
 	fingerprint := hex.EncodeToString(digest[:])
+	idempotencyKey := strings.TrimSpace(platformMessageID)
+	if idempotencyKey == "" {
+		idempotencyKey = strings.TrimSpace(r.Header.Get("X-Idempotency-Key"))
+	}
+	if idempotencyKey == "" {
+		// Fallback must be deterministic across retries.
+		idempotencyKey = provider + ":" + fingerprint
+		if platformUserID != "" {
+			idempotencyKey = provider + ":" + platformUserID + ":" + fingerprint
+		}
+	}
 
 	occurredAt := time.Now()
 	if ts := r.Header.Get("X-Message-Timestamp"); ts != "" {
@@ -78,7 +83,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	result, err := guard.Process(r.Context(), IngressMessage{
 		Platform:           provider,
-		PlatformUserID:     r.Header.Get("X-Platform-User-ID"),
+		PlatformUserID:     platformUserID,
 		PlatformMessageID:  platformMessageID,
 		IdempotencyKey:     idempotencyKey,
 		PayloadFingerprint: fingerprint,

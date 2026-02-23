@@ -81,6 +81,36 @@ func TestIngress_DuplicateMessage_NoReexecution(t *testing.T) {
 	assert.True(t, insertCalled)
 }
 
+func TestIngress_MissingLinkDenied(t *testing.T) {
+	insertCalled := false
+
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return nil, ErrLinkNotFound
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			insertCalled = true
+			return true, nil
+		},
+	)
+
+	result, err := guard.Process(context.Background(), IngressMessage{
+		Platform:           "whatsapp",
+		PlatformUserID:     "+15550001111",
+		IdempotencyKey:     "idem-missing-link",
+		PayloadFingerprint: "fp-missing-link",
+		CorrelationID:      "corr-missing-link",
+		Headers:            http.Header{},
+		Body:               []byte(`{}`),
+		OccurredAt:         time.Now(),
+	})
+	require.ErrorIs(t, err, ErrLinkUnverified)
+	assert.Equal(t, IngressDeniedUnverified, result.Decision)
+	assert.False(t, insertCalled)
+}
+
 func TestIngress_ReplayBlocked(t *testing.T) {
 	insertCalled := false
 	now := time.Unix(1730000000, 0)
@@ -107,6 +137,38 @@ func TestIngress_ReplayBlocked(t *testing.T) {
 		Headers:            http.Header{},
 		Body:               []byte(`{}`),
 		OccurredAt:         now.Add(-10 * time.Minute),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, IngressReplayBlocked, result.Decision)
+	assert.False(t, insertCalled)
+}
+
+func TestIngress_FutureSkewReplayBlocked(t *testing.T) {
+	insertCalled := false
+	now := time.Unix(1730000000, 0)
+
+	guard := NewIngressGuard(
+		stubVerifier{},
+		5*time.Minute,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			insertCalled = true
+			return true, nil
+		},
+	)
+	guard.now = func() time.Time { return now }
+
+	result, err := guard.Process(context.Background(), IngressMessage{
+		Platform:           "whatsapp",
+		PlatformUserID:     "+15550001111",
+		IdempotencyKey:     "idem-future",
+		PayloadFingerprint: "fp-future",
+		CorrelationID:      "corr-future",
+		Headers:            http.Header{},
+		Body:               []byte(`{}`),
+		OccurredAt:         now.Add(10 * time.Minute),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, IngressReplayBlocked, result.Decision)

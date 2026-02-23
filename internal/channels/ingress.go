@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -85,6 +86,10 @@ func (g *IngressGuard) Process(ctx context.Context, msg IngressMessage) (Ingress
 
 	link, err := g.resolveLink(ctx, msg.Platform, msg.PlatformUserID)
 	if err != nil {
+		if errors.Is(err, ErrLinkNotFound) {
+			g.logDecision(ctx, msg, IngressDeniedUnverified, nil)
+			return IngressResult{Decision: IngressDeniedUnverified}, ErrLinkUnverified
+		}
 		return IngressResult{}, err
 	}
 	if !link.IsVerified() {
@@ -93,7 +98,8 @@ func (g *IngressGuard) Process(ctx context.Context, msg IngressMessage) (Ingress
 	}
 
 	if g.replayWindow > 0 && !msg.OccurredAt.IsZero() {
-		if g.now().Sub(msg.OccurredAt) > g.replayWindow {
+		skew := g.now().Sub(msg.OccurredAt)
+		if skew > g.replayWindow || skew < -g.replayWindow {
 			g.logDecision(ctx, msg, IngressReplayBlocked, link)
 			return IngressResult{Decision: IngressReplayBlocked, Link: link}, nil
 		}
@@ -129,8 +135,6 @@ func (g *IngressGuard) logDecision(ctx context.Context, msg IngressMessage, deci
 
 	action := audit.ActionChannelMessageAccepted
 	switch decision {
-	case IngressAccepted:
-		action = audit.ActionChannelMessageAccepted
 	case IngressDuplicate:
 		action = audit.ActionChannelMessageDuplicate
 	case IngressReplayBlocked:
