@@ -202,9 +202,8 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	defer logFile.Close()
 
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	// #nosec G204 -- launchBinary is resolved/validated from trusted config and process env.
-	cmd := exec.CommandContext(context.Background(), launchBinary, launchArgs...)
+	cmd := exec.CommandContext(context.Background(), launchBinary, launchArgs...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = stateDir
