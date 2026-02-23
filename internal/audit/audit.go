@@ -17,6 +17,21 @@ type Event struct {
 	Source       string // "api", "whatsapp", "system"
 }
 
+const (
+	ActionChannelMessageAccepted          = "channel.message.accepted"
+	ActionChannelMessageDuplicate         = "channel.message.duplicate"
+	ActionChannelMessageReplayBlocked     = "channel.message.replay_blocked"
+	ActionChannelWebhookRejectedSignature = "channel.webhook.rejected_signature"
+	ActionChannelActionDeniedUnverified   = "channel.action_denied_unverified"
+)
+
+const (
+	MetadataCorrelationID   = "correlation_id"
+	MetadataDecision        = "decision"
+	MetadataIdempotencyKey  = "idempotency_key"
+	MetadataPlatformMessage = "platform_message_id"
+)
+
 // Logger is the audit logging interface. Log is fire-and-forget.
 type Logger interface {
 	Log(ctx context.Context, event Event)

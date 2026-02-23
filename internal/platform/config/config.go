@@ -19,6 +19,7 @@ type Config struct {
 	Proxy        ProxyConfig        `koanf:"proxy"`
 	Sentinel     SentinelConfig     `koanf:"sentinel"`
 	Audit        AuditConfig        `koanf:"audit"`
+	Channels     ChannelsConfig     `koanf:"channels"`
 }
 
 type AuthConfig struct {
@@ -112,6 +113,32 @@ type AuditConfig struct {
 	FlushInterval int `koanf:"flush_interval_ms"`
 }
 
+// ChannelsConfig configures inbound messaging channel controls.
+type ChannelsConfig struct {
+	Ingress   ChannelsIngressConfig   `koanf:"ingress"`
+	Providers ChannelsProvidersConfig `koanf:"providers"`
+}
+
+// ChannelsIngressConfig controls global channel ingress behavior.
+type ChannelsIngressConfig struct {
+	Enabled             bool `koanf:"enabled"`
+	ReplayWindowSeconds int  `koanf:"replaywindowseconds"`
+}
+
+// ChannelsProvidersConfig controls per-provider channel settings.
+type ChannelsProvidersConfig struct {
+	Slack    ChannelProviderConfig `koanf:"slack"`
+	WhatsApp ChannelProviderConfig `koanf:"whatsapp"`
+	Telegram ChannelProviderConfig `koanf:"telegram"`
+}
+
+// ChannelProviderConfig stores provider enablement and shared secret settings.
+type ChannelProviderConfig struct {
+	Enabled       bool   `koanf:"enabled"`
+	SigningSecret string `koanf:"signingsecret"`
+	SecretToken   string `koanf:"secrettoken"`
+}
+
 func Load(configPaths ...string) (*Config, error) {
 	k := koanf.New(".")
 
@@ -148,6 +175,11 @@ func Load(configPaths ...string) (*Config, error) {
 		"audit.buffer_size":                         4096,
 		"audit.batch_size":                          100,
 		"audit.flush_interval_ms":                   500,
+		"channels.ingress.enabled":                  false,
+		"channels.ingress.replaywindowseconds":      86400,
+		"channels.providers.slack.enabled":          false,
+		"channels.providers.whatsapp.enabled":       false,
+		"channels.providers.telegram.enabled":       false,
 	}, "."), nil)
 
 	// YAML file (optional)

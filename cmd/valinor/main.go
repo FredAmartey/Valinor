@@ -11,6 +11,7 @@ import (
 
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/config"
@@ -52,17 +53,17 @@ func run() error {
 
 	if cfg.Database.URL != "" {
 		slog.Info("connecting to database")
-		p, err := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConns)
-		if err != nil {
-			slog.Warn("database connection failed, starting without DB", "error", err)
+		p, dbErr := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConns)
+		if dbErr != nil {
+			slog.Warn("database connection failed, starting without DB", "error", dbErr)
 		} else {
 			pool = p
 			defer pool.Close()
 
 			// Run migrations
 			migrationsURL := fmt.Sprintf("file://%s", cfg.Database.MigrationsPath)
-			if err := database.RunMigrations(cfg.Database.URL, migrationsURL); err != nil {
-				return fmt.Errorf("running migrations: %w", err)
+			if migrateErr := database.RunMigrations(cfg.Database.URL, migrationsURL); migrateErr != nil {
+				return fmt.Errorf("running migrations: %w", migrateErr)
 			}
 			slog.Info("migrations complete")
 		}
@@ -119,6 +120,10 @@ func run() error {
 		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
 	}
 	connectorHandler := buildConnectorHandler(pool)
+	channelHandler, err := buildChannelHandler(cfg.Channels)
+	if err != nil {
+		return fmt.Errorf("building channel handler: %w", err)
+	}
 
 	// RBAC
 	rbacEngine := rbac.NewEvaluator(nil)
@@ -130,9 +135,11 @@ func run() error {
 		"users:read", "users:write",
 		"departments:read",
 		"connectors:read", "connectors:write",
+		"channels:links:read", "channels:links:write", "channels:messages:write",
 	})
 	rbacEngine.RegisterRole("standard_user", []string{
 		"agents:read", "agents:message",
+		"channels:messages:write",
 	})
 	rbacEngine.RegisterRole("read_only", []string{
 		"agents:read",
@@ -240,6 +247,7 @@ func run() error {
 		ProxyHandler:      proxyHandler,
 		AuditHandler:      auditHandler,
 		ConnectorHandler:  connectorHandler,
+		ChannelHandler:    channelHandler,
 		RBACAuditLogger:   &rbacAuditAdapter{l: auditLogger},
 		DevMode:           cfg.Auth.DevMode,
 		DevIdentity:       devIdentity,
@@ -269,6 +277,71 @@ func buildConnectorHandler(pool *database.Pool) *connectors.Handler {
 		return nil
 	}
 	return connectors.NewHandler(pool, connectors.NewStore())
+}
+
+func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
+	if !cfg.Ingress.Enabled {
+		return nil, nil
+	}
+
+	replayWindow := time.Duration(cfg.Ingress.ReplayWindowSeconds) * time.Second
+	if replayWindow <= 0 {
+		replayWindow = 24 * time.Hour
+	}
+
+	// Phase-8 prerequisite behavior: fail-closed until real tenant-scoped link resolution is wired.
+	denyUnverifiedLink := func(_ context.Context, _, _ string) (*channels.ChannelLink, error) {
+		return &channels.ChannelLink{State: channels.LinkStatePendingVerification}, nil
+	}
+	// Phase-8 prerequisite behavior: deterministic idempotency storage is wired in follow-up phase.
+	recordNoopIdempotency := func(_ context.Context, _ channels.IngressMessage) (bool, error) {
+		return true, nil
+	}
+
+	ingressByProvider := map[string]*channels.IngressGuard{}
+
+	if cfg.Providers.Slack.Enabled {
+		if cfg.Providers.Slack.SigningSecret == "" {
+			return nil, fmt.Errorf("slack signing secret is required when provider is enabled")
+		}
+		ingressByProvider["slack"] = channels.NewIngressGuard(
+			channels.NewSlackVerifier(cfg.Providers.Slack.SigningSecret, 5*time.Minute),
+			replayWindow,
+			denyUnverifiedLink,
+			recordNoopIdempotency,
+		)
+	}
+
+	if cfg.Providers.WhatsApp.Enabled {
+		if cfg.Providers.WhatsApp.SigningSecret == "" {
+			return nil, fmt.Errorf("whatsapp signing secret is required when provider is enabled")
+		}
+		ingressByProvider["whatsapp"] = channels.NewIngressGuard(
+			channels.NewWhatsAppVerifier(cfg.Providers.WhatsApp.SigningSecret),
+			replayWindow,
+			denyUnverifiedLink,
+			recordNoopIdempotency,
+		)
+	}
+
+	if cfg.Providers.Telegram.Enabled {
+		if cfg.Providers.Telegram.SecretToken == "" {
+			return nil, fmt.Errorf("telegram secret token is required when provider is enabled")
+		}
+		ingressByProvider["telegram"] = channels.NewIngressGuard(
+			channels.NewTelegramVerifier(cfg.Providers.Telegram.SecretToken),
+			replayWindow,
+			denyUnverifiedLink,
+			recordNoopIdempotency,
+		)
+	}
+
+	if len(ingressByProvider) == 0 {
+		slog.Warn("channels ingress enabled but no providers configured")
+		return nil, nil
+	}
+
+	return channels.NewHandler(ingressByProvider), nil
 }
 
 // configPusherAdapter wraps proxy.ConnPool to implement orchestrator.ConfigPusher.

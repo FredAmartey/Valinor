@@ -66,3 +66,32 @@ func TestLoad_AuthEnvOverrides(t *testing.T) {
 	assert.Equal(t, "test-secret", cfg.Auth.OIDC.ClientSecret)
 	assert.Equal(t, "super-secret-key-at-least-32-chars!!", cfg.Auth.JWT.SigningKey)
 }
+
+func TestLoad_ChannelsDefaults(t *testing.T) {
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.False(t, cfg.Channels.Ingress.Enabled)
+	assert.Equal(t, 86400, cfg.Channels.Ingress.ReplayWindowSeconds)
+	assert.False(t, cfg.Channels.Providers.Slack.Enabled)
+	assert.False(t, cfg.Channels.Providers.WhatsApp.Enabled)
+	assert.False(t, cfg.Channels.Providers.Telegram.Enabled)
+}
+
+func TestLoad_ChannelsEnvOverrides(t *testing.T) {
+	os.Setenv("VALINOR_CHANNELS_INGRESS_ENABLED", "true")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ENABLED", "true")
+	os.Setenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_SIGNINGSECRET", "wa-secret")
+	defer func() {
+		os.Unsetenv("VALINOR_CHANNELS_INGRESS_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_PROVIDERS_WHATSAPP_SIGNINGSECRET")
+	}()
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Channels.Ingress.Enabled)
+	assert.True(t, cfg.Channels.Providers.WhatsApp.Enabled)
+	assert.Equal(t, "wa-secret", cfg.Channels.Providers.WhatsApp.SigningSecret)
+}
