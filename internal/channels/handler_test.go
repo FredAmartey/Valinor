@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -239,6 +240,36 @@ func TestHandleWebhook_SlackURLVerificationRespondsChallenge(t *testing.T) {
 	assert.False(t, insertCalled)
 }
 
+func TestHandleWebhook_SlackBotEventUsesBotID(t *testing.T) {
+	var seenUserIDs []string
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, platformUserID string) (*ChannelLink, error) {
+			seenUserIDs = append(seenUserIDs, platformUserID)
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+	h := NewHandler(map[string]*IngressGuard{"slack": guard})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/slack/webhook", strings.NewReader(`{
+  "event_id":"Ev456",
+  "event":{"bot_id":"B12345","text":"hello"}
+}`))
+	req.SetPathValue("provider", "slack")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "accepted")
+	require.Len(t, seenUserIDs, 1)
+	assert.Equal(t, "B12345", seenUserIDs[0])
+}
+
 func TestHandleWebhook_ControlPayloadStillVerifiesSignature(t *testing.T) {
 	linkLookupCalled := false
 	insertCalled := false
@@ -308,6 +339,53 @@ func TestHandleWebhook_WhatsAppStatusPayloadIgnored(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "ignored")
 	assert.False(t, linkLookupCalled)
 	assert.False(t, insertCalled)
+}
+
+func TestHandleWebhook_WhatsAppBatchedMessagesProcessedIndividually(t *testing.T) {
+	var seenUserIDs []string
+	var seenMessageIDs []string
+	now := time.Now().Unix()
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, platformUserID string) (*ChannelLink, error) {
+			seenUserIDs = append(seenUserIDs, platformUserID)
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, msg IngressMessage) (bool, error) {
+			seenMessageIDs = append(seenMessageIDs, msg.PlatformMessageID)
+			return true, nil
+		},
+	)
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(fmt.Sprintf(`{
+  "entry": [{
+    "changes": [{
+      "value": {
+        "messages": [{
+          "from": "+15550001111",
+          "id": "wamid.111",
+          "timestamp": "%d"
+        }, {
+          "from": "+15550002222",
+          "id": "wamid.222",
+          "timestamp": "%d"
+        }]
+      }
+    }]
+  }]
+}`, now, now+1)))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "accepted")
+	assert.Equal(t, []string{"+15550001111", "+15550002222"}, seenUserIDs)
+	assert.Equal(t, []string{"wamid.111", "wamid.222"}, seenMessageIDs)
 }
 
 func TestHandleWebhook_RejectsMalformedJSON(t *testing.T) {

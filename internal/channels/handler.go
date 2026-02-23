@@ -69,7 +69,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		correlationID = "channel-" + strconv.FormatInt(now.UnixNano(), 10)
 	}
 
-	meta, err := extractIngressMetadata(provider, r.Header, body, now)
+	metas, err := extractIngressMetadata(provider, r.Header, body, now)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":          "invalid webhook payload",
@@ -77,9 +77,75 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if meta.Control != nil && meta.Control.AcknowledgeOnly {
-		if verifyErr := guard.Verify(r.Header, body); verifyErr != nil {
-			if handled := writeIngressError(w, verifyErr, correlationID); handled {
+	if len(metas) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":          "invalid webhook payload",
+			"correlation_id": correlationID,
+		})
+		return
+	}
+
+	digest := sha256.Sum256(body)
+	fingerprint := hex.EncodeToString(digest[:])
+
+	decision := IngressIgnored
+	actionableCount := 0
+	controlVerified := false
+
+	for _, meta := range metas {
+		if meta.Control != nil && meta.Control.AcknowledgeOnly {
+			if !controlVerified {
+				if verifyErr := guard.Verify(r.Header, body); verifyErr != nil {
+					if handled := writeIngressError(w, verifyErr, correlationID); handled {
+						return
+					}
+					writeJSON(w, http.StatusInternalServerError, map[string]string{
+						"error":          "processing webhook failed",
+						"correlation_id": correlationID,
+					})
+					return
+				}
+				controlVerified = true
+			}
+			if meta.Control.SlackChallenge != "" {
+				writeJSON(w, http.StatusOK, map[string]string{
+					"challenge": meta.Control.SlackChallenge,
+				})
+				return
+			}
+			continue
+		}
+
+		actionableCount++
+
+		platformMessageID := meta.PlatformMessageID
+		platformUserID := meta.PlatformUserID
+		idempotencyKey := strings.TrimSpace(platformMessageID)
+		if idempotencyKey == "" {
+			idempotencyKey = strings.TrimSpace(r.Header.Get("X-Idempotency-Key"))
+		}
+		if idempotencyKey == "" {
+			// Fallback must be deterministic across retries.
+			idempotencyKey = provider + ":" + fingerprint
+			if platformUserID != "" {
+				idempotencyKey = provider + ":" + platformUserID + ":" + fingerprint
+			}
+		}
+
+		result, processErr := guard.Process(ctx, IngressMessage{
+			Platform:           provider,
+			PlatformUserID:     platformUserID,
+			PlatformMessageID:  platformMessageID,
+			IdempotencyKey:     idempotencyKey,
+			PayloadFingerprint: fingerprint,
+			CorrelationID:      correlationID,
+			Headers:            r.Header,
+			Body:               body,
+			OccurredAt:         meta.OccurredAt,
+			ExpiresAt:          now.Add(24 * time.Hour),
+		})
+		if processErr != nil {
+			if handled := writeIngressError(w, processErr, correlationID); handled {
 				return
 			}
 			writeJSON(w, http.StatusInternalServerError, map[string]string{
@@ -88,12 +154,10 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if meta.Control.SlackChallenge != "" {
-			writeJSON(w, http.StatusOK, map[string]string{
-				"challenge": meta.Control.SlackChallenge,
-			})
-			return
-		}
+		decision = result.Decision
+	}
+
+	if actionableCount == 0 {
 		writeJSON(w, http.StatusOK, map[string]string{
 			"decision":       string(IngressIgnored),
 			"correlation_id": correlationID,
@@ -101,48 +165,8 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	platformMessageID := meta.PlatformMessageID
-	platformUserID := meta.PlatformUserID
-	digest := sha256.Sum256(body)
-	fingerprint := hex.EncodeToString(digest[:])
-	idempotencyKey := strings.TrimSpace(platformMessageID)
-	if idempotencyKey == "" {
-		idempotencyKey = strings.TrimSpace(r.Header.Get("X-Idempotency-Key"))
-	}
-	if idempotencyKey == "" {
-		// Fallback must be deterministic across retries.
-		idempotencyKey = provider + ":" + fingerprint
-		if platformUserID != "" {
-			idempotencyKey = provider + ":" + platformUserID + ":" + fingerprint
-		}
-	}
-
-	result, err := guard.Process(ctx, IngressMessage{
-		Platform:           provider,
-		PlatformUserID:     platformUserID,
-		PlatformMessageID:  platformMessageID,
-		IdempotencyKey:     idempotencyKey,
-		PayloadFingerprint: fingerprint,
-		CorrelationID:      correlationID,
-		Headers:            r.Header,
-		Body:               body,
-		OccurredAt:         meta.OccurredAt,
-		ExpiresAt:          now.Add(24 * time.Hour),
-	})
-
-	if err != nil {
-		if handled := writeIngressError(w, err, correlationID); handled {
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error":          "processing webhook failed",
-			"correlation_id": correlationID,
-		})
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]string{
-		"decision":       string(result.Decision),
+		"decision":       string(decision),
 		"correlation_id": correlationID,
 	})
 }
