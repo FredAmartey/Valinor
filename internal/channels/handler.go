@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,14 +25,16 @@ var errTenantPathInvalid = errors.New("tenant path must be a valid UUID")
 type listLinksFunc func(ctx context.Context, tenantID string) ([]ChannelLink, error)
 type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error)
 type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
+type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
 
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
-	ingressByProvider map[string]*IngressGuard
-	listLinks         listLinksFunc
-	upsertLink        upsertLinkFunc
-	deleteLink        deleteLinkFunc
-	execute           executeFunc
+	ingressByProvider   map[string]*IngressGuard
+	listLinks           listLinksFunc
+	upsertLink          upsertLinkFunc
+	deleteLink          deleteLinkFunc
+	updateMessageStatus updateMessageStatusFunc
+	execute             executeFunc
 }
 
 // NewHandler creates a channels handler.
@@ -48,6 +51,7 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		h.listLinks = nil
 		h.upsertLink = nil
 		h.deleteLink = nil
+		h.updateMessageStatus = nil
 		return h
 	}
 
@@ -81,6 +85,12 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 	h.deleteLink = func(ctx context.Context, tenantID, id string) error {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			return store.DeleteLink(ctx, q, id)
+		})
+	}
+
+	h.updateMessageStatus = func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error {
+		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			return store.UpdateMessageStatus(ctx, q, platform, idempotencyKey, status, metadata)
 		})
 	}
 
@@ -175,6 +185,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 
 		actionableCount++
+		messageAgentID := ""
 
 		platformMessageID := meta.PlatformMessageID
 		platformUserID := meta.PlatformUserID
@@ -212,7 +223,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		decision = result.Decision
+		messageDecision := result.Decision
 		if h.execute != nil && result.Decision == IngressAccepted && result.Link != nil {
 			content := strings.TrimSpace(meta.Content)
 			if content != "" {
@@ -226,13 +237,72 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 					Link:              *result.Link,
 				})
 				if execResult.Decision != "" {
-					decision = execResult.Decision
+					messageDecision = execResult.Decision
 				}
 				if execResult.AgentID != "" {
+					messageAgentID = execResult.AgentID
 					executedAgentID = execResult.AgentID
 				}
 			}
 		}
+		if h.updateMessageStatus != nil {
+			// InsertIdempotency persists the initial "accepted" state. This
+			// best-effort write only records terminal execution outcomes.
+			if status, ok := messageStatusForDecision(messageDecision); ok {
+				statusMetadata := map[string]any{
+					"decision": string(messageDecision),
+				}
+				if messageAgentID != "" {
+					statusMetadata["agent_id"] = messageAgentID
+				}
+				rawStatusMetadata, marshalErr := json.Marshal(statusMetadata)
+				if marshalErr != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{
+						"error":          "processing webhook failed",
+						"correlation_id": correlationID,
+					})
+					return
+				}
+
+				updateErr := h.updateMessageStatus(
+					ctx,
+					tenantID,
+					provider,
+					idempotencyKey,
+					status,
+					rawStatusMetadata,
+				)
+				if updateErr != nil {
+					if errors.Is(updateErr, ErrMessageNotFound) {
+						slog.Error(
+							"channel message status update missing idempotency row",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"decision", string(messageDecision),
+							"correlation_id", correlationID,
+							"error", updateErr,
+						)
+					} else {
+						slog.Error(
+							"channel message status update failed",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"idempotency_key", idempotencyKey,
+							"decision", string(messageDecision),
+							"correlation_id", correlationID,
+							"error", updateErr,
+						)
+					}
+					writeJSON(w, http.StatusInternalServerError, map[string]string{
+						"error":          "processing webhook failed",
+						"correlation_id": correlationID,
+					})
+					return
+				}
+			}
+		}
+		decision = messageDecision
 	}
 
 	if actionableCount == 0 {
@@ -252,6 +322,23 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func messageStatusForDecision(decision IngressDecision) (string, bool) {
+	switch decision {
+	case IngressExecuted:
+		return MessageStatusExecuted, true
+	case IngressDeniedRBAC:
+		return MessageStatusDeniedRBAC, true
+	case IngressDeniedNoAgent:
+		return MessageStatusDeniedNoAgent, true
+	case IngressDeniedSentinel:
+		return MessageStatusDeniedSentinel, true
+	case IngressDispatchFailed:
+		return MessageStatusDispatchFailed, true
+	default:
+		return "", false
+	}
 }
 
 // HandleListLinks lists tenant channel links.

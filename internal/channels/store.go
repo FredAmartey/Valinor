@@ -314,3 +314,52 @@ func (s *Store) InsertIdempotency(
 	}
 	return true, nil
 }
+
+// UpdateMessageStatus updates an existing idempotency row with final decision status and metadata.
+func (s *Store) UpdateMessageStatus(
+	ctx context.Context,
+	q database.Querier,
+	platform string,
+	idempotencyKey string,
+	status string,
+	metadata json.RawMessage,
+) error {
+	if platform == "" {
+		return ErrPlatformEmpty
+	}
+	if idempotencyKey == "" {
+		return ErrIdempotencyKey
+	}
+	statusValue := strings.TrimSpace(status)
+	if statusValue == "" {
+		return ErrStatusRequired
+	}
+
+	meta := metadata
+	if len(meta) == 0 {
+		meta = json.RawMessage(`{}`)
+	}
+	if !json.Valid(meta) {
+		return fmt.Errorf("status metadata must be valid JSON")
+	}
+
+	cmd, err := q.Exec(ctx,
+		`UPDATE channel_messages
+		 SET status = $3,
+		     metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND platform = $1
+		   AND idempotency_key = $2`,
+		platform,
+		idempotencyKey,
+		statusValue,
+		meta,
+	)
+	if err != nil {
+		return fmt.Errorf("updating channel message status: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrMessageNotFound
+	}
+	return nil
+}

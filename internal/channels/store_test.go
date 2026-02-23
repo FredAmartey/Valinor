@@ -380,3 +380,94 @@ func TestChannelLinkStore_ListAndDeleteLink(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestMessageStore_UpdateMessageStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Status', 'tenant-status') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		expiresAt := time.Now().Add(24 * time.Hour)
+		firstSeen, insertErr := store.InsertIdempotency(
+			ctx,
+			q,
+			"whatsapp",
+			"+15550003333",
+			"wamid.status.1",
+			"idem-status-1",
+			"fp-status-1",
+			"corr-status-1",
+			expiresAt,
+		)
+		require.NoError(t, insertErr)
+		require.True(t, firstSeen)
+
+		updateErr := store.UpdateMessageStatus(
+			ctx,
+			q,
+			"whatsapp",
+			"idem-status-1",
+			channels.MessageStatusExecuted,
+			json.RawMessage(`{"decision":"executed","agent_id":"agent-1"}`),
+		)
+		require.NoError(t, updateErr)
+
+		var status string
+		var metadata json.RawMessage
+		rowErr := q.QueryRow(ctx,
+			`SELECT status, metadata
+			 FROM channel_messages
+			 WHERE platform = 'whatsapp' AND idempotency_key = 'idem-status-1'`,
+		).Scan(&status, &metadata)
+		require.NoError(t, rowErr)
+		assert.Equal(t, channels.MessageStatusExecuted, status)
+		assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-1"}`, string(metadata))
+
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestMessageStore_UpdateMessageStatus_NotFound(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Status Missing', 'tenant-status-missing') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		updateErr := store.UpdateMessageStatus(
+			ctx,
+			q,
+			"whatsapp",
+			"missing-idempotency-key",
+			channels.MessageStatusExecuted,
+			json.RawMessage(`{"decision":"executed"}`),
+		)
+		require.ErrorIs(t, updateErr, channels.ErrMessageNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+}

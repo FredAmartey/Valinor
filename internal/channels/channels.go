@@ -20,6 +20,16 @@ const (
 const (
 	// MessageStatusAccepted marks the first successful processing attempt.
 	MessageStatusAccepted = "accepted"
+	// MessageStatusExecuted marks accepted messages that successfully dispatched.
+	MessageStatusExecuted = "executed"
+	// MessageStatusDeniedRBAC marks messages denied by RBAC during execution.
+	MessageStatusDeniedRBAC = "denied_rbac"
+	// MessageStatusDeniedNoAgent marks messages that had no eligible running agent.
+	MessageStatusDeniedNoAgent = "denied_no_agent"
+	// MessageStatusDeniedSentinel marks messages blocked by input sentinel.
+	MessageStatusDeniedSentinel = "denied_sentinel"
+	// MessageStatusDispatchFailed marks accepted messages that failed during dispatch.
+	MessageStatusDispatchFailed = "dispatch_failed"
 	// MessageStatusDuplicate marks a duplicate delivery that should not re-execute.
 	MessageStatusDuplicate = "duplicate"
 	// MessageStatusRejectedSignature marks failed authenticity checks.
@@ -61,17 +71,19 @@ func (l ChannelLink) IsVerified() bool {
 }
 
 var (
-	ErrLinkNotFound   = errors.New("channel link not found")
-	ErrLinkUnverified = errors.New("channel link is not verified")
-	ErrPlatformEmpty  = errors.New("platform is required")
-	ErrIdentityEmpty  = errors.New("platform user id is required")
-	ErrUserIDRequired = errors.New("user id is required")
-	ErrUserNotFound   = errors.New("user not found")
-	ErrLinkState      = errors.New("link state is invalid")
-	ErrLinkIDRequired = errors.New("link id is required")
-	ErrLinkIDInvalid  = errors.New("link id must be a valid UUID")
-	ErrIdempotencyKey = errors.New("idempotency key is required")
-	ErrCorrelationID  = errors.New("correlation id is required")
-	ErrFingerprint    = errors.New("payload fingerprint is required")
-	ErrExpiryRequired = errors.New("expiry timestamp is required")
+	ErrLinkNotFound    = errors.New("channel link not found")
+	ErrLinkUnverified  = errors.New("channel link is not verified")
+	ErrMessageNotFound = errors.New("channel message not found")
+	ErrPlatformEmpty   = errors.New("platform is required")
+	ErrIdentityEmpty   = errors.New("platform user id is required")
+	ErrUserIDRequired  = errors.New("user id is required")
+	ErrUserNotFound    = errors.New("user not found")
+	ErrLinkState       = errors.New("link state is invalid")
+	ErrLinkIDRequired  = errors.New("link id is required")
+	ErrLinkIDInvalid   = errors.New("link id must be a valid UUID")
+	ErrIdempotencyKey  = errors.New("idempotency key is required")
+	ErrCorrelationID   = errors.New("correlation id is required")
+	ErrFingerprint     = errors.New("payload fingerprint is required")
+	ErrExpiryRequired  = errors.New("expiry timestamp is required")
+	ErrStatusRequired  = errors.New("status is required")
 )
