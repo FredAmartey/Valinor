@@ -364,7 +364,7 @@ Minimal Linux rootfs: Valinor Agent binary + OpenClaw runtime (Node.js) + locked
 Clients register MCP servers with Valinor to bridge their platform with agents:
 
 ```
-POST /api/v1/tenants/:id/connectors
+POST /api/v1/connectors
 {
   "name": "marcelo-scouting",
   "type": "mcp",
@@ -380,6 +380,23 @@ POST /api/v1/tenants/:id/connectors
 
 ### RBAC on MCP Tools
 Tool allow-lists map to registered MCP tools per role. RBAC applies at both the tool level and parameter level.
+
+### Memory Isolation & Sharing Model
+Valinor enforces four explicit memory scopes. Every memory write must target one scope, and reads are limited by tenant + role + scope policy.
+
+| Scope | Owner | Visibility | Typical Use |
+|------|-------|------------|-------------|
+| Session | Agent session | Single conversation/request | Scratch reasoning and temporary state |
+| User | Individual user | That user only | Personal notes, private drafts |
+| Department | Department | Members with department access | Scout reports, team-specific insights |
+| Tenant (Org) | Tenant | Org-level authorized users | Shared strategy context, approved playbooks |
+
+Rules:
+- No cross-tenant reads/writes at any scope.
+- Department scope cannot be read outside department membership unless explicit org-admin override.
+- User scope cannot be read by peers by default; elevation requires explicit policy + audit.
+- Scope precedence on retrieval: `session -> user -> department -> tenant`, with explicit conflict metadata.
+- Retention and deletion are scope-aware; audit trail remains append-only.
 
 ---
 
@@ -414,13 +431,19 @@ Tool allow-lists map to registered MCP tools per role. RBAC applies at both the 
 - `POST /api/v1/agents/:id/context` — Push context update from client
 
 ### Connectors
-- `POST /api/v1/tenants/:id/connectors` — Register MCP server
-- `GET /api/v1/tenants/:id/connectors` — List connectors
+- `POST /api/v1/connectors` — Register MCP server
+- `GET /api/v1/connectors` — List connectors
 - `DELETE /api/v1/connectors/:id` — Remove connector
 
 ### Channels (Webhooks)
 - `POST /webhooks/whatsapp` — WhatsApp webhook
 - `POST /webhooks/telegram` — Telegram webhook
+
+**Phase 8 gates (must be implemented before channel rollout):**
+- Verified identity linking flow: `platform + platform_user_id` must map to exactly one Valinor user, with explicit verification state.
+- Webhook authenticity: provider signature verification required on every inbound request.
+- Message idempotency and replay defense: dedupe key per provider message ID with TTL window, reject duplicates and stale replays.
+- Correlation IDs: each inbound message must propagate a stable request/audit correlation ID through auth, RBAC, sentinel, proxy, and audit.
 
 ### Audit
 - `GET /api/v1/audit/events` — Query audit log
@@ -472,6 +495,8 @@ Tool allow-lists map to registered MCP tools per role. RBAC applies at both the 
 | **7. Connectors** | 14 | `connectors` | MCP server registration, connection brokering, context push/pull API |
 | **8. Channels** | 15-16 | `channels` | WhatsApp webhook integration, identity linking, message relay through RBAC |
 | **9. Admin Dashboard** | 17-18 | `dashboard/*` | Next.js admin UI (7 views), connected to Go API |
+
+Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 
 ### Critical Files
 
@@ -533,6 +558,7 @@ Tool allow-lists map to registered MCP tools per role. RBAC applies at both the 
 - Tool Call Validator denies cross-department tool calls
 - Canary token leak triggers session halt
 - Audit events appear in database for every action
+- Isolation proof suite passes for cross-tenant API, connector, and tool path negatives
 
 ### Phase 7 (Connectors)
 - Register MCP server via API
@@ -545,6 +571,8 @@ Tool allow-lists map to registered MCP tools per role. RBAC applies at both the 
 - Phone number resolves to Valinor user
 - RBAC applies to messaging requests
 - Agent response returns via WhatsApp
+- Duplicate webhook deliveries are deduplicated (idempotency key)
+- Replay attempts with reused message IDs are rejected and audited
 
 ### Phase 9 (Dashboard)
 - Admin can login via OIDC

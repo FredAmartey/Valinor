@@ -27,7 +27,22 @@ jobs:
       - name: Build
         run: go build ./...
 
+  firecracker-driver:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Firecracker driver tests (linux helper mode)
+        run: go test ./internal/orchestrator -run 'TestFirecrackerDriver_' -v
+
   test:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -48,6 +63,7 @@ jobs:
           path: coverage.out
 
   lint:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

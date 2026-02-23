@@ -97,6 +97,83 @@ func TestRoleHandler(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
 
+	t.Run("IsolationProof_AssignRole_UserFromAnotherTenantDenied", func(t *testing.T) {
+		tenantA, err := tenantStore.Create(ctx, "Role Cross User A", "role-cross-user-a")
+		require.NoError(t, err)
+		tenantB, err := tenantStore.Create(ctx, "Role Cross User B", "role-cross-user-b")
+		require.NoError(t, err)
+
+		var roleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenantA.ID, func(ctx context.Context, q database.Querier) error {
+			role, createErr := tenant.NewRoleStore().Create(ctx, q, "operator", []string{"agents:write"})
+			require.NoError(t, createErr)
+			roleID = role.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		var foreignUserID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenantB.ID, func(ctx context.Context, q database.Querier) error {
+			user, createErr := tenant.NewUserStore().Create(ctx, q, "cross-user@test.com", "Cross User")
+			require.NoError(t, createErr)
+			foreignUserID = user.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		body := `{"role_id": "` + roleID + `", "scope_type": "org", "scope_id": "` + tenantA.ID + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/"+foreignUserID+"/roles", strings.NewReader(body))
+		req.SetPathValue("id", foreignUserID)
+		req.Header.Set("Content-Type", "application/json")
+		req = withTenantIdentity(req, tenantA.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleAssignRole).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "user not found")
+	})
+
+	t.Run("IsolationProof_AssignRole_DepartmentFromAnotherTenantDenied", func(t *testing.T) {
+		tenantA, err := tenantStore.Create(ctx, "Role Cross Dept A", "role-cross-dept-a")
+		require.NoError(t, err)
+		tenantB, err := tenantStore.Create(ctx, "Role Cross Dept B", "role-cross-dept-b")
+		require.NoError(t, err)
+
+		var roleID, userID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenantA.ID, func(ctx context.Context, q database.Querier) error {
+			role, createErr := tenant.NewRoleStore().Create(ctx, q, "operator", []string{"agents:write"})
+			require.NoError(t, createErr)
+			roleID = role.ID
+			user, createErr := tenant.NewUserStore().Create(ctx, q, "cross-dept@test.com", "Cross Dept")
+			require.NoError(t, createErr)
+			userID = user.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		var foreignDeptID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenantB.ID, func(ctx context.Context, q database.Querier) error {
+			dept, createErr := tenant.NewDepartmentStore().Create(ctx, q, "Secret Dept", nil)
+			require.NoError(t, createErr)
+			foreignDeptID = dept.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		body := `{"role_id": "` + roleID + `", "scope_type": "department", "scope_id": "` + foreignDeptID + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/"+userID+"/roles", strings.NewReader(body))
+		req.SetPathValue("id", userID)
+		req.Header.Set("Content-Type", "application/json")
+		req = withTenantIdentity(req, tenantA.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleAssignRole).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+		assert.Contains(t, w.Body.String(), "department not found")
+	})
+
 	t.Run("RemoveRole", func(t *testing.T) {
 		ten4, err := tenantStore.Create(ctx, "Remove Handler Org", "remove-handler-org")
 		require.NoError(t, err)
