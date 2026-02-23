@@ -178,6 +178,112 @@ func TestHandleWebhook_DuplicateMessageSkipsExecutor(t *testing.T) {
 	assert.Contains(t, w.Body.String(), string(IngressDuplicate))
 }
 
+func TestHandleWebhook_ExecutionPersistsMessageStatus(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	var persisted struct {
+		tenantID       string
+		platform       string
+		idempotencyKey string
+		status         string
+		metadata       json.RawMessage
+	}
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{Decision: IngressExecuted, AgentID: "agent-123"}
+		},
+	)
+	h.updateMessageStatus = func(_ context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error {
+		persisted.tenantID = tenantID
+		persisted.platform = platform
+		persisted.idempotencyKey = idempotencyKey
+		persisted.status = status
+		persisted.metadata = metadata
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("persist me")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "190f3a21-3b2c-42ce-b26e-2f448a58ec14", persisted.tenantID)
+	assert.Equal(t, "whatsapp", persisted.platform)
+	assert.Equal(t, "wamid.123", persisted.idempotencyKey)
+	assert.Equal(t, MessageStatusExecuted, persisted.status)
+	assert.JSONEq(t, `{"decision":"executed","agent_id":"agent-123"}`, string(persisted.metadata))
+}
+
+func TestHandleWebhook_StatusPersistenceFailureReturns500(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{Decision: IngressExecuted, AgentID: "agent-123"}
+		},
+	)
+	h.updateMessageStatus = func(_ context.Context, _, _, _, _ string, _ json.RawMessage) error {
+		return errors.New("write failed")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("persist fail")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "processing webhook failed")
+}
+
+func TestMessageStatusForDecision(t *testing.T) {
+	tests := []struct {
+		decision IngressDecision
+		expected string
+		ok       bool
+	}{
+		{decision: IngressAccepted, expected: MessageStatusAccepted, ok: true},
+		{decision: IngressExecuted, expected: MessageStatusExecuted, ok: true},
+		{decision: IngressDeniedRBAC, expected: MessageStatusDeniedRBAC, ok: true},
+		{decision: IngressDeniedNoAgent, expected: MessageStatusDeniedNoAgent, ok: true},
+		{decision: IngressDeniedSentinel, expected: MessageStatusDeniedSentinel, ok: true},
+		{decision: IngressDispatchFailed, expected: MessageStatusDispatchFailed, ok: true},
+		{decision: IngressDuplicate, expected: "", ok: false},
+		{decision: IngressReplayBlocked, expected: "", ok: false},
+		{decision: IngressDeniedUnverified, expected: "", ok: false},
+		{decision: IngressRejectedSignature, expected: "", ok: false},
+	}
+
+	for _, tc := range tests {
+		status, ok := messageStatusForDecision(tc.decision)
+		assert.Equal(t, tc.expected, status)
+		assert.Equal(t, tc.ok, ok)
+	}
+}
+
 func TestHandleListLinks_RequiresTenantContext(t *testing.T) {
 	h := NewHandler(nil)
 
