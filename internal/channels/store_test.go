@@ -578,3 +578,244 @@ func TestOutboxStore_EnqueueAndClaim(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestOutboxStore_MarkSent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+	tenantID, outboxID := seedAndClaimOutboxJob(t, ctx, pool, store, "outbox-mark-sent")
+
+	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return store.MarkOutboxSent(ctx, q, outboxID)
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var status string
+		var sentAt *time.Time
+		var attemptCount int
+		var lastError *string
+		rowErr := q.QueryRow(ctx,
+			`SELECT status, sent_at, attempt_count, last_error
+			 FROM channel_outbox
+			 WHERE id = $1`,
+			outboxID,
+		).Scan(&status, &sentAt, &attemptCount, &lastError)
+		require.NoError(t, rowErr)
+		assert.Equal(t, string(channels.OutboxStatusSent), status)
+		require.NotNil(t, sentAt)
+		assert.Equal(t, 0, attemptCount)
+		assert.Nil(t, lastError)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestOutboxStore_MarkRetry(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+	tenantID, outboxID := seedAndClaimOutboxJob(t, ctx, pool, store, "outbox-mark-retry")
+	nextAttempt := time.Now().UTC().Add(2 * time.Minute).Truncate(time.Second)
+
+	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return store.MarkOutboxRetry(ctx, q, outboxID, nextAttempt, "provider timeout")
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var status string
+		var attemptCount int
+		var dbNextAttempt time.Time
+		var lastError *string
+		var sentAt *time.Time
+		rowErr := q.QueryRow(ctx,
+			`SELECT status, attempt_count, next_attempt_at, last_error, sent_at
+			 FROM channel_outbox
+			 WHERE id = $1`,
+			outboxID,
+		).Scan(&status, &attemptCount, &dbNextAttempt, &lastError, &sentAt)
+		require.NoError(t, rowErr)
+		assert.Equal(t, string(channels.OutboxStatusPending), status)
+		assert.Equal(t, 1, attemptCount)
+		assert.WithinDuration(t, nextAttempt, dbNextAttempt, 2*time.Second)
+		require.NotNil(t, lastError)
+		assert.Equal(t, "provider timeout", *lastError)
+		assert.Nil(t, sentAt)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestOutboxStore_MarkDead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+	tenantID, outboxID := seedAndClaimOutboxJob(t, ctx, pool, store, "outbox-mark-dead")
+
+	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return store.MarkOutboxDead(ctx, q, outboxID, "permanent provider failure")
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var status string
+		var lastError *string
+		var sentAt *time.Time
+		rowErr := q.QueryRow(ctx,
+			`SELECT status, last_error, sent_at
+			 FROM channel_outbox
+			 WHERE id = $1`,
+			outboxID,
+		).Scan(&status, &lastError, &sentAt)
+		require.NoError(t, rowErr)
+		assert.Equal(t, string(channels.OutboxStatusDead), status)
+		require.NotNil(t, lastError)
+		assert.Equal(t, "permanent provider failure", *lastError)
+		assert.Nil(t, sentAt)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestOutboxStore_RecoverStaleSending(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+	tenantID, staleID := seedAndClaimOutboxJob(t, ctx, pool, store, "outbox-stale")
+	_, freshID := seedAndClaimOutboxJob(t, ctx, pool, store, "outbox-stale")
+
+	staleLockedAt := time.Now().UTC().Add(-10 * time.Minute)
+	freshLockedAt := time.Now().UTC()
+	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, execErr := q.Exec(ctx, `UPDATE channel_outbox SET locked_at = $2 WHERE id = $1`, staleID, staleLockedAt)
+		if execErr != nil {
+			return execErr
+		}
+		_, execErr = q.Exec(ctx, `UPDATE channel_outbox SET locked_at = $2 WHERE id = $1`, freshID, freshLockedAt)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	var recovered []channels.ChannelOutbox
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var recoverErr error
+		recovered, recoverErr = store.RecoverStaleSending(ctx, q, time.Now().UTC().Add(-5*time.Minute), 10)
+		return recoverErr
+	})
+	require.NoError(t, err)
+	require.Len(t, recovered, 1)
+	assert.Equal(t, staleID, recovered[0].ID)
+	assert.Equal(t, channels.OutboxStatusPending, recovered[0].Status)
+	assert.Nil(t, recovered[0].LockedAt)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var staleStatus, freshStatus string
+		var staleLocked, freshLocked *time.Time
+		if scanErr := q.QueryRow(ctx,
+			`SELECT status, locked_at FROM channel_outbox WHERE id = $1`,
+			staleID,
+		).Scan(&staleStatus, &staleLocked); scanErr != nil {
+			return scanErr
+		}
+		if scanErr := q.QueryRow(ctx,
+			`SELECT status, locked_at FROM channel_outbox WHERE id = $1`,
+			freshID,
+		).Scan(&freshStatus, &freshLocked); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, string(channels.OutboxStatusPending), staleStatus)
+		assert.Nil(t, staleLocked)
+		assert.Equal(t, string(channels.OutboxStatusSending), freshStatus)
+		require.NotNil(t, freshLocked)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func seedAndClaimOutboxJob(
+	t *testing.T,
+	ctx context.Context,
+	pool *database.Pool,
+	store *channels.Store,
+	slugPrefix string,
+) (string, uuid.UUID) {
+	t.Helper()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Tenant "+slugPrefix,
+		slugPrefix+"-"+uuid.NewString()[:8],
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var messageID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550003333', $1, $2,
+				$3, $4, 'executed', now() + interval '1 day'
+			) RETURNING id`,
+			"msg-"+uuid.NewString(),
+			"idem-"+uuid.NewString(),
+			"fp-"+uuid.NewString(),
+			"corr-"+uuid.NewString(),
+		).Scan(&messageID)
+	})
+	require.NoError(t, err)
+
+	var outboxID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		job, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageID.String(),
+			Provider:         "whatsapp",
+			RecipientID:      "+15550003333",
+			Payload:          json.RawMessage(`{"text":"retry me"}`),
+		})
+		if enqueueErr != nil {
+			return enqueueErr
+		}
+		outboxID = job.ID
+
+		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 1)
+		if claimErr != nil {
+			return claimErr
+		}
+		require.Len(t, claimed, 1)
+		assert.Equal(t, channels.OutboxStatusSending, claimed[0].Status)
+		assert.Equal(t, outboxID, claimed[0].ID)
+		return nil
+	})
+	require.NoError(t, err)
+
+	return tenantID, outboxID
+}

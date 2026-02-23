@@ -519,3 +519,159 @@ func (s *Store) ClaimPendingOutbox(ctx context.Context, q database.Querier, now 
 
 	return claimed, nil
 }
+
+// MarkOutboxSent marks a claimed sending job as sent.
+func (s *Store) MarkOutboxSent(ctx context.Context, q database.Querier, outboxID uuid.UUID) error {
+	cmd, err := q.Exec(ctx,
+		`UPDATE channel_outbox
+		 SET status = $2,
+		     sent_at = now(),
+		     last_error = NULL,
+		     locked_at = NULL,
+		     updated_at = now()
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND id = $1
+		   AND status = $3`,
+		outboxID,
+		OutboxStatusSent,
+		OutboxStatusSending,
+	)
+	if err != nil {
+		return fmt.Errorf("marking outbox job sent: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrOutboxNotFound
+	}
+	return nil
+}
+
+// MarkOutboxRetry marks a sending job for retry and records the error.
+func (s *Store) MarkOutboxRetry(ctx context.Context, q database.Querier, outboxID uuid.UUID, nextAttempt time.Time, lastError string) error {
+	if nextAttempt.IsZero() {
+		return fmt.Errorf("next attempt timestamp is required")
+	}
+
+	cmd, err := q.Exec(ctx,
+		`UPDATE channel_outbox
+		 SET status = $2,
+		     attempt_count = attempt_count + 1,
+		     next_attempt_at = $3,
+		     last_error = $4,
+		     sent_at = NULL,
+		     locked_at = NULL,
+		     updated_at = now()
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND id = $1
+		   AND status = $5`,
+		outboxID,
+		OutboxStatusPending,
+		nextAttempt,
+		strings.TrimSpace(lastError),
+		OutboxStatusSending,
+	)
+	if err != nil {
+		return fmt.Errorf("marking outbox job retry: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrOutboxNotFound
+	}
+	return nil
+}
+
+// MarkOutboxDead marks a sending job as dead-lettered with the final error.
+func (s *Store) MarkOutboxDead(ctx context.Context, q database.Querier, outboxID uuid.UUID, lastError string) error {
+	cmd, err := q.Exec(ctx,
+		`UPDATE channel_outbox
+		 SET status = $2,
+		     last_error = $3,
+		     locked_at = NULL,
+		     updated_at = now()
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND id = $1
+		   AND status = $4`,
+		outboxID,
+		OutboxStatusDead,
+		strings.TrimSpace(lastError),
+		OutboxStatusSending,
+	)
+	if err != nil {
+		return fmt.Errorf("marking outbox job dead: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrOutboxNotFound
+	}
+	return nil
+}
+
+// RecoverStaleSending resets stale sending jobs back to pending for re-claim.
+func (s *Store) RecoverStaleSending(ctx context.Context, q database.Querier, staleBefore time.Time, limit int) ([]ChannelOutbox, error) {
+	if staleBefore.IsZero() {
+		staleBefore = time.Now().UTC()
+	}
+	if limit <= 0 {
+		limit = 1
+	}
+
+	rows, err := q.Query(ctx,
+		`WITH stale AS (
+			SELECT id
+			FROM channel_outbox
+			WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			  AND status = $1
+			  AND locked_at IS NOT NULL
+			  AND locked_at < $2
+			ORDER BY locked_at ASC
+			LIMIT $3
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE channel_outbox outbox
+		SET status = $4,
+		    locked_at = NULL,
+		    updated_at = now()
+		FROM stale
+		WHERE outbox.id = stale.id
+		RETURNING outbox.id, outbox.tenant_id, outbox.channel_message_id, outbox.provider, outbox.recipient_id,
+		          outbox.payload, outbox.status, outbox.attempt_count, outbox.max_attempts, outbox.next_attempt_at,
+		          outbox.last_error, outbox.locked_at, outbox.sent_at, outbox.created_at, outbox.updated_at`,
+		OutboxStatusSending,
+		staleBefore,
+		limit,
+		OutboxStatusPending,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("recovering stale outbox jobs: %w", err)
+	}
+	defer rows.Close()
+
+	recovered := make([]ChannelOutbox, 0)
+	for rows.Next() {
+		var job ChannelOutbox
+		var status string
+		if scanErr := rows.Scan(
+			&job.ID,
+			&job.TenantID,
+			&job.ChannelMessageID,
+			&job.Provider,
+			&job.RecipientID,
+			&job.Payload,
+			&status,
+			&job.AttemptCount,
+			&job.MaxAttempts,
+			&job.NextAttemptAt,
+			&job.LastError,
+			&job.LockedAt,
+			&job.SentAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scanning recovered outbox row: %w", scanErr)
+		}
+		job.Status = OutboxStatus(status)
+		recovered = append(recovered, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating recovered outbox rows: %w", err)
+	}
+
+	return recovered, nil
+}
