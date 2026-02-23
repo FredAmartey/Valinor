@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -18,12 +19,14 @@ import (
 func setupWorkerTestDB(t *testing.T) (*database.Pool, func()) {
 	t.Helper()
 	ctx := context.Background()
+	testUser := "valinor_" + uuid.NewString()[:8]
+	testPassword := uuid.NewString()
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
 		postgres.WithDatabase("valinor_test"),
-		postgres.WithUsername("valinor"),
-		postgres.WithPassword("valinor"),
+		postgres.WithUsername(testUser),
+		postgres.WithPassword(testPassword),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
 		),
