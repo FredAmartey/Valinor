@@ -23,3 +23,18 @@ auth:
     issuer: "valinor"
     expiryhours: 24
     refreshexpiryhours: 168
+
+channels:
+  ingress:
+    enabled: false
+    replaywindowseconds: 86400
+  providers:
+    slack:
+      enabled: false
+      signingsecret: ""
+    whatsapp:
+      enabled: false
+      signingsecret: ""
+    telegram:
+      enabled: false
+      secrettoken: ""
