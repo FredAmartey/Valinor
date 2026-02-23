@@ -63,6 +63,9 @@ func extractSlackIngressMetadata(headers http.Header, body []byte, now time.Time
 			},
 		}, nil
 	}
+	// Scope: phase-8 ingress only routes user-originated Slack events. Non-user events are
+	// acknowledged without execution to avoid provider retries until bot/app event support lands.
+	// Follow-up tracked in issue #14.
 	if strings.TrimSpace(payload.Event.User) == "" {
 		return ingressMetadata{
 			OccurredAt: occurredAt,
@@ -100,9 +103,15 @@ func extractWhatsAppIngressMetadata(body []byte, now time.Time) (ingressMetadata
 		return ingressMetadata{}, fmt.Errorf("parsing whatsapp payload: %w", err)
 	}
 	if len(payload.Entry) == 0 || len(payload.Entry[0].Changes) == 0 {
-		return ingressMetadata{}, fmt.Errorf("parsing whatsapp payload: missing messages")
+		return ingressMetadata{
+			OccurredAt: now,
+			Control: &ingressControl{
+				AcknowledgeOnly: true,
+			},
+		}, nil
 	}
 
+	// TODO(#14): process all entries/changes when batch webhook execution is supported.
 	value := payload.Entry[0].Changes[0].Value
 	if len(value.Messages) == 0 {
 		occurredAt := now

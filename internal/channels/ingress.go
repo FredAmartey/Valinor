@@ -145,6 +145,8 @@ func (g *IngressGuard) logDecision(ctx context.Context, msg IngressMessage, deci
 		action = audit.ActionChannelMessageDuplicate
 	case IngressReplayBlocked:
 		action = audit.ActionChannelMessageReplayBlocked
+	case IngressIgnored:
+		action = audit.ActionChannelWebhookIgnored
 	case IngressRejectedSignature:
 		action = audit.ActionChannelWebhookRejectedSignature
 	case IngressDeniedUnverified:

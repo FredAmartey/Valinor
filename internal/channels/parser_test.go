@@ -108,6 +108,32 @@ func TestExtractIngressMetadata_WhatsAppStatusUpdate(t *testing.T) {
 	assert.Equal(t, int64(1730000001), meta.OccurredAt.Unix())
 }
 
+func TestExtractIngressMetadata_WhatsAppEmptyEntryIgnored(t *testing.T) {
+	now := time.Unix(1730000050, 0)
+	body := []byte(`{"entry":[]}`)
+
+	meta, err := extractIngressMetadata("whatsapp", http.Header{}, body, now)
+	require.NoError(t, err)
+	require.NotNil(t, meta.Control)
+	assert.True(t, meta.Control.AcknowledgeOnly)
+	assert.Equal(t, now.Unix(), meta.OccurredAt.Unix())
+}
+
+func TestExtractIngressMetadata_WhatsAppEmptyChangesIgnored(t *testing.T) {
+	now := time.Unix(1730000050, 0)
+	body := []byte(`{
+	  "entry": [{
+	    "changes": []
+	  }]
+	}`)
+
+	meta, err := extractIngressMetadata("whatsapp", http.Header{}, body, now)
+	require.NoError(t, err)
+	require.NotNil(t, meta.Control)
+	assert.True(t, meta.Control.AcknowledgeOnly)
+	assert.Equal(t, now.Unix(), meta.OccurredAt.Unix())
+}
+
 func TestExtractIngressMetadata_UnsupportedProvider(t *testing.T) {
 	_, err := extractIngressMetadata("discord", http.Header{}, []byte(`{}`), time.Now())
 	require.Error(t, err)

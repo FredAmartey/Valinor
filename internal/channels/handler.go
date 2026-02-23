@@ -59,16 +59,17 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := middleware.WithTenantID(r.Context(), tenantID)
+	now := time.Now()
 
 	correlationID := middleware.GetRequestID(r.Context())
 	if correlationID == "" {
 		correlationID = r.Header.Get("X-Request-ID")
 	}
 	if correlationID == "" {
-		correlationID = "channel-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		correlationID = "channel-" + strconv.FormatInt(now.UnixNano(), 10)
 	}
 
-	meta, err := extractIngressMetadata(provider, r.Header, body, time.Now())
+	meta, err := extractIngressMetadata(provider, r.Header, body, now)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":          "invalid webhook payload",
@@ -126,7 +127,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		Headers:            r.Header,
 		Body:               body,
 		OccurredAt:         meta.OccurredAt,
-		ExpiresAt:          time.Now().Add(24 * time.Hour),
+		ExpiresAt:          now.Add(24 * time.Hour),
 	})
 
 	if err != nil {

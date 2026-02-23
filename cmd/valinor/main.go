@@ -373,7 +373,7 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 
 	if len(ingressByProvider) == 0 {
 		slog.Warn("channels ingress enabled but no providers configured")
-		return nil, nil
+		return nil, fmt.Errorf("channels ingress enabled but no providers configured")
 	}
 
 	return channels.NewHandler(ingressByProvider), nil
