@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/server"
@@ -77,6 +78,7 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	rbacEngine.RegisterRole("standard_user", []string{"agents:read", "agents:message"})
 	rbacEngine.RegisterRole("read_only", []string{"agents:read"})
 	rbacEngine.RegisterRole("connectors_user", []string{"connectors:read", "connectors:write"})
+	rbacEngine.RegisterRole("channels_user", []string{"channels:links:read", "channels:links:write"})
 
 	// Wire a minimal agent handler (nil pool — will fail on DB calls but routes exist)
 	driver := orchestrator.NewMockDriver()
@@ -84,12 +86,14 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	mgr := orchestrator.NewManager(nil, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
 	agentHandler := orchestrator.NewHandler(mgr, nil)
 	connectorHandler := connectors.NewHandler(nil, connectors.NewStore())
+	channelHandler := channels.NewHandler(nil)
 
 	return server.Dependencies{
 		Auth:             tokenSvc,
 		RBAC:             rbacEngine,
 		AgentHandler:     agentHandler,
 		ConnectorHandler: connectorHandler,
+		ChannelHandler:   channelHandler,
 	}, tokenSvc
 }
 
@@ -183,6 +187,46 @@ func TestServer_Connectors_LegacyTenantPathNotRegistered(t *testing.T) {
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/tenant-1/connectors", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestServer_ChannelsLinks_RouteNormalized(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID: "user-channels",
+		Roles:  []string{"channels_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/links", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestServer_ChannelsLinks_LegacyTenantPathNotRegistered(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID: "user-channels",
+		Roles:  []string{"channels_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/tenant-1/channels/links", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 

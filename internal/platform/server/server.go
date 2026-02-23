@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
@@ -35,6 +36,7 @@ type Dependencies struct {
 	ProxyHandler      *proxy.Handler
 	AuditHandler      *audit.Handler
 	ConnectorHandler  *connectors.Handler
+	ChannelHandler    *channels.Handler
 	RBACAuditLogger   rbac.AuditLogger
 	DevMode           bool
 	DevIdentity       *auth.Identity
@@ -82,6 +84,11 @@ func New(addr string, deps Dependencies) *Server {
 	topMux.HandleFunc("GET /readyz", s.handleReadiness)
 	if deps.AuthHandler != nil {
 		deps.AuthHandler.RegisterRoutes(topMux)
+	}
+	if deps.ChannelHandler != nil {
+		topMux.Handle("POST /api/v1/channels/{provider}/webhook",
+			http.HandlerFunc(deps.ChannelHandler.HandleWebhook),
+		)
 	}
 
 	// Build RBAC middleware options (audit logger if available)
@@ -252,6 +259,25 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("DELETE /api/v1/connectors/{id}",
 			rbac.RequirePermission(deps.RBAC, "connectors:write", rbacOpts...)(
 				http.HandlerFunc(deps.ConnectorHandler.HandleDelete),
+			),
+		)
+	}
+
+	// Channel link routes (tenant-scoped, RBAC-protected)
+	if deps.ChannelHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("GET /api/v1/channels/links",
+			rbac.RequirePermission(deps.RBAC, "channels:links:read", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleListLinks),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/channels/links",
+			rbac.RequirePermission(deps.RBAC, "channels:links:write", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleCreateLink),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/channels/links/{id}",
+			rbac.RequirePermission(deps.RBAC, "channels:links:write", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleDeleteLink),
 			),
 		)
 	}
