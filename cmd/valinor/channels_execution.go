@@ -169,13 +169,6 @@ func selectChannelTargetAgent(instances []orchestrator.AgentInstance, preferredD
 		}
 	}
 
-	for i := range instances {
-		inst := &instances[i]
-		if isChannelDispatchCandidate(inst) {
-			return inst
-		}
-	}
-
 	return nil
 }
 
@@ -273,6 +266,9 @@ func dispatchChannelMessageToAgent(
 		case proxy.TypeSessionHalt:
 			connPool.Remove(agent.ID)
 			return "", errors.New("session halted by agent")
+		default:
+			connPool.Remove(agent.ID)
+			return "", fmt.Errorf("unexpected frame type from agent: %s", reply.Type)
 		}
 	}
 }
@@ -291,7 +287,7 @@ func logChannelExecutionEvent(
 	metadata := map[string]any{
 		audit.MetadataCorrelationID:   msg.CorrelationID,
 		audit.MetadataPlatformMessage: msg.PlatformMessageID,
-		"platform_user_id":            msg.PlatformUserID,
+		audit.MetadataPlatformUserID:  msg.PlatformUserID,
 	}
 	for key, value := range extra {
 		metadata[key] = value

@@ -36,6 +36,7 @@ const (
 	MetadataDecision        = "decision"
 	MetadataIdempotencyKey  = "idempotency_key"
 	MetadataPlatformMessage = "platform_message_id"
+	MetadataPlatformUserID  = "platform_user_id"
 )
 
 // Logger is the audit logging interface. Log is fire-and-forget.

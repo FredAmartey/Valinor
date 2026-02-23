@@ -147,6 +147,8 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	actionableCount := 0
 	controlVerified := false
 	executedAgentID := ""
+	// For batched webhook payloads, response fields reflect the most recent
+	// actionable message processed in this request.
 
 	for _, meta := range metas {
 		if meta.Control != nil && meta.Control.AcknowledgeOnly {
