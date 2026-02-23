@@ -363,3 +363,159 @@ func (s *Store) UpdateMessageStatus(
 	}
 	return nil
 }
+
+// EnqueueOutbound inserts a new tenant-scoped outbox job for async provider send.
+func (s *Store) EnqueueOutbound(ctx context.Context, q database.Querier, params EnqueueOutboundParams) (*ChannelOutbox, error) {
+	messageIDValue := strings.TrimSpace(params.ChannelMessageID)
+	if messageIDValue == "" {
+		return nil, ErrMessageNotFound
+	}
+	messageID, err := uuid.Parse(messageIDValue)
+	if err != nil {
+		return nil, fmt.Errorf("parsing channel message id: %w", err)
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(params.Provider))
+	if provider == "" {
+		return nil, ErrPlatformEmpty
+	}
+	recipientID := strings.TrimSpace(params.RecipientID)
+	if recipientID == "" {
+		return nil, ErrIdentityEmpty
+	}
+
+	payload := params.Payload
+	if len(payload) == 0 {
+		return nil, ErrPayloadRequired
+	}
+	if !json.Valid(payload) {
+		return nil, fmt.Errorf("payload must be valid JSON")
+	}
+
+	maxAttempts := params.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+
+	var outbox ChannelOutbox
+	var status string
+	err = q.QueryRow(ctx,
+		`INSERT INTO channel_outbox (
+			tenant_id,
+			channel_message_id,
+			provider,
+			recipient_id,
+			payload,
+			status,
+			max_attempts
+		)
+		VALUES (
+			current_setting('app.current_tenant_id', true)::UUID,
+			$1, $2, $3, $4::jsonb, $5, $6
+		)
+		RETURNING id, tenant_id, channel_message_id, provider, recipient_id, payload, status,
+		          attempt_count, max_attempts, next_attempt_at, last_error, locked_at, sent_at, created_at, updated_at`,
+		messageID,
+		provider,
+		recipientID,
+		payload,
+		OutboxStatusPending,
+		maxAttempts,
+	).Scan(
+		&outbox.ID,
+		&outbox.TenantID,
+		&outbox.ChannelMessageID,
+		&outbox.Provider,
+		&outbox.RecipientID,
+		&outbox.Payload,
+		&status,
+		&outbox.AttemptCount,
+		&outbox.MaxAttempts,
+		&outbox.NextAttemptAt,
+		&outbox.LastError,
+		&outbox.LockedAt,
+		&outbox.SentAt,
+		&outbox.CreatedAt,
+		&outbox.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMessageNotFound
+		}
+		return nil, fmt.Errorf("enqueuing outbound job: %w", err)
+	}
+	outbox.Status = OutboxStatus(status)
+	return &outbox, nil
+}
+
+// ClaimPendingOutbox atomically marks due pending jobs as sending and returns them.
+func (s *Store) ClaimPendingOutbox(ctx context.Context, q database.Querier, now time.Time, limit int) ([]ChannelOutbox, error) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if limit <= 0 {
+		limit = 1
+	}
+
+	rows, err := q.Query(ctx,
+		`WITH due AS (
+			SELECT id
+			FROM channel_outbox
+			WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			  AND status = $1
+			  AND next_attempt_at <= $2
+			ORDER BY next_attempt_at ASC, created_at ASC
+			LIMIT $3
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE channel_outbox outbox
+		SET status = $4,
+		    locked_at = now(),
+		    updated_at = now()
+		FROM due
+		WHERE outbox.id = due.id
+		RETURNING outbox.id, outbox.tenant_id, outbox.channel_message_id, outbox.provider, outbox.recipient_id,
+		          outbox.payload, outbox.status, outbox.attempt_count, outbox.max_attempts, outbox.next_attempt_at,
+		          outbox.last_error, outbox.locked_at, outbox.sent_at, outbox.created_at, outbox.updated_at`,
+		OutboxStatusPending,
+		now,
+		limit,
+		OutboxStatusSending,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("claiming pending outbox jobs: %w", err)
+	}
+	defer rows.Close()
+
+	claimed := make([]ChannelOutbox, 0)
+	for rows.Next() {
+		var job ChannelOutbox
+		var status string
+		if scanErr := rows.Scan(
+			&job.ID,
+			&job.TenantID,
+			&job.ChannelMessageID,
+			&job.Provider,
+			&job.RecipientID,
+			&job.Payload,
+			&status,
+			&job.AttemptCount,
+			&job.MaxAttempts,
+			&job.NextAttemptAt,
+			&job.LastError,
+			&job.LockedAt,
+			&job.SentAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scanning claimed outbox row: %w", scanErr)
+		}
+		job.Status = OutboxStatus(status)
+		claimed = append(claimed, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating claimed outbox rows: %w", err)
+	}
+
+	return claimed, nil
+}

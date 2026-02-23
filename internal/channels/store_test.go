@@ -471,3 +471,110 @@ func TestMessageStore_UpdateMessageStatus_NotFound(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestOutboxStore_EnqueueAndClaim(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantA, tenantB string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Outbox Tenant A', 'outbox-tenant-a') RETURNING id",
+	).Scan(&tenantA)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Outbox Tenant B', 'outbox-tenant-b') RETURNING id",
+	).Scan(&tenantB)
+	require.NoError(t, err)
+
+	var messageAID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		return q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550001111', 'msg-outbox-a', 'idem-outbox-a',
+				'fp-outbox-a', 'corr-outbox-a', 'executed', now() + interval '1 day'
+			) RETURNING id`,
+		).Scan(&messageAID)
+	})
+	require.NoError(t, err)
+
+	var enqueuedA *channels.ChannelOutbox
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		job, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageAID.String(),
+			Provider:         "whatsapp",
+			RecipientID:      "+15550001111",
+			Payload:          json.RawMessage(`{"text":"hello tenant a"}`),
+		})
+		require.NoError(t, enqueueErr)
+		enqueuedA = job
+		assert.Equal(t, channels.OutboxStatusPending, job.Status)
+		assert.Equal(t, 0, job.AttemptCount)
+		assert.Equal(t, tenantA, job.TenantID.String())
+		return nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, enqueuedA)
+
+	var messageBID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		if scanErr := q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-outbox-b', 'idem-outbox-b',
+				'fp-outbox-b', 'corr-outbox-b', 'executed', now() + interval '1 day'
+			) RETURNING id`,
+		).Scan(&messageBID); scanErr != nil {
+			return scanErr
+		}
+
+		_, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageBID.String(),
+			Provider:         "whatsapp",
+			RecipientID:      "+15550002222",
+			Payload:          json.RawMessage(`{"text":"hello tenant b"}`),
+		})
+		return enqueueErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 10)
+		require.NoError(t, claimErr)
+		require.Len(t, claimed, 1)
+		assert.Equal(t, enqueuedA.ID, claimed[0].ID)
+		assert.Equal(t, channels.OutboxStatusSending, claimed[0].Status)
+		assert.Equal(t, 0, claimed[0].AttemptCount)
+		assert.Equal(t, tenantA, claimed[0].TenantID.String())
+
+		again, againErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 10)
+		require.NoError(t, againErr)
+		assert.Empty(t, again)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 10)
+		require.NoError(t, claimErr)
+		require.Len(t, claimed, 1)
+		assert.Equal(t, channels.OutboxStatusSending, claimed[0].Status)
+		assert.Equal(t, tenantB, claimed[0].TenantID.String())
+		assert.Equal(t, messageBID, claimed[0].ChannelMessageID)
+		return nil
+	})
+	require.NoError(t, err)
+}
