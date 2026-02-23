@@ -227,17 +227,10 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 	defer logFile.Close()
 
-	var cmd *exec.Cmd
-	if d.jailer.Enabled {
-		// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
-		cmd = exec.CommandContext(context.Background(), "/bin/true", launchArgs...)
-		cmd.Args[0] = "jailer"
-	} else {
-		// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
-		cmd = exec.CommandContext(context.Background(), "/bin/true", launchArgs...)
-		cmd.Args[0] = "firecracker"
-	}
+	// #nosec G204 -- command name is static and launchArgs are internally constructed from validated paths/IDs.
+	cmd := exec.CommandContext(context.Background(), "/bin/true", launchArgs...)
 	cmd.Path = launchBinaryPath
+	cmd.Args[0] = launchBinaryPath
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = stateDir
