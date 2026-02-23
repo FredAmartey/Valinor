@@ -51,6 +51,7 @@ func (l ChannelLink) IsVerified() bool {
 
 var (
 	ErrLinkNotFound   = errors.New("channel link not found")
+	ErrLinkUnverified = errors.New("channel link is not verified")
 	ErrPlatformEmpty  = errors.New("platform is required")
 	ErrIdentityEmpty  = errors.New("platform user id is required")
 	ErrIdempotencyKey = errors.New("idempotency key is required")
