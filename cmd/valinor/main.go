@@ -16,6 +16,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/platform/server"
 	"github.com/valinor-ai/valinor/internal/platform/telemetry"
 	"github.com/valinor-ai/valinor/internal/proxy"
@@ -120,7 +121,7 @@ func run() error {
 		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
 	}
 	connectorHandler := buildConnectorHandler(pool)
-	channelHandler, err := buildChannelHandler(cfg.Channels)
+	channelHandler, err := buildChannelHandler(pool, cfg.Channels)
 	if err != nil {
 		return fmt.Errorf("building channel handler: %w", err)
 	}
@@ -279,9 +280,12 @@ func buildConnectorHandler(pool *database.Pool) *connectors.Handler {
 	return connectors.NewHandler(pool, connectors.NewStore())
 }
 
-func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
+func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*channels.Handler, error) {
 	if !cfg.Ingress.Enabled {
 		return nil, nil
+	}
+	if pool == nil {
+		return nil, fmt.Errorf("database pool is required when channels ingress is enabled")
 	}
 
 	replayWindow := time.Duration(cfg.Ingress.ReplayWindowSeconds) * time.Second
@@ -289,13 +293,44 @@ func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
 		replayWindow = 24 * time.Hour
 	}
 
-	// Phase-8 prerequisite behavior: fail-closed until real tenant-scoped link resolution is wired.
-	denyUnverifiedLink := func(_ context.Context, _, _ string) (*channels.ChannelLink, error) {
-		return &channels.ChannelLink{State: channels.LinkStatePendingVerification}, nil
+	store := channels.NewStore()
+	resolveLink := func(ctx context.Context, platform, platformUserID string) (*channels.ChannelLink, error) {
+		tenantID := middleware.GetTenantID(ctx)
+		if tenantID == "" {
+			return nil, fmt.Errorf("tenant context required")
+		}
+
+		var link *channels.ChannelLink
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var lookupErr error
+			link, lookupErr = store.GetLinkByIdentity(ctx, q, platform, platformUserID)
+			return lookupErr
+		})
+		return link, err
 	}
-	// Phase-8 prerequisite behavior: deterministic idempotency storage is wired in follow-up phase.
-	recordNoopIdempotency := func(_ context.Context, _ channels.IngressMessage) (bool, error) {
-		return true, nil
+	insertIdempotency := func(ctx context.Context, msg channels.IngressMessage) (bool, error) {
+		tenantID := middleware.GetTenantID(ctx)
+		if tenantID == "" {
+			return false, fmt.Errorf("tenant context required")
+		}
+
+		var firstSeen bool
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var insertErr error
+			firstSeen, insertErr = store.InsertIdempotency(
+				ctx,
+				q,
+				msg.Platform,
+				msg.PlatformUserID,
+				msg.PlatformMessageID,
+				msg.IdempotencyKey,
+				msg.PayloadFingerprint,
+				msg.CorrelationID,
+				msg.ExpiresAt,
+			)
+			return insertErr
+		})
+		return firstSeen, err
 	}
 
 	ingressByProvider := map[string]*channels.IngressGuard{}
@@ -307,8 +342,8 @@ func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
 		ingressByProvider["slack"] = channels.NewIngressGuard(
 			channels.NewSlackVerifier(cfg.Providers.Slack.SigningSecret, 5*time.Minute),
 			replayWindow,
-			denyUnverifiedLink,
-			recordNoopIdempotency,
+			resolveLink,
+			insertIdempotency,
 		)
 	}
 
@@ -319,8 +354,8 @@ func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
 		ingressByProvider["whatsapp"] = channels.NewIngressGuard(
 			channels.NewWhatsAppVerifier(cfg.Providers.WhatsApp.SigningSecret),
 			replayWindow,
-			denyUnverifiedLink,
-			recordNoopIdempotency,
+			resolveLink,
+			insertIdempotency,
 		)
 	}
 
@@ -331,8 +366,8 @@ func buildChannelHandler(cfg config.ChannelsConfig) (*channels.Handler, error) {
 		ingressByProvider["telegram"] = channels.NewIngressGuard(
 			channels.NewTelegramVerifier(cfg.Providers.Telegram.SecretToken),
 			replayWindow,
-			denyUnverifiedLink,
-			recordNoopIdempotency,
+			resolveLink,
+			insertIdempotency,
 		)
 	}
 

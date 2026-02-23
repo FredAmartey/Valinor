@@ -11,10 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
 var errTenantContextRequired = errors.New("tenant context required")
+var errTenantPathRequired = errors.New("tenant path is required")
+var errTenantPathInvalid = errors.New("tenant path must be a valid UUID")
 
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
@@ -30,7 +33,7 @@ func NewHandler(ingressByProvider map[string]*IngressGuard) *Handler {
 }
 
 // HandleWebhook processes inbound provider webhook traffic.
-// POST /api/v1/channels/{provider}/webhook
+// POST /api/v1/tenants/{tenantID}/channels/{provider}/webhook
 func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	provider := strings.ToLower(strings.TrimSpace(r.PathValue("provider")))
 	if provider == "" {
@@ -50,6 +53,13 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, err := resolveWebhookTenantID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	ctx := middleware.WithTenantID(r.Context(), tenantID)
+
 	correlationID := middleware.GetRequestID(r.Context())
 	if correlationID == "" {
 		correlationID = r.Header.Get("X-Request-ID")
@@ -58,8 +68,17 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		correlationID = "channel-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 
-	platformMessageID := r.Header.Get("X-Provider-Message-ID")
-	platformUserID := strings.TrimSpace(r.Header.Get("X-Platform-User-ID"))
+	meta, err := extractIngressMetadata(provider, r.Header, body, time.Now())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":          "invalid webhook payload",
+			"correlation_id": correlationID,
+		})
+		return
+	}
+
+	platformMessageID := meta.PlatformMessageID
+	platformUserID := meta.PlatformUserID
 	digest := sha256.Sum256(body)
 	fingerprint := hex.EncodeToString(digest[:])
 	idempotencyKey := strings.TrimSpace(platformMessageID)
@@ -74,14 +93,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	occurredAt := time.Now()
-	if ts := r.Header.Get("X-Message-Timestamp"); ts != "" {
-		if unixTs, parseErr := strconv.ParseInt(ts, 10, 64); parseErr == nil {
-			occurredAt = time.Unix(unixTs, 0)
-		}
-	}
-
-	result, err := guard.Process(r.Context(), IngressMessage{
+	result, err := guard.Process(ctx, IngressMessage{
 		Platform:           provider,
 		PlatformUserID:     platformUserID,
 		PlatformMessageID:  platformMessageID,
@@ -90,7 +102,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		CorrelationID:      correlationID,
 		Headers:            r.Header,
 		Body:               body,
-		OccurredAt:         occurredAt,
+		OccurredAt:         meta.OccurredAt,
 		ExpiresAt:          time.Now().Add(24 * time.Hour),
 	})
 
@@ -160,6 +172,17 @@ func resolveTenantID(r *http.Request) (string, error) {
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
 		return "", errTenantContextRequired
+	}
+	return tenantID, nil
+}
+
+func resolveWebhookTenantID(r *http.Request) (string, error) {
+	tenantID := strings.TrimSpace(r.PathValue("tenantID"))
+	if tenantID == "" {
+		return "", errTenantPathRequired
+	}
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return "", errTenantPathInvalid
 	}
 	return tenantID, nil
 }
