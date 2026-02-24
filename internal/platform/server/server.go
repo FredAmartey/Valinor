@@ -280,6 +280,16 @@ func New(addr string, deps Dependencies) *Server {
 				http.HandlerFunc(deps.ChannelHandler.HandleDeleteLink),
 			),
 		)
+		protectedMux.Handle("GET /api/v1/channels/outbox",
+			rbac.RequirePermission(deps.RBAC, "channels:outbox:read", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleListOutbox),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/channels/outbox/{id}/requeue",
+			rbac.RequirePermission(deps.RBAC, "channels:outbox:write", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleRequeueOutboxDead),
+			),
+		)
 		protectedMux.Handle("GET /api/v1/channels/providers/{provider}/credentials",
 			rbac.RequirePermission(deps.RBAC, "channels:providers:read", rbacOpts...)(
 				http.HandlerFunc(deps.ChannelHandler.HandleGetProviderCredential),

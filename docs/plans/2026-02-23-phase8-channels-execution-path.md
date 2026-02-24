@@ -28,9 +28,8 @@ Implement the first production-safe execution path after ingress acceptance:
 
 ## Deferred
 
-- User-facing delivery for denied/error outcomes (`denied_*`, `dispatch_failed`).
-- Outbox admin/read/requeue HTTP endpoints.
 - External queue system or separate worker binary.
+- Product/policy copy tuning for denied/error fallback response text.
 
 ## Verification
 

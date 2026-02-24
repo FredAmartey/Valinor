@@ -3,6 +3,7 @@ package channels_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -653,6 +654,7 @@ func TestMessageStore_RecoverDispatchFailuresToOutbox(t *testing.T) {
 	require.NoError(t, err)
 
 	var recoverableMessageID uuid.UUID
+	var deniedRecoverableMessageID uuid.UUID
 	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
 		metadataRecoverable := `{"decision":"dispatch_failed","agent_id":"agent-1","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550007777","outbox_thread_ts":"1710000.12345","response_content":"queued later"}`
 		if scanErr := q.QueryRow(ctx,
@@ -666,6 +668,20 @@ func TestMessageStore_RecoverDispatchFailuresToOutbox(t *testing.T) {
 			) RETURNING id`,
 			metadataRecoverable,
 		).Scan(&recoverableMessageID); scanErr != nil {
+			return scanErr
+		}
+		metadataDeniedRBAC := `{"decision":"denied_rbac","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550009999","response_content":"not authorized"}`
+		if scanErr := q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+					tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+					payload_fingerprint, correlation_id, status, metadata, expires_at
+				) VALUES (
+					current_setting('app.current_tenant_id', true)::UUID,
+					'whatsapp', '+15550009999', 'msg-denied-rbac', 'idem-denied-rbac',
+					'fp-denied-rbac', 'corr-denied-rbac', 'denied_rbac', $1::jsonb, now() + interval '1 day'
+				) RETURNING id`,
+			metadataDeniedRBAC,
+		).Scan(&deniedRecoverableMessageID); scanErr != nil {
 			return scanErr
 		}
 
@@ -724,7 +740,7 @@ func TestMessageStore_RecoverDispatchFailuresToOutbox(t *testing.T) {
 		return recoverErr
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, recovered)
+	assert.Equal(t, 2, recovered)
 
 	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
 		var status string
@@ -739,14 +755,33 @@ func TestMessageStore_RecoverDispatchFailuresToOutbox(t *testing.T) {
 		}
 		assert.Equal(t, channels.MessageStatusExecuted, status)
 		assert.JSONEq(t, `{
-			"decision":"executed",
-			"agent_id":"agent-1",
+				"decision":"executed",
+				"agent_id":"agent-1",
 			"outbox_enqueue_failed":false,
 			"outbox_recipient_id":"+15550007777",
 			"outbox_thread_ts":"1710000.12345",
 			"outbox_recovered":true,
-			"response_content":"queued later"
-		}`, string(metadata))
+				"response_content":"queued later"
+			}`, string(metadata))
+
+		var deniedStatus string
+		var deniedMetadata []byte
+		if scanErr := q.QueryRow(ctx,
+			`SELECT status, metadata
+				 FROM channel_messages
+				 WHERE id = $1`,
+			deniedRecoverableMessageID,
+		).Scan(&deniedStatus, &deniedMetadata); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, channels.MessageStatusDeniedRBAC, deniedStatus)
+		assert.JSONEq(t, `{
+				"decision":"denied_rbac",
+				"outbox_enqueue_failed":false,
+				"outbox_recipient_id":"+15550009999",
+				"outbox_recovered":true,
+				"response_content":"not authorized"
+			}`, string(deniedMetadata))
 
 		var provider, recipientID, payload, outboxStatus string
 		var maxAttempts int
@@ -763,10 +798,27 @@ func TestMessageStore_RecoverDispatchFailuresToOutbox(t *testing.T) {
 		assert.Equal(t, string(channels.OutboxStatusPending), outboxStatus)
 		assert.Equal(t, 9, maxAttempts)
 		assert.JSONEq(t, `{
-			"content":"queued later",
-			"correlation_id":"corr-recoverable",
-			"thread_ts":"1710000.12345"
-		}`, payload)
+				"content":"queued later",
+				"correlation_id":"corr-recoverable",
+				"thread_ts":"1710000.12345"
+			}`, payload)
+
+		var deniedOutboxProvider, deniedOutboxRecipient, deniedOutboxPayload, deniedOutboxStatus string
+		if scanErr := q.QueryRow(ctx,
+			`SELECT provider, recipient_id, payload::text, status
+				 FROM channel_outbox
+				 WHERE channel_message_id = $1`,
+			deniedRecoverableMessageID,
+		).Scan(&deniedOutboxProvider, &deniedOutboxRecipient, &deniedOutboxPayload, &deniedOutboxStatus); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, "whatsapp", deniedOutboxProvider)
+		assert.Equal(t, "+15550009999", deniedOutboxRecipient)
+		assert.Equal(t, string(channels.OutboxStatusPending), deniedOutboxStatus)
+		assert.JSONEq(t, `{
+				"content":"not authorized",
+				"correlation_id":"corr-denied-rbac"
+			}`, deniedOutboxPayload)
 
 		var slackStatus string
 		if scanErr := q.QueryRow(ctx,
@@ -1257,6 +1309,124 @@ func TestOutboxStore_RecoverStaleSending(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestOutboxStore_ListOutbox_FilterAndLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	tenantA := seedTenant(t, ctx, pool, "outbox-list-tenant-a")
+	tenantB := seedTenant(t, ctx, pool, "outbox-list-tenant-b")
+	var err error
+
+	deadAID := seedOutboxJobInTenant(t, ctx, pool, store, tenantA)
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 1)
+		if claimErr != nil {
+			return claimErr
+		}
+		require.Len(t, claimed, 1)
+		if claimed[0].ID != deadAID {
+			return fmt.Errorf("unexpected claimed outbox id %s (want %s)", claimed[0].ID, deadAID)
+		}
+		return store.MarkOutboxDead(ctx, q, deadAID, "dead for listing")
+	})
+	require.NoError(t, err)
+	pendingAID := seedOutboxJobInTenant(t, ctx, pool, store, tenantA)
+
+	_ = seedOutboxJobInTenant(t, ctx, pool, store, tenantB)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		jobs, listErr := store.ListOutbox(ctx, q, "", 10)
+		require.NoError(t, listErr)
+		require.Len(t, jobs, 2)
+		for _, job := range jobs {
+			assert.Equal(t, tenantA, job.TenantID.String())
+		}
+
+		deadJobs, deadErr := store.ListOutbox(ctx, q, string(channels.OutboxStatusDead), 10)
+		require.NoError(t, deadErr)
+		require.Len(t, deadJobs, 1)
+		assert.Equal(t, deadAID, deadJobs[0].ID)
+		assert.Equal(t, channels.OutboxStatusDead, deadJobs[0].Status)
+
+		pendingJobs, pendingErr := store.ListOutbox(ctx, q, string(channels.OutboxStatusPending), 1)
+		require.NoError(t, pendingErr)
+		require.Len(t, pendingJobs, 1)
+		assert.Equal(t, channels.OutboxStatusPending, pendingJobs[0].Status)
+		assert.Equal(t, pendingAID, pendingJobs[0].ID)
+
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestOutboxStore_RequeueDead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	tenantA := seedTenant(t, ctx, pool, "outbox-requeue-tenant-a")
+	tenantB := seedTenant(t, ctx, pool, "outbox-requeue-tenant-b")
+	deadID := seedOutboxJobInTenant(t, ctx, pool, store, tenantA)
+	_ = seedOutboxJobInTenant(t, ctx, pool, store, tenantB)
+	err := database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 1)
+		if claimErr != nil {
+			return claimErr
+		}
+		require.Len(t, claimed, 1)
+		return store.MarkOutboxDead(ctx, q, deadID, "seed dead state")
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, tenantA, tenantB)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		return store.RequeueOutboxDead(ctx, q, deadID)
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		var status string
+		var attemptCount int
+		var nextAttempt time.Time
+		var lastError *string
+		var lockedAt *time.Time
+		rowErr := q.QueryRow(ctx,
+			`SELECT status, attempt_count, next_attempt_at, last_error, locked_at
+			 FROM channel_outbox
+			 WHERE id = $1`,
+			deadID,
+		).Scan(&status, &attemptCount, &nextAttempt, &lastError, &lockedAt)
+		require.NoError(t, rowErr)
+		assert.Equal(t, string(channels.OutboxStatusPending), status)
+		assert.Equal(t, 1, attemptCount)
+		assert.WithinDuration(t, time.Now().UTC(), nextAttempt, 5*time.Second)
+		assert.Nil(t, lastError)
+		assert.Nil(t, lockedAt)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		requeueErr := store.RequeueOutboxDead(ctx, q, deadID)
+		require.ErrorIs(t, requeueErr, channels.ErrOutboxNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func seedAndClaimOutboxJob(
 	t *testing.T,
 	ctx context.Context,
@@ -1314,6 +1484,145 @@ func seedAndClaimOutboxJob(
 		assert.Equal(t, channels.OutboxStatusSending, claimed[0].Status)
 		assert.Equal(t, outboxID, claimed[0].ID)
 		return nil
+	})
+	require.NoError(t, err)
+
+	return tenantID, outboxID
+}
+
+func seedOutboxJob(
+	t *testing.T,
+	ctx context.Context,
+	pool *database.Pool,
+	store *channels.Store,
+	slugPrefix string,
+) (string, uuid.UUID) {
+	t.Helper()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Tenant "+slugPrefix,
+		slugPrefix+"-"+uuid.NewString()[:8],
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var messageID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550004444', $1, $2,
+				$3, $4, 'executed', now() + interval '1 day'
+			) RETURNING id`,
+			"msg-"+uuid.NewString(),
+			"idem-"+uuid.NewString(),
+			"fp-"+uuid.NewString(),
+			"corr-"+uuid.NewString(),
+		).Scan(&messageID)
+	})
+	require.NoError(t, err)
+
+	var outboxID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		job, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageID.String(),
+			Provider:         "whatsapp",
+			RecipientID:      "+15550004444",
+			Payload:          json.RawMessage(`{"text":"seed outbox"}`),
+		})
+		if enqueueErr != nil {
+			return enqueueErr
+		}
+		outboxID = job.ID
+		return nil
+	})
+	require.NoError(t, err)
+
+	return tenantID, outboxID
+}
+
+func seedTenant(t *testing.T, ctx context.Context, pool *database.Pool, slugPrefix string) string {
+	t.Helper()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Tenant "+slugPrefix,
+		slugPrefix+"-"+uuid.NewString()[:8],
+	).Scan(&tenantID)
+	require.NoError(t, err)
+	return tenantID
+}
+
+func seedOutboxJobInTenant(
+	t *testing.T,
+	ctx context.Context,
+	pool *database.Pool,
+	store *channels.Store,
+	tenantID string,
+) uuid.UUID {
+	t.Helper()
+
+	var messageID uuid.UUID
+	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550004444', $1, $2,
+				$3, $4, 'executed', now() + interval '1 day'
+			) RETURNING id`,
+			"msg-"+uuid.NewString(),
+			"idem-"+uuid.NewString(),
+			"fp-"+uuid.NewString(),
+			"corr-"+uuid.NewString(),
+		).Scan(&messageID)
+	})
+	require.NoError(t, err)
+
+	var outboxID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		job, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
+			ChannelMessageID: messageID.String(),
+			Provider:         "whatsapp",
+			RecipientID:      "+15550004444",
+			Payload:          json.RawMessage(`{"text":"seed outbox"}`),
+		})
+		if enqueueErr != nil {
+			return enqueueErr
+		}
+		outboxID = job.ID
+		return nil
+	})
+	require.NoError(t, err)
+	return outboxID
+}
+
+func seedAndMarkOutboxDead(
+	t *testing.T,
+	ctx context.Context,
+	pool *database.Pool,
+	store *channels.Store,
+	slugPrefix string,
+) (string, uuid.UUID) {
+	t.Helper()
+
+	tenantID, outboxID := seedOutboxJob(t, ctx, pool, store, slugPrefix)
+
+	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 1)
+		if claimErr != nil {
+			return claimErr
+		}
+		require.Len(t, claimed, 1)
+		require.Equal(t, outboxID, claimed[0].ID)
+		return store.MarkOutboxDead(ctx, q, outboxID, "seed dead state")
 	})
 	require.NoError(t, err)
 

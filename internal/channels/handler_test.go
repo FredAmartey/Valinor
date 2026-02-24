@@ -341,6 +341,98 @@ func TestHandleWebhook_EnqueueFailureReturns500AndDispatchFailed(t *testing.T) {
 	assert.JSONEq(t, `{"decision":"dispatch_failed","agent_id":"agent-123","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550001111","response_content":"agent response body"}`, string(persistedMetadata))
 }
 
+func TestHandleWebhook_DeniedRBACEnqueuesOutboxFallback(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	enqueueCalled := false
+	var enqueueContent string
+	var persistedStatus string
+	var persistedMetadata json.RawMessage
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{Decision: IngressDeniedRBAC}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _, responseContent string) error {
+		enqueueCalled = true
+		enqueueContent = responseContent
+		return nil
+	}
+	h.updateMessageStatus = func(_ context.Context, _, _, _, status string, metadata json.RawMessage) error {
+		persistedStatus = status
+		persistedMetadata = metadata
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("blocked action")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, enqueueCalled)
+	assert.Equal(t, "I can't perform that action from this channel.", enqueueContent)
+	assert.Equal(t, MessageStatusDeniedRBAC, persistedStatus)
+	assert.JSONEq(t, `{"decision":"denied_rbac","outbox_enqueue_failed":false,"outbox_recipient_id":"+15550001111","response_content":"I can't perform that action from this channel."}`, string(persistedMetadata))
+}
+
+func TestHandleWebhook_DeniedRBACEnqueueFailurePersistsMetadata(t *testing.T) {
+	guard := NewIngressGuard(
+		stubVerifier{},
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{
+				TenantID: uuid.MustParse("190f3a21-3b2c-42ce-b26e-2f448a58ec14"),
+				UserID:   uuid.MustParse("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
+				State:    LinkStateVerified,
+			}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) { return true, nil },
+	)
+
+	var persistedStatus string
+	var persistedMetadata json.RawMessage
+
+	h := NewHandler(map[string]*IngressGuard{"whatsapp": guard}).WithExecutor(
+		func(_ context.Context, _ ExecutionMessage) ExecutionResult {
+			return ExecutionResult{Decision: IngressDeniedRBAC}
+		},
+	)
+	h.enqueueOutbound = func(_ context.Context, _, _, _, _, _, _, _ string) error {
+		return errors.New("enqueue failed")
+	}
+	h.updateMessageStatus = func(_ context.Context, _, _, _, status string, metadata json.RawMessage) error {
+		persistedStatus = status
+		persistedMetadata = metadata
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/190f3a21-3b2c-42ce-b26e-2f448a58ec14/channels/whatsapp/webhook", strings.NewReader(testWhatsAppWebhookBodyWithText("blocked action")))
+	req.SetPathValue("provider", "whatsapp")
+	req.SetPathValue("tenantID", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	w := httptest.NewRecorder()
+
+	h.HandleWebhook(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, MessageStatusDeniedRBAC, persistedStatus)
+	assert.JSONEq(t, `{"decision":"denied_rbac","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550001111","response_content":"I can't perform that action from this channel."}`, string(persistedMetadata))
+}
+
 func TestHandleWebhook_DuplicateDispatchFailedRequeuesWithoutReexecution(t *testing.T) {
 	insertCalls := 0
 	guard := NewIngressGuard(
@@ -972,6 +1064,90 @@ func TestHandleListLinks_ReturnsLinks(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
 	require.Len(t, out, 1)
 	assert.Equal(t, expectedID, out[0].ID)
+}
+
+func TestHandleListOutbox_ReturnsRows(t *testing.T) {
+	h := NewHandler(nil)
+	expectedID := uuid.New()
+	h.listOutbox = func(_ context.Context, tenantID, status string, limit int) ([]ChannelOutbox, error) {
+		assert.Equal(t, "tenant-outbox", tenantID)
+		assert.Equal(t, "dead", status)
+		assert.Equal(t, 2, limit)
+		return []ChannelOutbox{{
+			ID:          expectedID,
+			Provider:    "whatsapp",
+			RecipientID: "+15551112222",
+			Status:      OutboxStatusDead,
+		}}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/outbox?status=dead&limit=2", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-outbox"))
+	w := httptest.NewRecorder()
+
+	h.HandleListOutbox(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var out []ChannelOutbox
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
+	require.Len(t, out, 1)
+	assert.Equal(t, expectedID, out[0].ID)
+	assert.Equal(t, OutboxStatusDead, out[0].Status)
+}
+
+func TestHandleListOutbox_InvalidLimitRejected(t *testing.T) {
+	h := NewHandler(nil)
+	h.listOutbox = func(_ context.Context, _, _ string, _ int) ([]ChannelOutbox, error) {
+		t.Fatalf("listOutbox should not be called for invalid limit")
+		return nil, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/outbox?limit=0", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-outbox"))
+	w := httptest.NewRecorder()
+
+	h.HandleListOutbox(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "limit")
+}
+
+func TestHandleRequeueOutboxDead_RequeuesJob(t *testing.T) {
+	h := NewHandler(nil)
+	jobID := "190f3a21-3b2c-42ce-b26e-2f448a58ec14"
+	h.requeueOutboxDead = func(_ context.Context, tenantID string, outboxID uuid.UUID) error {
+		assert.Equal(t, "tenant-outbox", tenantID)
+		assert.Equal(t, jobID, outboxID.String())
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/outbox/"+jobID+"/requeue", nil)
+	req.SetPathValue("id", jobID)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-outbox"))
+	w := httptest.NewRecorder()
+
+	h.HandleRequeueOutboxDead(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	assert.Contains(t, w.Body.String(), jobID)
+}
+
+func TestHandleRequeueOutboxDead_InvalidIDRejected(t *testing.T) {
+	h := NewHandler(nil)
+	h.requeueOutboxDead = func(_ context.Context, _ string, _ uuid.UUID) error {
+		t.Fatalf("requeueOutboxDead should not be called for invalid id")
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/outbox/not-a-uuid/requeue", nil)
+	req.SetPathValue("id", "not-a-uuid")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-outbox"))
+	w := httptest.NewRecorder()
+
+	h.HandleRequeueOutboxDead(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "outbox")
 }
 
 func TestHandleCreateLink_ValidRequest(t *testing.T) {

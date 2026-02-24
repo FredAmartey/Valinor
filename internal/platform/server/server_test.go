@@ -81,6 +81,7 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	rbacEngine.RegisterRole("connectors_user", []string{"connectors:read", "connectors:write"})
 	rbacEngine.RegisterRole("channels_user", []string{"channels:links:read", "channels:links:write"})
 	rbacEngine.RegisterRole("channels_provider_user", []string{"channels:providers:read", "channels:providers:write"})
+	rbacEngine.RegisterRole("channels_outbox_user", []string{"channels:outbox:read", "channels:outbox:write"})
 
 	// Wire a minimal agent handler (nil pool — will fail on DB calls but routes exist)
 	driver := orchestrator.NewMockDriver()
@@ -269,6 +270,46 @@ func TestServer_ChannelProviderCredentials_LegacyTenantPathNotRegistered(t *test
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/tenant-1/channels/providers/slack/credentials", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestServer_ChannelOutbox_RouteNormalized(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID: "user-channel-outbox",
+		Roles:  []string{"channels_outbox_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/outbox", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestServer_ChannelOutbox_LegacyTenantPathNotRegistered(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID: "user-channel-outbox",
+		Roles:  []string{"channels_outbox_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/tenant-1/channels/outbox", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
