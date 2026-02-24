@@ -15,11 +15,32 @@ import (
 
 // Store handles channels database operations.
 // Methods accept database.Querier so they can run inside WithTenantConnection.
-type Store struct{}
+type Store struct {
+	credentialCrypto *CredentialCrypto
+}
+
+// StoreOption customizes store dependencies.
+type StoreOption func(*Store)
+
+// WithCredentialCrypto configures credential encryption/decryption for provider secret fields.
+func WithCredentialCrypto(crypto *CredentialCrypto) StoreOption {
+	return func(store *Store) {
+		if store == nil {
+			return
+		}
+		store.credentialCrypto = crypto
+	}
+}
 
 // NewStore creates a new channels store.
-func NewStore() *Store {
-	return &Store{}
+func NewStore(options ...StoreOption) *Store {
+	store := &Store{}
+	for _, option := range options {
+		if option != nil {
+			option(store)
+		}
+	}
+	return store
 }
 
 // ListLinks returns all channel links visible in tenant scope.
@@ -279,6 +300,9 @@ func (s *Store) GetProviderCredential(ctx context.Context, q database.Querier, p
 		}
 		return nil, fmt.Errorf("getting provider credential: %w", err)
 	}
+	if err := s.decryptCredentialFields(&credential); err != nil {
+		return nil, fmt.Errorf("getting provider credential: %w", err)
+	}
 	return &credential, nil
 }
 
@@ -309,6 +333,19 @@ func (s *Store) UpsertProviderCredential(ctx context.Context, q database.Querier
 		return nil, ErrProviderSecretTokenRequired
 	}
 
+	encryptedAccessToken, err := s.encryptCredentialValue(accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("upserting provider credential: %w", err)
+	}
+	encryptedSigningSecret, err := s.encryptCredentialValue(signingSecret)
+	if err != nil {
+		return nil, fmt.Errorf("upserting provider credential: %w", err)
+	}
+	encryptedSecretToken, err := s.encryptCredentialValue(secretToken)
+	if err != nil {
+		return nil, fmt.Errorf("upserting provider credential: %w", err)
+	}
+
 	var credential ProviderCredential
 	err = q.QueryRow(ctx,
 		`INSERT INTO channel_provider_credentials (
@@ -327,9 +364,9 @@ func (s *Store) UpsertProviderCredential(ctx context.Context, q database.Querier
 			updated_at = now()
 		RETURNING id, tenant_id, provider, access_token, signing_secret, secret_token, api_base_url, api_version, phone_number_id, created_at, updated_at`,
 		provider,
-		accessToken,
-		signingSecret,
-		secretToken,
+		encryptedAccessToken,
+		encryptedSigningSecret,
+		encryptedSecretToken,
 		strings.TrimSpace(params.APIBaseURL),
 		strings.TrimSpace(params.APIVersion),
 		phoneNumberID,
@@ -347,6 +384,9 @@ func (s *Store) UpsertProviderCredential(ctx context.Context, q database.Querier
 		&credential.UpdatedAt,
 	)
 	if err != nil {
+		return nil, fmt.Errorf("upserting provider credential: %w", err)
+	}
+	if err := s.decryptCredentialFields(&credential); err != nil {
 		return nil, fmt.Errorf("upserting provider credential: %w", err)
 	}
 	return &credential, nil
@@ -386,6 +426,65 @@ func normalizeCredentialProvider(provider string) (string, error) {
 	default:
 		return "", ErrProviderUnsupported
 	}
+}
+
+func (s *Store) encryptCredentialValue(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if s.credentialCrypto == nil {
+		return "", ErrProviderCredentialCipherRequired
+	}
+
+	encrypted, err := s.credentialCrypto.Encrypt(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrProviderCredentialEncryptFailed, err)
+	}
+	return encrypted, nil
+}
+
+func (s *Store) decryptCredentialValue(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	if !IsEncryptedCredentialValue(trimmed) {
+		return trimmed, nil
+	}
+	if s.credentialCrypto == nil {
+		return "", ErrProviderCredentialCipherRequired
+	}
+
+	decrypted, err := s.credentialCrypto.Decrypt(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrProviderCredentialDecryptFailed, err)
+	}
+	return decrypted, nil
+}
+
+func (s *Store) decryptCredentialFields(credential *ProviderCredential) error {
+	if credential == nil {
+		return nil
+	}
+
+	accessToken, err := s.decryptCredentialValue(credential.AccessToken)
+	if err != nil {
+		return fmt.Errorf("decrypting access token: %w", err)
+	}
+	signingSecret, err := s.decryptCredentialValue(credential.SigningSecret)
+	if err != nil {
+		return fmt.Errorf("decrypting signing secret: %w", err)
+	}
+	secretToken, err := s.decryptCredentialValue(credential.SecretToken)
+	if err != nil {
+		return fmt.Errorf("decrypting secret token: %w", err)
+	}
+
+	credential.AccessToken = accessToken
+	credential.SigningSecret = signingSecret
+	credential.SecretToken = secretToken
+	return nil
 }
 
 // InsertIdempotency records a message idempotency key.
