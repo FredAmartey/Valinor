@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,4 +358,58 @@ func TestOpenClawProxy_RejectsRemoteEndpoint(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(reply.Payload, &payload))
 	assert.Equal(t, "invalid_config", payload.Code)
+}
+
+func TestOpenClawProxy_AllowsRemoteEndpointWithOverride(t *testing.T) {
+	agent := &Agent{
+		cfg: AgentConfig{
+			OpenClawURL:         "http://example.com:8081",
+			AllowRemoteOpenClaw: true,
+		},
+		httpClient: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				assert.Equal(t, "example.com:8081", req.URL.Host)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(
+						`{"choices":[{"message":{"content":"override-ok"}}]}`,
+					)),
+				}, nil
+			}),
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-remote-override",
+		Payload: json.RawMessage(`{"role":"user","content":"hello"}`),
+	}
+	err = cp.Send(ctx, msg)
+	require.NoError(t, err)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeChunk, reply.Type)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

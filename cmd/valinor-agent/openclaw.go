@@ -30,7 +30,7 @@ type openClawResponse struct {
 
 // forwardToOpenClaw sends a message to OpenClaw and returns response frames.
 func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
-	if err := validateOpenClawURL(a.cfg.OpenClawURL, false); err != nil {
+	if err := validateOpenClawURL(a.cfg.OpenClawURL, a.cfg.AllowRemoteOpenClaw); err != nil {
 		a.sendError(ctx, conn, frame.ID, "invalid_config", err.Error())
 		return
 	}

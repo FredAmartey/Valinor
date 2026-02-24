@@ -43,9 +43,10 @@ func run() error {
 	}
 
 	agent := NewAgent(AgentConfig{
-		Transport:   *transportFlag,
-		Port:        uint32(*portFlag), // #nosec G115 -- bounds checked above
-		OpenClawURL: *openclawURL,
+		Transport:           *transportFlag,
+		Port:                uint32(*portFlag), // #nosec G115 -- bounds checked above
+		OpenClawURL:         *openclawURL,
+		AllowRemoteOpenClaw: *allowRemoteOpenClaw,
 	})
 
 	return agent.Run(ctx)
