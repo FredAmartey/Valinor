@@ -275,6 +275,35 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		assert.Equal(t, 37*time.Second, retryAfter)
 	})
 
+	t.Run("returns transient retry-after error on 503 with retry-after header", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Retry-After", "15")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"ok":false,"error":"temporarily_unavailable"}`))
+		}))
+		defer srv.Close()
+
+		sender := newSlackOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "xoxb-test-token",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "slack",
+			RecipientID: "C12345678",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.False(t, channels.IsOutboxPermanentError(err))
+		retryAfter, ok := channels.OutboxRetryAfter(err)
+		assert.True(t, ok)
+		assert.Equal(t, 15*time.Second, retryAfter)
+	})
+
 	t.Run("returns error when slack API rejects request", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -463,6 +492,37 @@ func TestWhatsAppOutboxSender_Send(t *testing.T) {
 		assert.False(t, channels.IsOutboxPermanentError(err))
 	})
 
+	t.Run("returns transient retry-after error when whatsapp API returns 503 with retry-after header", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Retry-After", "22")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"upstream unavailable"}}`))
+		}))
+		defer srv.Close()
+
+		sender := newWhatsAppOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:       true,
+				APIBaseURL:    srv.URL,
+				APIVersion:    "v22.0",
+				AccessToken:   "token-123",
+				PhoneNumberID: "987654321",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "whatsapp",
+			RecipientID: "15550009999",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.False(t, channels.IsOutboxPermanentError(err))
+		retryAfter, ok := channels.OutboxRetryAfter(err)
+		assert.True(t, ok)
+		assert.Equal(t, 22*time.Second, retryAfter)
+	})
+
 	t.Run("returns error for malformed outbox payload", func(t *testing.T) {
 		sender := newWhatsAppOutboxSender(
 			config.ChannelProviderConfig{
@@ -614,6 +674,69 @@ func TestTelegramOutboxSender_Send(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 502")
 		assert.False(t, channels.IsOutboxPermanentError(err))
+	})
+
+	t.Run("returns transient retry-after error on 429 with retry-after header", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Retry-After", "44")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"Too Many Requests"}`))
+		}))
+		defer srv.Close()
+
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "123456:ABCDEF",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.False(t, channels.IsOutboxPermanentError(err))
+		retryAfter, ok := channels.OutboxRetryAfter(err)
+		assert.True(t, ok)
+		assert.Equal(t, 44*time.Second, retryAfter)
+	})
+
+	t.Run("returns transient retry-after error on 503 with retry-after date", func(t *testing.T) {
+		now := time.Now().UTC()
+		retryAfterAt := now.Add(61 * time.Second)
+		retryAfterHeader := retryAfterAt.Format(http.TimeFormat)
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Retry-After", retryAfterHeader)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"Service Unavailable"}`))
+		}))
+		defer srv.Close()
+
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "123456:ABCDEF",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.False(t, channels.IsOutboxPermanentError(err))
+		retryAfter, ok := channels.OutboxRetryAfter(err)
+		assert.True(t, ok)
+		assert.GreaterOrEqual(t, retryAfter, 59*time.Second)
+		assert.LessOrEqual(t, retryAfter, 62*time.Second)
 	})
 
 	t.Run("returns error when telegram API rejects request", func(t *testing.T) {
