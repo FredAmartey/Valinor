@@ -84,6 +84,25 @@ func TestBuildChannelHandler(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, handler)
 	})
+
+	t.Run("invalid channel credential key fails", func(t *testing.T) {
+		pool := (*database.Pool)(&pgxpool.Pool{})
+		_, err := buildChannelHandler(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{
+				Enabled: true,
+			},
+			Credentials: config.ChannelsCredentialsConfig{
+				Key: "not-base64",
+			},
+			Providers: config.ChannelsProvidersConfig{
+				Slack: config.ChannelProviderConfig{
+					Enabled: true,
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "provider credential encryption key")
+	})
 }
 
 func TestBuildChannelOutboxWorker(t *testing.T) {
@@ -185,6 +204,26 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.NotNil(t, worker)
+	})
+
+	t.Run("invalid channel credential key fails worker build", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Credentials: config.ChannelsCredentialsConfig{
+				Key: "not-base64",
+			},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled: true,
+			},
+			Providers: config.ChannelsProvidersConfig{
+				Slack: config.ChannelProviderConfig{
+					Enabled: true,
+				},
+			},
+		})
+		require.Error(t, err)
+		assert.Nil(t, worker)
+		assert.Contains(t, err.Error(), "provider credential encryption key")
 	})
 }
 

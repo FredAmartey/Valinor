@@ -369,7 +369,10 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 		replayWindow = 24 * time.Hour
 	}
 
-	store := channels.NewStore()
+	store, err := buildChannelStore(cfg)
+	if err != nil {
+		return nil, err
+	}
 	resolveVerifier := newChannelVerifierResolver(pool, store)
 	resolveLink := func(ctx context.Context, platform, platformUserID string) (*channels.ChannelLink, error) {
 		tenantID := middleware.GetTenantID(ctx)
@@ -445,6 +448,19 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 	}
 
 	return channels.NewHandler(ingressByProvider).WithLinkStore(pool, store), nil
+}
+
+func buildChannelStore(cfg config.ChannelsConfig) (*channels.Store, error) {
+	credentialKey := strings.TrimSpace(cfg.Credentials.Key)
+	if credentialKey == "" {
+		return channels.NewStore(), nil
+	}
+
+	crypto, err := channels.NewCredentialCrypto(credentialKey)
+	if err != nil {
+		return nil, fmt.Errorf("provider credential encryption key is invalid: %w", err)
+	}
+	return channels.NewStore(channels.WithCredentialCrypto(crypto)), nil
 }
 
 type dynamicVerifier struct {

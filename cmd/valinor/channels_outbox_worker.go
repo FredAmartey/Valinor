@@ -34,7 +34,10 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 		tenantScanPageSize = defaultTenantScanPageSize
 	}
 
-	store := channels.NewStore()
+	store, err := buildChannelStore(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building channel store: %w", err)
+	}
 	credentialResolver := newDBOutboxProviderCredentialResolver(pool, store, cfg.Providers)
 	sender, err := buildChannelOutboxSender(cfg, credentialResolver)
 	if err != nil {

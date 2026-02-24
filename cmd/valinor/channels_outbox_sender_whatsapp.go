@@ -164,6 +164,10 @@ func isOutboxCredentialResolutionPermanent(err error) bool {
 		return true
 	case errors.Is(err, channels.ErrProviderPhoneNumberIDRequired):
 		return true
+	case errors.Is(err, channels.ErrProviderCredentialCipherRequired):
+		return true
+	case errors.Is(err, channels.ErrProviderCredentialDecryptFailed):
+		return true
 	case errors.Is(err, channels.ErrPlatformEmpty):
 		return true
 	default:
