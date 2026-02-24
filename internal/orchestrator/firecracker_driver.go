@@ -669,6 +669,7 @@ func createSparseDataDrive(path string, quotaMB int) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
+	// #nosec G304 -- path is validated absolute and derived from driver-managed state dir.
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
