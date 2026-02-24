@@ -21,12 +21,18 @@ func run() error {
 	transportFlag := flag.String("transport", "vsock", "transport type: vsock or tcp")
 	portFlag := flag.Int("port", 1024, "listen port (vsock port or TCP port)")
 	openclawURL := flag.String("openclaw-url", "http://localhost:8081", "OpenClaw API URL")
+	allowRemoteOpenClaw := flag.Bool("allow-remote-openclaw", false, "allow non-loopback OpenClaw URL (unsafe)")
 	flag.Parse()
+
+	if err := validateOpenClawURL(*openclawURL, *allowRemoteOpenClaw); err != nil {
+		return fmt.Errorf("invalid openclaw endpoint configuration: %w", err)
+	}
 
 	slog.Info("valinor-agent starting",
 		"transport", *transportFlag,
 		"port", *portFlag,
 		"openclaw_url", *openclawURL,
+		"allow_remote_openclaw", *allowRemoteOpenClaw,
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
