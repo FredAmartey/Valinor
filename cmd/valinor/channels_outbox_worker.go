@@ -105,6 +105,14 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 		slog.Error("channel outbox worker failed to list tenants", "error", err)
 		return
 	}
+	recoveryBatchSize := w.recoveryBatchSize
+	if recoveryBatchSize <= 0 {
+		recoveryBatchSize = 1
+	}
+	recoveryMaxAttempts := w.recoveryMaxAttempts
+	if recoveryMaxAttempts <= 0 {
+		recoveryMaxAttempts = 5
+	}
 
 	for _, tenantID := range tenantIDs {
 		if ctx.Err() != nil {
@@ -117,14 +125,14 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 				recovered, recoverErr := w.store.RecoverDispatchFailuresToOutbox(
 					ctx,
 					q,
-					w.recoveryBatchSize,
-					w.recoveryMaxAttempts,
+					recoveryBatchSize,
+					recoveryMaxAttempts,
 				)
 				if recoverErr != nil {
 					return recoverErr
 				}
 				totalRecovered += recovered
-				if recovered < w.recoveryBatchSize {
+				if recovered < recoveryBatchSize {
 					break
 				}
 			}
