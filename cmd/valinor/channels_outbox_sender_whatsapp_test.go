@@ -144,6 +144,15 @@ func TestIsPermanentOutboxHTTPStatus(t *testing.T) {
 	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusNotFound))
 }
 
+func TestParseRetryAfterDuration_HTTPDate(t *testing.T) {
+	now := time.Date(2026, 2, 24, 0, 35, 0, 0, time.UTC)
+	headerValue := now.Add(75 * time.Second).Format(http.TimeFormat)
+
+	delay, ok := parseRetryAfterDuration(headerValue, now)
+	assert.True(t, ok)
+	assert.Equal(t, 75*time.Second, delay)
+}
+
 func TestSlackOutboxSender_Send(t *testing.T) {
 	t.Run("sends slack chat.postMessage payload", func(t *testing.T) {
 		var seenAuth string

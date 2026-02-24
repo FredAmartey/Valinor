@@ -132,6 +132,9 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context, q database.Querier)
 				if retryAfter, ok := OutboxRetryAfter(err); ok && retryAfter > retryDelay {
 					retryDelay = retryAfter
 				}
+				if retryDelay > d.cfg.MaxRetryDelay {
+					retryDelay = d.cfg.MaxRetryDelay
+				}
 				nextAttempt := now.Add(retryDelay)
 				if retryErr := d.store.MarkOutboxRetry(ctx, q, job.ID, nextAttempt, errText); retryErr != nil {
 					return processed, fmt.Errorf("marking outbox retry: %w", retryErr)
