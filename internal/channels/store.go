@@ -711,6 +711,221 @@ func (s *Store) GetMessageByIdempotencyKey(ctx context.Context, q database.Queri
 	return &record, nil
 }
 
+// RecoverDispatchFailuresToOutbox claims tenant-scoped terminal rows that failed
+// initial outbox enqueue, creates outbox jobs, and marks recovered metadata.
+// dispatch_failed rows are transitioned back to executed; denied_* rows keep status.
+func (s *Store) RecoverDispatchFailuresToOutbox(
+	ctx context.Context,
+	q database.Querier,
+	limit int,
+	maxAttempts int,
+) (int, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+
+	var recovered int
+	err := q.QueryRow(ctx,
+		`WITH candidates AS (
+			SELECT
+				msg.id,
+				msg.tenant_id,
+				msg.platform,
+				msg.correlation_id,
+				NULLIF(BTRIM(msg.metadata->>'response_content'), '') AS response_content,
+				COALESCE(
+					NULLIF(BTRIM(msg.metadata->>'outbox_recipient_id'), ''),
+					CASE
+						WHEN msg.platform = 'slack' THEN NULL
+						ELSE NULLIF(BTRIM(msg.platform_user_id), '')
+					END
+				) AS recipient_id,
+				NULLIF(BTRIM(msg.metadata->>'outbox_thread_ts'), '') AS thread_ts
+			FROM channel_messages msg
+			WHERE msg.tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			  AND msg.status IN ($1, $2, $3, $4)
+			  AND msg.metadata @> '{"outbox_enqueue_failed": true}'::jsonb
+			  AND NULLIF(BTRIM(msg.metadata->>'response_content'), '') IS NOT NULL
+			  AND NULLIF(BTRIM(msg.correlation_id), '') IS NOT NULL
+			ORDER BY msg.first_seen_at ASC, msg.id ASC
+			LIMIT $5
+			FOR UPDATE SKIP LOCKED
+		),
+		eligible AS (
+			SELECT *
+			FROM candidates
+			WHERE recipient_id IS NOT NULL
+		),
+		enqueued AS (
+			INSERT INTO channel_outbox (
+				tenant_id,
+				channel_message_id,
+				provider,
+				recipient_id,
+				payload,
+				status,
+				max_attempts
+			)
+			SELECT
+				eligible.tenant_id,
+				eligible.id,
+				eligible.platform,
+				eligible.recipient_id,
+					jsonb_strip_nulls(jsonb_build_object(
+						'content', eligible.response_content,
+						'correlation_id', eligible.correlation_id,
+						'thread_ts', eligible.thread_ts
+					)),
+					$6,
+					$7
+				FROM eligible
+				RETURNING channel_message_id
+			),
+			updated AS (
+				UPDATE channel_messages msg
+				SET status = CASE WHEN msg.status = $8 THEN $9 ELSE msg.status END,
+				    metadata = COALESCE(msg.metadata, '{}'::jsonb)
+				        || jsonb_build_object(
+				        	'decision',
+				        	CASE
+				        		WHEN msg.status = $8 THEN $9
+				        		ELSE COALESCE(NULLIF(BTRIM(msg.metadata->>'decision'), ''), msg.status)
+				        	END,
+				        	'outbox_enqueue_failed', false,
+				        	'outbox_recovered', true
+				        )
+				FROM enqueued
+				WHERE msg.id = enqueued.channel_message_id
+				RETURNING msg.id
+			)
+			SELECT COUNT(*)
+			FROM updated`,
+		MessageStatusDispatchFailed,
+		MessageStatusDeniedRBAC,
+		MessageStatusDeniedNoAgent,
+		MessageStatusDeniedSentinel,
+		limit,
+		OutboxStatusPending,
+		maxAttempts,
+		MessageStatusDispatchFailed,
+		MessageStatusExecuted,
+	).Scan(&recovered)
+	if err != nil {
+		return 0, fmt.Errorf("recovering dispatch failures to outbox: %w", err)
+	}
+
+	return recovered, nil
+}
+
+// ListOutbox returns tenant-scoped outbox jobs, optionally filtered by status.
+func (s *Store) ListOutbox(ctx context.Context, q database.Querier, status string, limit int) ([]ChannelOutbox, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	statusFilter := strings.TrimSpace(strings.ToLower(status))
+	if statusFilter != "" {
+		switch OutboxStatus(statusFilter) {
+		case OutboxStatusPending, OutboxStatusSending, OutboxStatusSent, OutboxStatusDead:
+		default:
+			return nil, ErrOutboxStatus
+		}
+	}
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if statusFilter == "" {
+		rows, err = q.Query(ctx,
+			`SELECT id, tenant_id, channel_message_id, provider, recipient_id, payload, status,
+			        attempt_count, max_attempts, next_attempt_at, last_error, locked_at, sent_at, created_at, updated_at
+			 FROM channel_outbox
+			 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT $1`,
+			limit,
+		)
+	} else {
+		rows, err = q.Query(ctx,
+			`SELECT id, tenant_id, channel_message_id, provider, recipient_id, payload, status,
+			        attempt_count, max_attempts, next_attempt_at, last_error, locked_at, sent_at, created_at, updated_at
+			 FROM channel_outbox
+			 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			   AND status = $1
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT $2`,
+			statusFilter,
+			limit,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing outbox jobs: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := make([]ChannelOutbox, 0)
+	for rows.Next() {
+		var job ChannelOutbox
+		var rawStatus string
+		if scanErr := rows.Scan(
+			&job.ID,
+			&job.TenantID,
+			&job.ChannelMessageID,
+			&job.Provider,
+			&job.RecipientID,
+			&job.Payload,
+			&rawStatus,
+			&job.AttemptCount,
+			&job.MaxAttempts,
+			&job.NextAttemptAt,
+			&job.LastError,
+			&job.LockedAt,
+			&job.SentAt,
+			&job.CreatedAt,
+			&job.UpdatedAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scanning outbox job row: %w", scanErr)
+		}
+		job.Status = OutboxStatus(rawStatus)
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating outbox jobs: %w", err)
+	}
+
+	return jobs, nil
+}
+
+// RequeueOutboxDead moves a dead-lettered tenant outbox job back to pending.
+func (s *Store) RequeueOutboxDead(ctx context.Context, q database.Querier, outboxID uuid.UUID) error {
+	cmd, err := q.Exec(ctx,
+		`UPDATE channel_outbox
+		 SET status = $2,
+		     next_attempt_at = now(),
+		     last_error = NULL,
+		     locked_at = NULL,
+		     sent_at = NULL,
+		     updated_at = now()
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND id = $1
+		   AND status = $3`,
+		outboxID,
+		OutboxStatusPending,
+		OutboxStatusDead,
+	)
+	if err != nil {
+		return fmt.Errorf("requeueing dead outbox job: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrOutboxNotFound
+	}
+	return nil
+}
+
 // EnqueueOutbound inserts a new tenant-scoped outbox job for async provider send.
 func (s *Store) EnqueueOutbound(ctx context.Context, q database.Querier, params EnqueueOutboundParams) (*ChannelOutbox, error) {
 	messageIDValue := strings.TrimSpace(params.ChannelMessageID)

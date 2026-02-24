@@ -26,6 +26,8 @@ var errTenantPathInvalid = errors.New("tenant path must be a valid UUID")
 type listLinksFunc func(ctx context.Context, tenantID string) ([]ChannelLink, error)
 type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platformUserID string, state LinkState, verificationMethod string, verificationMetadata json.RawMessage) (*ChannelLink, error)
 type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
+type listOutboxFunc func(ctx context.Context, tenantID, status string, limit int) ([]ChannelOutbox, error)
+type requeueOutboxDeadFunc func(ctx context.Context, tenantID string, outboxID uuid.UUID) error
 type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
 type getMessageByIdempotencyKeyFunc func(ctx context.Context, tenantID, platform, idempotencyKey string) (*ChannelMessageRecord, error)
 type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, outboxThreadTS, correlationID, responseContent string) error
@@ -39,6 +41,8 @@ type Handler struct {
 	listLinks                  listLinksFunc
 	upsertLink                 upsertLinkFunc
 	deleteLink                 deleteLinkFunc
+	listOutbox                 listOutboxFunc
+	requeueOutboxDead          requeueOutboxDeadFunc
 	updateMessageStatus        updateMessageStatusFunc
 	getMessageByIdempotencyKey getMessageByIdempotencyKeyFunc
 	enqueueOutbound            enqueueOutboundFunc
@@ -62,6 +66,8 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		h.listLinks = nil
 		h.upsertLink = nil
 		h.deleteLink = nil
+		h.listOutbox = nil
+		h.requeueOutboxDead = nil
 		h.updateMessageStatus = nil
 		h.getMessageByIdempotencyKey = nil
 		h.enqueueOutbound = nil
@@ -101,6 +107,22 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 	h.deleteLink = func(ctx context.Context, tenantID, id string) error {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			return store.DeleteLink(ctx, q, id)
+		})
+	}
+
+	h.listOutbox = func(ctx context.Context, tenantID, status string, limit int) ([]ChannelOutbox, error) {
+		var jobs []ChannelOutbox
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var listErr error
+			jobs, listErr = store.ListOutbox(ctx, q, status, limit)
+			return listErr
+		})
+		return jobs, err
+	}
+
+	h.requeueOutboxDead = func(ctx context.Context, tenantID string, outboxID uuid.UUID) error {
+		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			return store.RequeueOutboxDead(ctx, q, outboxID)
 		})
 	}
 
@@ -382,7 +404,13 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 					executedAgentID = execResult.AgentID
 				}
 				messageResponseContent = execResult.ResponseContent
-				if messageDecision == IngressExecuted && h.enqueueOutbound != nil {
+				if messageResponseContent == "" {
+					messageResponseContent = defaultOutboundContentForDecision(messageDecision)
+				}
+				shouldEnqueue := h.enqueueOutbound != nil &&
+					shouldEnqueueOutboundForDecision(messageDecision) &&
+					strings.TrimSpace(messageResponseContent) != ""
+				if shouldEnqueue {
 					if provider == "slack" && outboundRecipientID == "" {
 						slog.Error(
 							"channel outbox enqueue target resolution failed",
@@ -393,15 +421,22 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 							"correlation_id", correlationID,
 							"error", "missing slack outbound channel",
 						)
-						messageDecision = IngressDispatchFailed
 						statusMetadataExtra["outbox_enqueue_failed"] = true
-						if messageResponseContent != "" {
-							statusMetadataExtra["response_content"] = messageResponseContent
+						if outboundRecipientID != "" {
+							statusMetadataExtra["outbox_recipient_id"] = outboundRecipientID
 						}
-						enqueueFailed = true
+						if outboundThreadTS != "" {
+							statusMetadataExtra["outbox_thread_ts"] = outboundThreadTS
+						}
+						statusMetadataExtra["response_content"] = messageResponseContent
+						if messageDecision == IngressExecuted {
+							messageDecision = IngressDispatchFailed
+							enqueueFailed = true
+						}
+						shouldEnqueue = false
 					}
 				}
-				if messageDecision == IngressExecuted && h.enqueueOutbound != nil && !enqueueFailed {
+				if shouldEnqueue && !enqueueFailed {
 					enqueueErr := h.enqueueOutbound(
 						ctx,
 						tenantID,
@@ -422,7 +457,6 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 							"correlation_id", correlationID,
 							"error", enqueueErr,
 						)
-						messageDecision = IngressDispatchFailed
 						statusMetadataExtra["outbox_enqueue_failed"] = true
 						if outboundRecipientID != "" {
 							statusMetadataExtra["outbox_recipient_id"] = outboundRecipientID
@@ -430,10 +464,20 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 						if outboundThreadTS != "" {
 							statusMetadataExtra["outbox_thread_ts"] = outboundThreadTS
 						}
-						if messageResponseContent != "" {
-							statusMetadataExtra["response_content"] = messageResponseContent
+						statusMetadataExtra["response_content"] = messageResponseContent
+						if messageDecision == IngressExecuted {
+							messageDecision = IngressDispatchFailed
+							enqueueFailed = true
 						}
-						enqueueFailed = true
+					} else if messageDecision != IngressExecuted {
+						statusMetadataExtra["outbox_enqueue_failed"] = false
+						if outboundRecipientID != "" {
+							statusMetadataExtra["outbox_recipient_id"] = outboundRecipientID
+						}
+						if outboundThreadTS != "" {
+							statusMetadataExtra["outbox_thread_ts"] = outboundThreadTS
+						}
+						statusMetadataExtra["response_content"] = messageResponseContent
 					}
 				}
 			}
@@ -541,6 +585,30 @@ func messageStatusForDecision(decision IngressDecision) (string, bool) {
 		return MessageStatusDispatchFailed, true
 	default:
 		return "", false
+	}
+}
+
+func defaultOutboundContentForDecision(decision IngressDecision) string {
+	switch decision {
+	case IngressDeniedRBAC:
+		return "I can't perform that action from this channel."
+	case IngressDeniedNoAgent:
+		return "No agent is available right now. Please try again shortly."
+	case IngressDeniedSentinel:
+		return "I can't process that request due to policy."
+	case IngressDispatchFailed:
+		return "I couldn't process your request right now. Please try again."
+	default:
+		return ""
+	}
+}
+
+func shouldEnqueueOutboundForDecision(decision IngressDecision) bool {
+	switch decision {
+	case IngressExecuted, IngressDeniedRBAC, IngressDeniedNoAgent, IngressDeniedSentinel, IngressDispatchFailed:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -758,6 +826,86 @@ func (h *Handler) HandleDeleteLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleListOutbox lists tenant outbox jobs with optional status filter and limit.
+// GET /api/v1/channels/outbox
+func (h *Handler) HandleListOutbox(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.listOutbox == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "channel outbox is not configured"})
+		return
+	}
+
+	status := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("status")))
+	limit := 100
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsedLimit, parseErr := strconv.Atoi(rawLimit)
+		if parseErr != nil || parsedLimit <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be a positive integer"})
+			return
+		}
+		limit = parsedLimit
+	}
+
+	jobs, err := h.listOutbox(r.Context(), tenantID, status, limit)
+	if err != nil {
+		if errors.Is(err, ErrOutboxStatus) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing channel outbox failed"})
+		return
+	}
+	if jobs == nil {
+		jobs = []ChannelOutbox{}
+	}
+
+	writeJSON(w, http.StatusOK, jobs)
+}
+
+// HandleRequeueOutboxDead requeues a dead outbox job back to pending.
+// POST /api/v1/channels/outbox/{id}/requeue
+func (h *Handler) HandleRequeueOutboxDead(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.requeueOutboxDead == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "channel outbox is not configured"})
+		return
+	}
+
+	idValue := strings.TrimSpace(r.PathValue("id"))
+	if idValue == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outbox id is required"})
+		return
+	}
+	outboxID, parseErr := uuid.Parse(idValue)
+	if parseErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outbox id must be a valid UUID"})
+		return
+	}
+
+	err = h.requeueOutboxDead(r.Context(), tenantID, outboxID)
+	if err != nil {
+		if errors.Is(err, ErrOutboxNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "requeueing channel outbox failed"})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status": "requeued",
+		"id":     outboxID.String(),
+	})
 }
 
 // HandleGetProviderCredential returns tenant-scoped provider credentials in sanitized form.

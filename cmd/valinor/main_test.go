@@ -127,6 +127,8 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, worker)
 		assert.Equal(t, 500, worker.tenantScanPageSize)
+		assert.Equal(t, 10, worker.recoveryBatchSize)
+		assert.Equal(t, 5, worker.recoveryMaxAttempts)
 	})
 
 	t.Run("non-positive tenant scan page size falls back to default", func(t *testing.T) {
@@ -153,6 +155,22 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, worker)
 		assert.Equal(t, 275, worker.tenantScanPageSize)
+	})
+
+	t.Run("explicit recovery settings are respected", func(t *testing.T) {
+		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: true},
+			Outbox: config.ChannelsOutboxConfig{
+				Enabled:           true,
+				ClaimBatchSize:    11,
+				RecoveryBatchSize: 17,
+				MaxAttempts:       9,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, worker)
+		assert.Equal(t, 17, worker.recoveryBatchSize)
+		assert.Equal(t, 9, worker.recoveryMaxAttempts)
 	})
 
 	t.Run("whatsapp enabled without global outbound credentials still builds worker", func(t *testing.T) {

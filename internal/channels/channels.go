@@ -151,6 +151,7 @@ var (
 	ErrLinkUnverified  = errors.New("channel link is not verified")
 	ErrMessageNotFound = errors.New("channel message not found")
 	ErrOutboxNotFound  = errors.New("channel outbox job not found")
+	ErrOutboxStatus    = errors.New("channel outbox status is invalid")
 	ErrPlatformEmpty   = errors.New("platform is required")
 	ErrIdentityEmpty   = errors.New("platform user id is required")
 	ErrUserIDRequired  = errors.New("user id is required")
