@@ -337,7 +337,9 @@ func (m *Manager) HealthCheckOnce(ctx context.Context) {
 	unhealthyInstances, err := m.store.ListByStatus(ctx, m.pool, StatusUnhealthy)
 	if err != nil {
 		slog.Error("listing unhealthy instances failed", "error", err)
-		return
+		// Continue running-instance checks even if unhealthy retry candidates
+		// cannot be listed on this cycle.
+		unhealthyInstances = nil
 	}
 
 	if len(runningInstances) == 0 && len(unhealthyInstances) == 0 {
@@ -394,10 +396,13 @@ func (m *Manager) HealthCheckOnce(ctx context.Context) {
 }
 
 func (m *Manager) replaceUnhealthy(ctx context.Context, inst *AgentInstance) {
-	// Mark unhealthy
-	if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusUnhealthy); err != nil {
-		slog.Error("marking unhealthy failed", "id", inst.ID, "error", err)
-		return
+	// Mark unhealthy on first-time replacement path.
+	if inst.Status != StatusUnhealthy {
+		if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusUnhealthy); err != nil {
+			slog.Error("marking unhealthy failed", "id", inst.ID, "error", err)
+			return
+		}
+		inst.Status = StatusUnhealthy
 	}
 
 	// Destroy old VM

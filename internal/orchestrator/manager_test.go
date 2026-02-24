@@ -436,12 +436,8 @@ func TestManager_HealthCheckOnce_RetriesUnhealthyReplacementAfterTransientDestro
 	require.NoError(t, err)
 
 	var replacement *orchestrator.AgentInstance
-	var original *orchestrator.AgentInstance
 	for i := range agents {
 		current := &agents[i]
-		if current.ID == inst.ID {
-			original = current
-		}
 		if current.Status == orchestrator.StatusRunning {
 			replacement = current
 		}
@@ -449,7 +445,7 @@ func TestManager_HealthCheckOnce_RetriesUnhealthyReplacementAfterTransientDestro
 
 	require.NotNil(t, replacement, "unhealthy instance should be retried and replaced after transient failure clears")
 	assert.NotEqual(t, inst.ID, replacement.ID)
-	if original != nil {
-		assert.Equal(t, orchestrator.StatusDestroyed, original.Status)
-	}
+	original, err := mgr.GetByID(ctx, inst.ID)
+	require.NoError(t, err)
+	assert.Equal(t, orchestrator.StatusDestroyed, original.Status)
 }
