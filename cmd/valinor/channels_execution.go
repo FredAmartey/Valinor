@@ -211,10 +211,16 @@ func isChannelDispatchCandidate(inst *orchestrator.AgentInstance) bool {
 }
 
 func isChannelDispatchUserMatch(inst *orchestrator.AgentInstance, requestedUserID string) bool {
-	if strings.TrimSpace(requestedUserID) == "" {
-		return true
+	if inst == nil {
+		return false
 	}
-	if inst == nil || inst.UserID == nil {
+	if strings.TrimSpace(requestedUserID) == "" {
+		if inst.UserID == nil {
+			return true
+		}
+		return strings.TrimSpace(*inst.UserID) == ""
+	}
+	if inst.UserID == nil {
 		return false
 	}
 	return strings.TrimSpace(*inst.UserID) == strings.TrimSpace(requestedUserID)

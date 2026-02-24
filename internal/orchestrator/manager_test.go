@@ -302,3 +302,65 @@ func TestManager_HealthCheckOnce_ReplacesUnhealthyPreservesUserAffinity(t *testi
 	require.NotNil(t, replacement.UserID)
 	assert.Equal(t, "user-42", *replacement.UserID)
 }
+
+func TestManager_HealthCheckOnce_DoesNotReplaceWhenDestroyStatusUpdateFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{
+		Driver:                 "mock",
+		WarmPoolSize:           0,
+		MaxConsecutiveFailures: 1,
+	}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Destroy Fail Tenant', 'destroy-fail-tenant') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		CREATE OR REPLACE FUNCTION fail_agent_destroyed_status_update()
+		RETURNS trigger AS $$
+		BEGIN
+			IF NEW.status = 'destroyed' THEN
+				RAISE EXCEPTION 'blocked destroyed status update';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+	`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		CREATE TRIGGER trg_fail_agent_destroyed_status_update
+		BEFORE UPDATE OF status ON agent_instances
+		FOR EACH ROW
+		EXECUTE FUNCTION fail_agent_destroyed_status_update();
+	`)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DROP TRIGGER IF EXISTS trg_fail_agent_destroyed_status_update ON agent_instances`)
+		_, _ = pool.Exec(context.Background(), `DROP FUNCTION IF EXISTS fail_agent_destroyed_status_update()`)
+	})
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{})
+	require.NoError(t, err)
+
+	driver.SetUnhealthy(*inst.VMID)
+	mgr.HealthCheckOnce(ctx)
+
+	agents, err := mgr.ListByTenant(ctx, tenantID)
+	require.NoError(t, err)
+	require.Len(t, agents, 1, "replacement should not be provisioned when marking destroyed fails")
+	assert.Equal(t, inst.ID, agents[0].ID)
+	assert.Equal(t, orchestrator.StatusUnhealthy, agents[0].Status)
+}
