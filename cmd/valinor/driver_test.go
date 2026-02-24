@@ -213,6 +213,10 @@ func TestSelectVMDriver_FirecrackerJailerDaemonizeOnLinux(t *testing.T) {
 				NetNSPath:     "/var/run/netns/valinor",
 				Daemonize:     true,
 			},
+			Network: config.FirecrackerNetworkConfig{
+				Policy:    "outbound_only",
+				TapDevice: "tap0",
+			},
 		},
 	}, false)
 	require.NoError(t, err)

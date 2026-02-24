@@ -251,3 +251,54 @@ func TestManager_HealthCheckOnce_ReplacesUnhealthy(t *testing.T) {
 	got, _ = mgr.GetByID(ctx, inst.ID)
 	assert.Equal(t, orchestrator.StatusDestroyed, got.Status)
 }
+
+func TestManager_HealthCheckOnce_ReplacesUnhealthyPreservesUserAffinity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{
+		Driver:                 "mock",
+		WarmPoolSize:           0,
+		MaxConsecutiveFailures: 1,
+	}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Affinity Replace', 'affinity-replace') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{
+		UserID: ptrString("user-42"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst.UserID)
+	assert.Equal(t, "user-42", *inst.UserID)
+
+	driver.SetUnhealthy(*inst.VMID)
+	mgr.HealthCheckOnce(ctx)
+
+	agents, err := mgr.ListByTenant(ctx, tenantID)
+	require.NoError(t, err)
+
+	var replacement *orchestrator.AgentInstance
+	for i := range agents {
+		if agents[i].Status == orchestrator.StatusRunning {
+			replacement = &agents[i]
+			break
+		}
+	}
+
+	require.NotNil(t, replacement)
+	assert.NotEqual(t, inst.ID, replacement.ID)
+	require.NotNil(t, replacement.UserID)
+	assert.Equal(t, "user-42", *replacement.UserID)
+}

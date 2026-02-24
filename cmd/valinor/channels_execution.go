@@ -64,6 +64,12 @@ func newChannelExecutor(
 			})
 			return channels.ExecutionResult{Decision: channels.IngressDispatchFailed}
 		}
+		if strings.TrimSpace(identity.UserID) == "" {
+			logChannelExecutionEvent(ctx, auditLogger, audit.ActionChannelActionDispatchFailed, msg, map[string]any{
+				"reason": "identity is missing user id",
+			})
+			return channels.ExecutionResult{Decision: channels.IngressDispatchFailed}
+		}
 
 		decision, err := authorize(ctx, identity, "channels:messages:write")
 		if err != nil || decision == nil {

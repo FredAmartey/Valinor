@@ -98,6 +98,69 @@ func TestHandler_Provision_BindsIdentityUserForNonAdmin(t *testing.T) {
 	assert.Equal(t, "test-user", *resp.UserID)
 }
 
+func TestHandler_Provision_AllowsAdminUserOverride(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{Driver: "mock"}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	handler := orchestrator.NewHandler(mgr, nil)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Admin Override', 'admin-override') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", bytes.NewBufferString(`{"user_id":"custom-admin-user"}`))
+	req = withIdentity(req, tenantID, true)
+	w := httptest.NewRecorder()
+
+	handler.HandleProvision(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp orchestrator.AgentInstance
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp.UserID)
+	assert.Equal(t, "custom-admin-user", *resp.UserID)
+}
+
+func TestHandler_Provision_RejectsNonAdminUserSpoofing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{Driver: "mock"}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	handler := orchestrator.NewHandler(mgr, nil)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Spoof Reject', 'spoof-reject') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", bytes.NewBufferString(`{"user_id":"other-user"}`))
+	req = withIdentity(req, tenantID, false)
+	w := httptest.NewRecorder()
+
+	handler.HandleProvision(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 func TestHandler_GetAgent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

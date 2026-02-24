@@ -243,6 +243,40 @@ func TestNewChannelExecutor_IdentityLookupError(t *testing.T) {
 	assert.Equal(t, audit.ActionChannelActionDispatchFailed, logger.events[0].Action)
 }
 
+func TestNewChannelExecutor_IdentityMissingUserID(t *testing.T) {
+	logger := &captureAuditLogger{}
+	authorizeCalled := false
+
+	exec := newChannelExecutor(
+		func(_ context.Context, _ string) (*auth.Identity, error) {
+			return &auth.Identity{
+				UserID:   "   ",
+				TenantID: "190f3a21-3b2c-42ce-b26e-2f448a58ec14",
+			}, nil
+		},
+		func(_ context.Context, _ *auth.Identity, _ string) (*rbac.Decision, error) {
+			authorizeCalled = true
+			return &rbac.Decision{Allowed: true}, nil
+		},
+		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
+			return nil, nil
+		},
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
+			return "", nil
+		},
+		nil,
+		nil,
+		logger,
+	)
+	require.NotNil(t, exec)
+
+	result := exec(context.Background(), testExecutionMessage())
+	assert.Equal(t, channels.IngressDispatchFailed, result.Decision)
+	assert.False(t, authorizeCalled)
+	require.Len(t, logger.events, 1)
+	assert.Equal(t, audit.ActionChannelActionDispatchFailed, logger.events[0].Action)
+}
+
 func TestNewChannelExecutor_AuthorizeError(t *testing.T) {
 	logger := &captureAuditLogger{}
 	listCalled := false

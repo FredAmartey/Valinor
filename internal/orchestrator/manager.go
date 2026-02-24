@@ -401,6 +401,7 @@ func (m *Manager) replaceUnhealthy(ctx context.Context, inst *AgentInstance) {
 			_ = json.Unmarshal([]byte(inst.Config), &prevConfig)
 		}
 		replacement, err := m.Provision(ctx, *inst.TenantID, ProvisionOpts{
+			UserID:       inst.UserID,
 			DepartmentID: inst.DepartmentID,
 			Config:       prevConfig,
 		})
