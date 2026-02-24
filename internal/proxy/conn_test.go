@@ -112,16 +112,33 @@ func TestAgentConn_RequestRoutesByFrameID_Concurrent(t *testing.T) {
 			return
 		}
 
+		type payload struct {
+			Content string `json:"content"`
+		}
+		var firstPayload payload
+		var secondPayload payload
+		_ = json.Unmarshal(first.Payload, &firstPayload)
+		_ = json.Unmarshal(second.Payload, &secondPayload)
+
+		firstReply := "second"
+		if firstPayload.Content == "hello-first" {
+			firstReply = "first"
+		}
+		secondReply := "second"
+		if secondPayload.Content == "hello-first" {
+			secondReply = "first"
+		}
+
 		// Intentionally reply out of order to prove ID-based routing.
 		_ = sConn.Send(ctx, proxy.Frame{
 			Type:    proxy.TypeChunk,
 			ID:      second.ID,
-			Payload: json.RawMessage(`{"content":"second","done":true}`),
+			Payload: json.RawMessage(`{"content":"` + secondReply + `","done":true}`),
 		})
 		_ = sConn.Send(ctx, proxy.Frame{
 			Type:    proxy.TypeChunk,
 			ID:      first.ID,
-			Payload: json.RawMessage(`{"content":"first","done":true}`),
+			Payload: json.RawMessage(`{"content":"` + firstReply + `","done":true}`),
 		})
 	}()
 
