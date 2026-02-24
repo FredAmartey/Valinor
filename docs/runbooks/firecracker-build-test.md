@@ -8,7 +8,7 @@ Ubuntu/Debian example:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y qemu-kvm e2fsprogs squashfs-tools curl tar
+sudo apt-get install -y qemu-kvm e2fsprogs squashfs-tools curl tar openssl python3
 ```
 
 Then verify KVM:
@@ -29,7 +29,20 @@ This will:
 - verify `/dev/kvm` access
 - install `firecracker` + `jailer` binaries
 - fetch matching CI kernel/rootfs artifacts
+- install pinned guest runtime versions:
+  - Node.js `v22.22.0` (verified by SHA-256)
+  - OpenClaw `2026.2.23` (verified by npm `sha512-...` integrity)
 - build `/var/lib/valinor/rootfs.ext4`
+- write `/var/lib/valinor/runtime-versions.json`
+
+Runtime override knobs (must provide matching verification values):
+
+```bash
+VALINOR_GUEST_NODE_VERSION=v22.22.0
+VALINOR_GUEST_NODE_SHA256=<sha256-for-arch>
+VALINOR_GUEST_OPENCLAW_VERSION=2026.2.23
+VALINOR_GUEST_OPENCLAW_INTEGRITY=sha512-...
+```
 
 If you want individual steps:
 
@@ -37,6 +50,12 @@ If you want individual steps:
 ./scripts/firecracker/check-kvm.sh
 ./scripts/firecracker/install-firecracker.sh v1.11.0
 ./scripts/firecracker/fetch-ci-artifacts.sh v1.11.0 /var/lib/valinor
+```
+
+Inspect pinned runtime manifest:
+
+```bash
+cat /var/lib/valinor/runtime-versions.json
 ```
 
 ## 2) Fast local verification (any OS)
