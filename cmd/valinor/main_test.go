@@ -136,7 +136,7 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 		assert.Equal(t, 275, worker.tenantScanPageSize)
 	})
 
-	t.Run("whatsapp enabled without outbound credentials fails", func(t *testing.T) {
+	t.Run("whatsapp enabled without global outbound credentials still builds worker", func(t *testing.T) {
 		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{Enabled: true},
 			Outbox: config.ChannelsOutboxConfig{
@@ -149,12 +149,11 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 				},
 			},
 		})
-		require.Error(t, err)
-		assert.Nil(t, worker)
-		assert.Contains(t, err.Error(), "access token")
+		require.NoError(t, err)
+		assert.NotNil(t, worker)
 	})
 
-	t.Run("slack enabled without outbound credentials fails", func(t *testing.T) {
+	t.Run("slack enabled without global outbound credentials still builds worker", func(t *testing.T) {
 		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{Enabled: true},
 			Outbox: config.ChannelsOutboxConfig{
@@ -167,12 +166,11 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 				},
 			},
 		})
-		require.Error(t, err)
-		assert.Nil(t, worker)
-		assert.Contains(t, err.Error(), "access token")
+		require.NoError(t, err)
+		assert.NotNil(t, worker)
 	})
 
-	t.Run("telegram enabled without outbound credentials fails", func(t *testing.T) {
+	t.Run("telegram enabled without global outbound credentials still builds worker", func(t *testing.T) {
 		worker, err := buildChannelOutboxWorker(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{Enabled: true},
 			Outbox: config.ChannelsOutboxConfig{
@@ -185,9 +183,8 @@ func TestBuildChannelOutboxWorker(t *testing.T) {
 				},
 			},
 		})
-		require.Error(t, err)
-		assert.Nil(t, worker)
-		assert.Contains(t, err.Error(), "access token")
+		require.NoError(t, err)
+		assert.NotNil(t, worker)
 	})
 }
 

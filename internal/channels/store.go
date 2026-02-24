@@ -246,6 +246,130 @@ func (s *Store) DeleteLink(ctx context.Context, q database.Querier, id string) e
 	return nil
 }
 
+// GetProviderCredential returns tenant-scoped provider credentials.
+func (s *Store) GetProviderCredential(ctx context.Context, q database.Querier, provider string) (*ProviderCredential, error) {
+	normalizedProvider, err := normalizeCredentialProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	var credential ProviderCredential
+	err = q.QueryRow(ctx,
+		`SELECT id, tenant_id, provider, access_token, api_base_url, api_version, phone_number_id, created_at, updated_at
+		 FROM channel_provider_credentials
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND provider = $1`,
+		normalizedProvider,
+	).Scan(
+		&credential.ID,
+		&credential.TenantID,
+		&credential.Provider,
+		&credential.AccessToken,
+		&credential.APIBaseURL,
+		&credential.APIVersion,
+		&credential.PhoneNumberID,
+		&credential.CreatedAt,
+		&credential.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrProviderCredentialNotFound
+		}
+		return nil, fmt.Errorf("getting provider credential: %w", err)
+	}
+	return &credential, nil
+}
+
+// UpsertProviderCredential creates or updates tenant-scoped provider credentials.
+func (s *Store) UpsertProviderCredential(ctx context.Context, q database.Querier, params UpsertProviderCredentialParams) (*ProviderCredential, error) {
+	provider, err := normalizeCredentialProvider(params.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken := strings.TrimSpace(params.AccessToken)
+	if accessToken == "" {
+		return nil, ErrProviderAccessTokenRequired
+	}
+
+	phoneNumberID := strings.TrimSpace(params.PhoneNumberID)
+	if provider == "whatsapp" && phoneNumberID == "" {
+		return nil, ErrProviderPhoneNumberIDRequired
+	}
+
+	var credential ProviderCredential
+	err = q.QueryRow(ctx,
+		`INSERT INTO channel_provider_credentials (
+			tenant_id, provider, access_token, api_base_url, api_version, phone_number_id
+		) VALUES (
+			current_setting('app.current_tenant_id', true)::UUID, $1, $2, $3, $4, $5
+		)
+		ON CONFLICT (tenant_id, provider)
+		DO UPDATE SET
+			access_token = EXCLUDED.access_token,
+			api_base_url = EXCLUDED.api_base_url,
+			api_version = EXCLUDED.api_version,
+			phone_number_id = EXCLUDED.phone_number_id,
+			updated_at = now()
+		RETURNING id, tenant_id, provider, access_token, api_base_url, api_version, phone_number_id, created_at, updated_at`,
+		provider,
+		accessToken,
+		strings.TrimSpace(params.APIBaseURL),
+		strings.TrimSpace(params.APIVersion),
+		phoneNumberID,
+	).Scan(
+		&credential.ID,
+		&credential.TenantID,
+		&credential.Provider,
+		&credential.AccessToken,
+		&credential.APIBaseURL,
+		&credential.APIVersion,
+		&credential.PhoneNumberID,
+		&credential.CreatedAt,
+		&credential.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("upserting provider credential: %w", err)
+	}
+	return &credential, nil
+}
+
+// DeleteProviderCredential removes tenant-scoped provider credentials.
+func (s *Store) DeleteProviderCredential(ctx context.Context, q database.Querier, provider string) error {
+	normalizedProvider, err := normalizeCredentialProvider(provider)
+	if err != nil {
+		return err
+	}
+
+	cmd, err := q.Exec(ctx,
+		`DELETE FROM channel_provider_credentials
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND provider = $1`,
+		normalizedProvider,
+	)
+	if err != nil {
+		return fmt.Errorf("deleting provider credential: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrProviderCredentialNotFound
+	}
+	return nil
+}
+
+func normalizeCredentialProvider(provider string) (string, error) {
+	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+	if normalizedProvider == "" {
+		return "", ErrPlatformEmpty
+	}
+
+	switch normalizedProvider {
+	case "slack", "whatsapp", "telegram":
+		return normalizedProvider, nil
+	default:
+		return "", ErrProviderUnsupported
+	}
+}
+
 // InsertIdempotency records a message idempotency key.
 // It returns true when this is the first-seen key and false on duplicate.
 func (s *Store) InsertIdempotency(

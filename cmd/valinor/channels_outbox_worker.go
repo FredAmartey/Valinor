@@ -34,12 +34,14 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 		tenantScanPageSize = defaultTenantScanPageSize
 	}
 
-	sender, err := buildChannelOutboxSender(cfg)
+	store := channels.NewStore()
+	credentialResolver := newDBOutboxProviderCredentialResolver(pool, store, cfg.Providers)
+	sender, err := buildChannelOutboxSender(cfg, credentialResolver)
 	if err != nil {
 		return nil, fmt.Errorf("building channel outbox sender: %w", err)
 	}
 
-	dispatcher := channels.NewOutboxDispatcher(channels.NewStore(), sender, channels.OutboxDispatcherConfig{
+	dispatcher := channels.NewOutboxDispatcher(store, sender, channels.OutboxDispatcherConfig{
 		ClaimBatchSize:    cfg.Outbox.ClaimBatchSize,
 		RecoveryBatchSize: cfg.Outbox.RecoveryBatchSize,
 		LockTimeout:       time.Duration(cfg.Outbox.LockTimeoutSeconds) * time.Second,

@@ -1131,3 +1131,155 @@ func seedAndClaimOutboxJob(
 
 	return tenantID, outboxID
 }
+
+func TestChannelProviderCredentialStore_UpsertGetDelete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Creds', 'tenant-creds') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		created, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:      "whatsapp",
+			AccessToken:   "wa-token-1",
+			PhoneNumberID: "15550001111",
+			APIBaseURL:    "https://graph.example.com",
+			APIVersion:    "v22.0",
+		})
+		require.NoError(t, upsertErr)
+		assert.Equal(t, tenantID, created.TenantID.String())
+		assert.Equal(t, "whatsapp", created.Provider)
+		assert.Equal(t, "wa-token-1", created.AccessToken)
+		assert.Equal(t, "15550001111", created.PhoneNumberID)
+
+		loaded, getErr := store.GetProviderCredential(ctx, q, "whatsapp")
+		require.NoError(t, getErr)
+		assert.Equal(t, created.ID, loaded.ID)
+		assert.Equal(t, "wa-token-1", loaded.AccessToken)
+		assert.Equal(t, "https://graph.example.com", loaded.APIBaseURL)
+		assert.Equal(t, "v22.0", loaded.APIVersion)
+
+		updated, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:      "whatsapp",
+			AccessToken:   "wa-token-2",
+			PhoneNumberID: "15550001111",
+		})
+		require.NoError(t, upsertErr)
+		assert.Equal(t, created.ID, updated.ID)
+		assert.Equal(t, "wa-token-2", updated.AccessToken)
+
+		deleteErr := store.DeleteProviderCredential(ctx, q, "whatsapp")
+		require.NoError(t, deleteErr)
+
+		_, getErr = store.GetProviderCredential(ctx, q, "whatsapp")
+		require.ErrorIs(t, getErr, channels.ErrProviderCredentialNotFound)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantA, tenantB string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Cred A', 'tenant-cred-a') RETURNING id",
+	).Scan(&tenantA)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Cred B', 'tenant-cred-b') RETURNING id",
+	).Scan(&tenantB)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		_, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "slack",
+			AccessToken: "xoxb-tenant-a",
+		})
+		return upsertErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		_, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "slack",
+			AccessToken: "xoxb-tenant-b",
+		})
+		return upsertErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		cred, getErr := store.GetProviderCredential(ctx, q, "slack")
+		require.NoError(t, getErr)
+		assert.Equal(t, "xoxb-tenant-a", cred.AccessToken)
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		cred, getErr := store.GetProviderCredential(ctx, q, "slack")
+		require.NoError(t, getErr)
+		assert.Equal(t, "xoxb-tenant-b", cred.AccessToken)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelProviderCredentialStore_Validation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Cred Validation', 'tenant-cred-validation') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider: "slack",
+		})
+		require.ErrorIs(t, upsertErr, channels.ErrProviderAccessTokenRequired)
+
+		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "whatsapp",
+			AccessToken: "wa-token",
+		})
+		require.ErrorIs(t, upsertErr, channels.ErrProviderPhoneNumberIDRequired)
+
+		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "teams",
+			AccessToken: "token",
+		})
+		require.ErrorIs(t, upsertErr, channels.ErrProviderUnsupported)
+		return nil
+	})
+	require.NoError(t, err)
+}

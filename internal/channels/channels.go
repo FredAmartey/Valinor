@@ -94,6 +94,28 @@ type ChannelOutbox struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
+// ProviderCredential stores tenant-scoped provider credentials used for outbound delivery.
+type ProviderCredential struct {
+	ID            uuid.UUID `json:"id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	Provider      string    `json:"provider"`
+	AccessToken   string    `json:"-"`
+	APIBaseURL    string    `json:"api_base_url"`
+	APIVersion    string    `json:"api_version"`
+	PhoneNumberID string    `json:"phone_number_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// UpsertProviderCredentialParams defines input for creating/updating provider credentials.
+type UpsertProviderCredentialParams struct {
+	Provider      string
+	AccessToken   string
+	APIBaseURL    string
+	APIVersion    string
+	PhoneNumberID string
+}
+
 // ChannelMessageRecord contains the persisted state for an inbound idempotency row.
 type ChannelMessageRecord struct {
 	ID                uuid.UUID       `json:"id"`
@@ -138,4 +160,9 @@ var (
 	ErrExpiryRequired  = errors.New("expiry timestamp is required")
 	ErrStatusRequired  = errors.New("status is required")
 	ErrPayloadRequired = errors.New("payload is required")
+	// Provider credential errors.
+	ErrProviderUnsupported           = errors.New("provider is not supported")
+	ErrProviderCredentialNotFound    = errors.New("provider credential not found")
+	ErrProviderAccessTokenRequired   = errors.New("provider access token is required")
+	ErrProviderPhoneNumberIDRequired = errors.New("provider phone number id is required")
 )

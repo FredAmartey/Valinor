@@ -280,6 +280,21 @@ func New(addr string, deps Dependencies) *Server {
 				http.HandlerFunc(deps.ChannelHandler.HandleDeleteLink),
 			),
 		)
+		protectedMux.Handle("GET /api/v1/channels/providers/{provider}/credentials",
+			rbac.RequirePermission(deps.RBAC, "channels:providers:read", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleGetProviderCredential),
+			),
+		)
+		protectedMux.Handle("PUT /api/v1/channels/providers/{provider}/credentials",
+			rbac.RequirePermission(deps.RBAC, "channels:providers:write", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleUpsertProviderCredential),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/channels/providers/{provider}/credentials",
+			rbac.RequirePermission(deps.RBAC, "channels:providers:write", rbacOpts...)(
+				http.HandlerFunc(deps.ChannelHandler.HandleDeleteProviderCredential),
+			),
+		)
 	}
 
 	// All other routes go through auth middleware

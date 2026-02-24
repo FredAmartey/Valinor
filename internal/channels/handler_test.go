@@ -1070,3 +1070,99 @@ func TestHandleDeleteLink_PropagatesUnexpectedError(t *testing.T) {
 
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 }
+
+func TestHandleGetProviderCredential_ReturnsSanitizedCredential(t *testing.T) {
+	h := NewHandler(nil)
+	h.getProviderCredential = func(_ context.Context, tenantID, provider string) (*ProviderCredential, error) {
+		assert.Equal(t, "tenant-provider", tenantID)
+		assert.Equal(t, "slack", provider)
+		return &ProviderCredential{
+			ID:          uuid.New(),
+			Provider:    "slack",
+			AccessToken: "xoxb-secret",
+			APIBaseURL:  "https://slack.example.com",
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/providers/slack/credentials", nil)
+	req.SetPathValue("provider", "slack")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-provider"))
+	w := httptest.NewRecorder()
+
+	h.HandleGetProviderCredential(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
+	assert.Equal(t, "slack", out["provider"])
+	assert.Equal(t, true, out["has_access_token"])
+	_, hasToken := out["access_token"]
+	assert.False(t, hasToken, "response must not include raw access_token")
+}
+
+func TestHandleUpsertProviderCredential_ValidRequest(t *testing.T) {
+	h := NewHandler(nil)
+	h.upsertProviderCredential = func(_ context.Context, tenantID string, params UpsertProviderCredentialParams) (*ProviderCredential, error) {
+		assert.Equal(t, "tenant-provider", tenantID)
+		assert.Equal(t, "whatsapp", params.Provider)
+		assert.Equal(t, "wa-token", params.AccessToken)
+		assert.Equal(t, "15550001111", params.PhoneNumberID)
+		return &ProviderCredential{
+			ID:            uuid.New(),
+			Provider:      params.Provider,
+			AccessToken:   params.AccessToken,
+			PhoneNumberID: params.PhoneNumberID,
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/providers/whatsapp/credentials", strings.NewReader(`{
+  "access_token": "wa-token",
+  "phone_number_id": "15550001111"
+}`))
+	req.SetPathValue("provider", "whatsapp")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-provider"))
+	w := httptest.NewRecorder()
+
+	h.HandleUpsertProviderCredential(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
+	assert.Equal(t, "whatsapp", out["provider"])
+	assert.Equal(t, true, out["has_access_token"])
+}
+
+func TestHandleUpsertProviderCredential_ValidationError(t *testing.T) {
+	h := NewHandler(nil)
+	h.upsertProviderCredential = func(_ context.Context, _ string, _ UpsertProviderCredentialParams) (*ProviderCredential, error) {
+		return nil, ErrProviderAccessTokenRequired
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/providers/slack/credentials", strings.NewReader(`{}`))
+	req.SetPathValue("provider", "slack")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-provider"))
+	w := httptest.NewRecorder()
+
+	h.HandleUpsertProviderCredential(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "access token")
+}
+
+func TestHandleDeleteProviderCredential_NotFound(t *testing.T) {
+	h := NewHandler(nil)
+	h.deleteProviderCredential = func(_ context.Context, tenantID, provider string) error {
+		assert.Equal(t, "tenant-provider", tenantID)
+		assert.Equal(t, "telegram", provider)
+		return ErrProviderCredentialNotFound
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/channels/providers/telegram/credentials", nil)
+	req.SetPathValue("provider", "telegram")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-provider"))
+	w := httptest.NewRecorder()
+
+	h.HandleDeleteProviderCredential(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
