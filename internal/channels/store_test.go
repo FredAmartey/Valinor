@@ -1490,61 +1490,6 @@ func seedAndClaimOutboxJob(
 	return tenantID, outboxID
 }
 
-func seedOutboxJob(
-	t *testing.T,
-	ctx context.Context,
-	pool *database.Pool,
-	store *channels.Store,
-	slugPrefix string,
-) (string, uuid.UUID) {
-	t.Helper()
-
-	var tenantID string
-	err := pool.QueryRow(ctx,
-		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
-		"Tenant "+slugPrefix,
-		slugPrefix+"-"+uuid.NewString()[:8],
-	).Scan(&tenantID)
-	require.NoError(t, err)
-
-	var messageID uuid.UUID
-	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
-		return q.QueryRow(ctx,
-			`INSERT INTO channel_messages (
-				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
-				payload_fingerprint, correlation_id, status, expires_at
-			) VALUES (
-				current_setting('app.current_tenant_id', true)::UUID,
-				'whatsapp', '+15550004444', $1, $2,
-				$3, $4, 'executed', now() + interval '1 day'
-			) RETURNING id`,
-			"msg-"+uuid.NewString(),
-			"idem-"+uuid.NewString(),
-			"fp-"+uuid.NewString(),
-			"corr-"+uuid.NewString(),
-		).Scan(&messageID)
-	})
-	require.NoError(t, err)
-
-	var outboxID uuid.UUID
-	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
-		job, enqueueErr := store.EnqueueOutbound(ctx, q, channels.EnqueueOutboundParams{
-			ChannelMessageID: messageID.String(),
-			Provider:         "whatsapp",
-			RecipientID:      "+15550004444",
-			Payload:          json.RawMessage(`{"text":"seed outbox"}`),
-		})
-		if enqueueErr != nil {
-			return enqueueErr
-		}
-		outboxID = job.ID
-		return nil
-	})
-	require.NoError(t, err)
-
-	return tenantID, outboxID
-}
-
 func seedTenant(t *testing.T, ctx context.Context, pool *database.Pool, slugPrefix string) string {
 	t.Helper()
 
@@ -1602,31 +1547,6 @@ func seedOutboxJobInTenant(
 	})
 	require.NoError(t, err)
 	return outboxID
-}
-
-func seedAndMarkOutboxDead(
-	t *testing.T,
-	ctx context.Context,
-	pool *database.Pool,
-	store *channels.Store,
-	slugPrefix string,
-) (string, uuid.UUID) {
-	t.Helper()
-
-	tenantID, outboxID := seedOutboxJob(t, ctx, pool, store, slugPrefix)
-
-	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
-		claimed, claimErr := store.ClaimPendingOutbox(ctx, q, time.Now().UTC(), 1)
-		if claimErr != nil {
-			return claimErr
-		}
-		require.Len(t, claimed, 1)
-		require.Equal(t, outboxID, claimed[0].ID)
-		return store.MarkOutboxDead(ctx, q, outboxID, "seed dead state")
-	})
-	require.NoError(t, err)
-
-	return tenantID, outboxID
 }
 
 func TestChannelProviderCredentialStore_UpsertGetDelete(t *testing.T) {
