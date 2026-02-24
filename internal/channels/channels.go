@@ -36,6 +36,9 @@ const (
 	MessageStatusRejectedSignature = "rejected_signature"
 	// MessageStatusReplayBlocked marks stale/replayed deliveries.
 	MessageStatusReplayBlocked = "replay_blocked"
+
+	// ConversationHistoryMaxTurns is the max number of prior turns used for channel continuity.
+	ConversationHistoryMaxTurns = 12
 )
 
 // OutboxStatus represents delivery status for a provider-agnostic outbound job.
@@ -130,6 +133,12 @@ type ChannelMessageRecord struct {
 	CorrelationID     string          `json:"correlation_id"`
 	Status            string          `json:"status"`
 	Metadata          json.RawMessage `json:"metadata"`
+}
+
+// ChannelConversationTurn represents one persisted user/assistant exchange.
+type ChannelConversationTurn struct {
+	RequestContent  string `json:"request_content"`
+	ResponseContent string `json:"response_content,omitempty"`
 }
 
 // EnqueueOutboundParams defines input for inserting an outbox job.
