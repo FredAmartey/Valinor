@@ -18,7 +18,7 @@ Implement full frame-ID multiplexing now (instead of per-agent serialization).
 
 - Add request routing primitives to `internal/proxy/conn.go` keyed by `Frame.ID`.
 - Add a single background receive loop per connection.
-- Expose a `Request(ctx, frame)` API that safely handles concurrent callers.
+- Expose a `SendRequest(ctx, frame)` + request-stream `Recv(ctx)` API that safely handles concurrent callers.
 - Update proxy handlers and channel execution path to use the new request API.
 - Add concurrency and lifecycle tests for request isolation, timeout cleanup, and connection failure behavior.
 
@@ -34,18 +34,18 @@ Implement full frame-ID multiplexing now (instead of per-agent serialization).
 
 Enhance `AgentConn` with:
 
-- `pending map[string]chan Frame` for in-flight requests.
-- `loopErr error` and `closed bool` state.
+- `pending map[string]*RequestStream` for in-flight requests.
+- `requestLoopErr` state for connection-level receive loop failures.
 - `recvLoop` goroutine started lazily on first request.
 
 Flow:
 
-1. `Request` validates non-empty frame ID.
-2. `Request` registers a response channel under the frame ID.
-3. `Request` sends the frame.
+1. `SendRequest` validates non-empty frame ID.
+2. `SendRequest` registers a response stream under the frame ID.
+3. `SendRequest` sends the frame.
 4. `recvLoop` continuously reads frames and routes by `reply.ID`.
-5. Matching waiter receives frame and continues its protocol-specific loop.
-6. On context cancel/timeout, waiter is unregistered.
+5. Matching request stream receives frame and continues protocol-specific processing.
+6. On request close, waiter is unregistered.
 7. On recv transport error, all pending waiters are failed and connection becomes unusable.
 
 ### Pool integration
@@ -54,7 +54,7 @@ Keep one connection per agent in `internal/proxy/pool.go`. Existing dial/reuse s
 
 ### Caller integration
 
-- `internal/proxy/handler.go`: replace direct `Recv` usage with `Request` loops keyed by request ID.
+- `internal/proxy/handler.go`: replace direct `Recv` usage with request-stream `Recv` loops keyed by request ID.
 - `cmd/valinor/channels_execution.go`: same change in `dispatchChannelMessageToAgent`.
 
 ## Error Handling
