@@ -797,7 +797,12 @@ func runFakeJailerServer(hostSock, pidPath string) int {
 	}
 	defer lis.Close()
 
+	failPath := os.Getenv(firecrackerTestFailPathEnv)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if failPath != "" && r.URL.Path == failPath {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		switch r.Method + " " + r.URL.Path {
 		case "PUT /machine-config",
 			"PUT /boot-source",
