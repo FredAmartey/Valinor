@@ -115,9 +115,10 @@ type AuditConfig struct {
 
 // ChannelsConfig configures inbound messaging channel controls.
 type ChannelsConfig struct {
-	Ingress   ChannelsIngressConfig   `koanf:"ingress"`
-	Providers ChannelsProvidersConfig `koanf:"providers"`
-	Outbox    ChannelsOutboxConfig    `koanf:"outbox"`
+	Ingress     ChannelsIngressConfig     `koanf:"ingress"`
+	Credentials ChannelsCredentialsConfig `koanf:"credentials"`
+	Providers   ChannelsProvidersConfig   `koanf:"providers"`
+	Outbox      ChannelsOutboxConfig      `koanf:"outbox"`
 }
 
 // ChannelsIngressConfig controls global channel ingress behavior.
@@ -128,6 +129,11 @@ type ChannelsIngressConfig struct {
 	RetentionCleanupEnabled         bool `koanf:"retentioncleanupenabled"`
 	RetentionCleanupIntervalSeconds int  `koanf:"retentioncleanupintervalseconds"`
 	RetentionCleanupBatchSize       int  `koanf:"retentioncleanupbatchsize"`
+}
+
+// ChannelsCredentialsConfig controls channel credential security settings.
+type ChannelsCredentialsConfig struct {
+	Key string `koanf:"key"`
 }
 
 // ChannelsProvidersConfig controls per-provider channel settings.
@@ -204,6 +210,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"channels.ingress.retentioncleanupenabled":         true,
 		"channels.ingress.retentioncleanupintervalseconds": 3600,
 		"channels.ingress.retentioncleanupbatchsize":       500,
+		"channels.credentials.key":                         "",
 		"channels.providers.slack.enabled":                 false,
 		"channels.providers.slack.apibaseurl":              "https://slack.com",
 		"channels.providers.whatsapp.enabled":              false,
