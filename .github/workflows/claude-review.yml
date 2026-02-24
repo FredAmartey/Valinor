@@ -25,7 +25,6 @@ jobs:
 
       - name: Claude review (OAuth)
         id: claude_oauth
-        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
@@ -40,7 +39,7 @@ jobs:
 
       - name: Claude review (API key fallback)
         id: claude_api
-        if: ${{ steps.claude_oauth.outcome != 'success' && secrets.ANTHROPIC_API_KEY != '' }}
+        if: ${{ steps.claude_oauth.outcome != 'success' }}
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
