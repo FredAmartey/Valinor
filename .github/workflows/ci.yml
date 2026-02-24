@@ -54,9 +54,9 @@ jobs:
 
       - name: Security policy regression checks
         run: |
-          go test ./cmd/valinor -run 'TestSelectVMDriver_Firecracker(NetworkPolicy|Workspace)' -v
+          go test ./cmd/valinor -run 'TestSelectVMDriver_Firecracker(.*NetworkPolicy|Workspace)' -v
           go test ./internal/platform/config -run TestLoad_OrchestratorFirecrackerSecurityDefaults -v
-          go test ./internal/orchestrator -run TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive -v
+          go test ./internal/orchestrator -run 'TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive|TestCreateSparseDataDrive_' -v
 
   test:
     needs: build
