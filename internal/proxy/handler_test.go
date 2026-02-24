@@ -210,8 +210,8 @@ func TestHandleStream_SSE(t *testing.T) {
 	}, nil, nil)
 
 	ctx := context.Background()
-	ln, err := transport.Listen(ctx, cid)
-	require.NoError(t, err)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
 	defer ln.Close()
 
 	// Mock agent that sends two chunks
