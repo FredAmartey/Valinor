@@ -10,6 +10,7 @@ type ExecutionMessage struct {
 	PlatformMessageID string
 	CorrelationID     string
 	Content           string
+	ConversationHistory []ChannelConversationTurn
 	Link              ChannelLink
 }
 
