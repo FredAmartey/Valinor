@@ -631,6 +631,183 @@ func TestMessageStore_GetMessageByIdempotencyKey_NotFound(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMessageStore_RecoverDispatchFailuresToOutbox(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantA, tenantB string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Msg Recover A', 'tenant-msg-recover-a') RETURNING id",
+	).Scan(&tenantA)
+	require.NoError(t, err)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Msg Recover B', 'tenant-msg-recover-b') RETURNING id",
+	).Scan(&tenantB)
+	require.NoError(t, err)
+
+	var recoverableMessageID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		metadataRecoverable := `{"decision":"dispatch_failed","agent_id":"agent-1","outbox_enqueue_failed":true,"outbox_recipient_id":"+15550007777","outbox_thread_ts":"1710000.12345","response_content":"queued later"}`
+		if scanErr := q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550007777', 'msg-recoverable', 'idem-recoverable',
+				'fp-recoverable', 'corr-recoverable', 'dispatch_failed', $1::jsonb, now() + interval '1 day'
+			) RETURNING id`,
+			metadataRecoverable,
+		).Scan(&recoverableMessageID); scanErr != nil {
+			return scanErr
+		}
+
+		metadataSlackMissingRecipient := `{"decision":"dispatch_failed","agent_id":"agent-2","outbox_enqueue_failed":true,"response_content":"missing channel id"}`
+		if _, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'slack', 'U123', 'slack-msg-missing-recipient', 'idem-slack-missing-recipient',
+				'fp-slack-missing-recipient', 'corr-slack-missing-recipient', 'dispatch_failed', $1::jsonb, now() + interval '1 day'
+			)`,
+			metadataSlackMissingRecipient,
+		); execErr != nil {
+			return execErr
+		}
+
+		metadataNoEnqueueFailure := `{"decision":"dispatch_failed","agent_id":"agent-3","outbox_enqueue_failed":false,"response_content":"should stay failed"}`
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550008888', 'msg-no-enqueue-failure', 'idem-no-enqueue-failure',
+				'fp-no-enqueue-failure', 'corr-no-enqueue-failure', 'dispatch_failed', $1::jsonb, now() + interval '1 day'
+			)`,
+			metadataNoEnqueueFailure,
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	var tenantBMessageID uuid.UUID
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		return q.QueryRow(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15559990000', 'msg-other-tenant', 'idem-other-tenant',
+				'fp-other-tenant', 'corr-other-tenant', 'dispatch_failed',
+				'{"decision":"dispatch_failed","outbox_enqueue_failed":true,"outbox_recipient_id":"+15559990000","response_content":"other tenant"}'::jsonb,
+				now() + interval '1 day'
+			) RETURNING id`,
+		).Scan(&tenantBMessageID)
+	})
+	require.NoError(t, err)
+
+	var recovered int
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		var recoverErr error
+		recovered, recoverErr = store.RecoverDispatchFailuresToOutbox(ctx, q, 25, 9)
+		return recoverErr
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, recovered)
+
+	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
+		var status string
+		var metadata []byte
+		if scanErr := q.QueryRow(ctx,
+			`SELECT status, metadata
+			 FROM channel_messages
+			 WHERE id = $1`,
+			recoverableMessageID,
+		).Scan(&status, &metadata); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, channels.MessageStatusExecuted, status)
+		assert.JSONEq(t, `{
+			"decision":"executed",
+			"agent_id":"agent-1",
+			"outbox_enqueue_failed":false,
+			"outbox_recipient_id":"+15550007777",
+			"outbox_thread_ts":"1710000.12345",
+			"outbox_recovered":true,
+			"response_content":"queued later"
+		}`, string(metadata))
+
+		var provider, recipientID, payload, outboxStatus string
+		var maxAttempts int
+		if scanErr := q.QueryRow(ctx,
+			`SELECT provider, recipient_id, payload::text, status, max_attempts
+			 FROM channel_outbox
+			 WHERE channel_message_id = $1`,
+			recoverableMessageID,
+		).Scan(&provider, &recipientID, &payload, &outboxStatus, &maxAttempts); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, "whatsapp", provider)
+		assert.Equal(t, "+15550007777", recipientID)
+		assert.Equal(t, string(channels.OutboxStatusPending), outboxStatus)
+		assert.Equal(t, 9, maxAttempts)
+		assert.JSONEq(t, `{
+			"content":"queued later",
+			"correlation_id":"corr-recoverable",
+			"thread_ts":"1710000.12345"
+		}`, payload)
+
+		var slackStatus string
+		if scanErr := q.QueryRow(ctx,
+			`SELECT status
+			 FROM channel_messages
+			 WHERE idempotency_key = 'idem-slack-missing-recipient'`,
+		).Scan(&slackStatus); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, channels.MessageStatusDispatchFailed, slackStatus)
+
+		var skippedStatus string
+		if scanErr := q.QueryRow(ctx,
+			`SELECT status
+			 FROM channel_messages
+			 WHERE idempotency_key = 'idem-no-enqueue-failure'`,
+		).Scan(&skippedStatus); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, channels.MessageStatusDispatchFailed, skippedStatus)
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
+		var outboxCount int
+		if scanErr := q.QueryRow(ctx,
+			`SELECT COUNT(*)
+			 FROM channel_outbox
+			 WHERE channel_message_id = $1`,
+			tenantBMessageID,
+		).Scan(&outboxCount); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, 0, outboxCount)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestMessageStore_DeleteExpiredMessages(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

@@ -28,8 +28,9 @@ Implement the first production-safe execution path after ingress acceptance:
 
 ## Deferred
 
-- Provider outbound send path (e.g., WhatsApp API response delivery).
-- Guaranteed retry queue for dispatch failures after idempotency reservation.
+- User-facing delivery for denied/error outcomes (`denied_*`, `dispatch_failed`).
+- Outbox admin/read/requeue HTTP endpoints.
+- External queue system or separate worker binary.
 
 ## Verification
 

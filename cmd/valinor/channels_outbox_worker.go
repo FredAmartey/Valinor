@@ -14,10 +14,13 @@ import (
 )
 
 type channelOutboxWorker struct {
-	pool               *database.Pool
-	dispatcher         *channels.OutboxDispatcher
-	pollInterval       time.Duration
-	tenantScanPageSize int
+	pool                *database.Pool
+	store               *channels.Store
+	dispatcher          *channels.OutboxDispatcher
+	pollInterval        time.Duration
+	tenantScanPageSize  int
+	recoveryBatchSize   int
+	recoveryMaxAttempts int
 }
 
 func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*channelOutboxWorker, error) {
@@ -53,17 +56,31 @@ func buildChannelOutboxWorker(pool *database.Pool, cfg config.ChannelsConfig) (*
 		MaxRetryDelay:     time.Duration(cfg.Outbox.MaxRetrySeconds) * time.Second,
 		JitterFraction:    cfg.Outbox.JitterFraction,
 	})
+	recoveryBatchSize := cfg.Outbox.RecoveryBatchSize
+	if recoveryBatchSize <= 0 {
+		recoveryBatchSize = cfg.Outbox.ClaimBatchSize
+	}
+	if recoveryBatchSize <= 0 {
+		recoveryBatchSize = 10
+	}
+	recoveryMaxAttempts := cfg.Outbox.MaxAttempts
+	if recoveryMaxAttempts <= 0 {
+		recoveryMaxAttempts = 5
+	}
 
 	return &channelOutboxWorker{
-		pool:               pool,
-		dispatcher:         dispatcher,
-		pollInterval:       pollInterval,
-		tenantScanPageSize: tenantScanPageSize,
+		pool:                pool,
+		store:               store,
+		dispatcher:          dispatcher,
+		pollInterval:        pollInterval,
+		tenantScanPageSize:  tenantScanPageSize,
+		recoveryBatchSize:   recoveryBatchSize,
+		recoveryMaxAttempts: recoveryMaxAttempts,
 	}, nil
 }
 
 func (w *channelOutboxWorker) Run(ctx context.Context) error {
-	if w == nil || w.pool == nil || w.dispatcher == nil {
+	if w == nil || w.pool == nil || w.store == nil || w.dispatcher == nil {
 		return nil
 	}
 
@@ -95,6 +112,23 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 		}
 
 		tenantErr := database.WithTenantConnection(ctx, w.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			recovered, recoverErr := w.store.RecoverDispatchFailuresToOutbox(
+				ctx,
+				q,
+				w.recoveryBatchSize,
+				w.recoveryMaxAttempts,
+			)
+			if recoverErr != nil {
+				return recoverErr
+			}
+			if recovered > 0 {
+				slog.Info(
+					"channel outbox worker recovered dispatch failures",
+					"tenant_id", tenantID,
+					"recovered_rows", recovered,
+				)
+			}
+
 			_, dispatchErr := w.dispatcher.DispatchOnce(ctx, q)
 			return dispatchErr
 		})
