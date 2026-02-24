@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -321,6 +322,191 @@ func TestHandleContext_Success(t *testing.T) {
 	handler.HandleContext(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandleMessage_IgnoresMismatchedFrameID(t *testing.T) {
+	transport := proxy.NewTCPTransport(9844)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(5)
+	agentID := "agent-mismatch"
+	tenantID := "tenant-1"
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ln, err := transport.Listen(ctx, cid)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		reqFrame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      "other-request-id",
+			Payload: json.RawMessage(`{"content":"wrong","done":true}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      reqFrame.ID,
+			Payload: json.RawMessage(`{"content":"right","done":true}`),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"content":"hello"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "right")
+	assert.NotContains(t, w.Body.String(), "wrong")
+}
+
+func TestHandleMessage_ConcurrentRequestsRouteByFrameID(t *testing.T) {
+	transport := proxy.NewTCPTransport(9845)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(4)
+	agentID := "agent-concurrent"
+	tenantID := "tenant-1"
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ln, err := transport.Listen(ctx, cid)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		first, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+		second, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		type contentPayload struct {
+			Content string `json:"content"`
+		}
+		var firstPayload contentPayload
+		var secondPayload contentPayload
+		_ = json.Unmarshal(first.Payload, &firstPayload)
+		_ = json.Unmarshal(second.Payload, &secondPayload)
+
+		firstReply := "reply-first"
+		if firstPayload.Content == "second" {
+			firstReply = "reply-second"
+		}
+		secondReply := "reply-first"
+		if secondPayload.Content == "second" {
+			secondReply = "reply-second"
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      second.ID,
+			Payload: json.RawMessage(`{"content":"` + secondReply + `","done":true}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      first.ID,
+			Payload: json.RawMessage(`{"content":"` + firstReply + `","done":true}`),
+		})
+	}()
+
+	type requestResult struct {
+		name string
+		body string
+		code int
+	}
+	results := make(chan requestResult, 2)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"content":"first"}`))
+		req.SetPathValue("id", agentID)
+		req = withTestAuth(req, tenantID)
+		w := httptest.NewRecorder()
+		handler.HandleMessage(w, req)
+		results <- requestResult{name: "first", body: w.Body.String(), code: w.Code}
+	}()
+	go func() {
+		defer wg.Done()
+		req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"content":"second"}`))
+		req.SetPathValue("id", agentID)
+		req = withTestAuth(req, tenantID)
+		w := httptest.NewRecorder()
+		handler.HandleMessage(w, req)
+		results <- requestResult{name: "second", body: w.Body.String(), code: w.Code}
+	}()
+
+	wg.Wait()
+	close(results)
+
+	var firstBody, secondBody string
+	for res := range results {
+		require.Equal(t, http.StatusOK, res.code)
+		if res.name == "first" {
+			firstBody = res.body
+		}
+		if res.name == "second" {
+			secondBody = res.body
+		}
+	}
+
+	require.Contains(t, firstBody, "reply-first")
+	require.Contains(t, secondBody, "reply-second")
 }
 
 // mockSentinelBlocker implements proxy.Sentinel and always blocks.
