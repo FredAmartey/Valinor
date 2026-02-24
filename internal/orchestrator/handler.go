@@ -215,6 +215,13 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	normalizedConfig, policyErr := enforceOpenClawRuntimePolicy(req.Config)
+	if policyErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": policyErr.Error()})
+		return
+	}
+	req.Config = normalizedConfig
+
 	configJSON, err := json.Marshal(req.Config)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid config"})
