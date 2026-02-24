@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/platform/config"
@@ -94,7 +95,7 @@ func (s *telegramOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return classifyOutboxHTTPStatus("telegram", resp.StatusCode, msg)
+		return classifyOutboxHTTPStatus("telegram", resp.StatusCode, msg, resp.Header.Get("Retry-After"), time.Now().UTC())
 	}
 
 	var response struct {

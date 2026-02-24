@@ -149,6 +149,41 @@ func TestOutboxDispatcher_RetriesWithBoundedBackoff(t *testing.T) {
 	assert.Empty(t, store.markDead)
 }
 
+func TestOutboxDispatcher_UsesRetryAfterWhenGreaterThanBackoff(t *testing.T) {
+	jobID := uuid.New()
+	fixedNow := time.Date(2026, 2, 24, 0, 20, 0, 0, time.UTC)
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{
+				{ID: jobID, AttemptCount: 0, MaxAttempts: 5},
+			},
+			{},
+		},
+	}
+	sender := &fakeOutboxSender{
+		sendErr: map[uuid.UUID]error{
+			jobID: NewOutboxTransientErrorWithRetryAfter(errors.New("rate limited"), 45*time.Second),
+		},
+	}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{
+		ClaimBatchSize: 2,
+		MaxAttempts:    5,
+		BaseRetryDelay: 5 * time.Second,
+		MaxRetryDelay:  2 * time.Minute,
+		JitterFraction: 0,
+	})
+	dispatcher.now = func() time.Time { return fixedNow }
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, store.markRetry, 1)
+	assert.Equal(t, jobID, store.markRetry[0].id)
+	assert.WithinDuration(t, fixedNow.Add(45*time.Second), store.markRetry[0].nextAttempt, time.Second)
+	assert.Empty(t, store.markDead)
+}
+
 func TestOutboxDispatcher_DeadLettersAfterMaxAttempts(t *testing.T) {
 	jobID := uuid.New()
 	store := &fakeOutboxStore{

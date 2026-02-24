@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -164,7 +165,7 @@ func (s *whatsAppOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return classifyOutboxHTTPStatus("whatsapp", resp.StatusCode, msg)
+		return classifyOutboxHTTPStatus("whatsapp", resp.StatusCode, msg, resp.Header.Get("Retry-After"), time.Now().UTC())
 	}
 
 	// WhatsApp Graph API communicates delivery failures through HTTP status codes,
@@ -172,7 +173,7 @@ func (s *whatsAppOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 	return nil
 }
 
-func classifyOutboxHTTPStatus(provider string, status int, message string) error {
+func classifyOutboxHTTPStatus(provider string, status int, message, retryAfterHeader string, now time.Time) error {
 	msg := strings.TrimSpace(message)
 	if msg == "" {
 		msg = http.StatusText(status)
@@ -182,6 +183,9 @@ func classifyOutboxHTTPStatus(provider string, status int, message string) error
 	if isPermanentOutboxHTTPStatus(status) {
 		return channels.NewOutboxPermanentError(err)
 	}
+	if retryAfter, ok := parseRetryAfterDuration(retryAfterHeader, now); ok {
+		return channels.NewOutboxTransientErrorWithRetryAfter(err, retryAfter)
+	}
 	return err
 }
 
@@ -190,4 +194,29 @@ func isPermanentOutboxHTTPStatus(status int) bool {
 		return false
 	}
 	return status >= http.StatusBadRequest && status < http.StatusInternalServerError
+}
+
+func parseRetryAfterDuration(headerValue string, now time.Time) (time.Duration, bool) {
+	value := strings.TrimSpace(headerValue)
+	if value == "" {
+		return 0, false
+	}
+
+	seconds, err := strconv.Atoi(value)
+	if err == nil {
+		if seconds > 0 {
+			return time.Duration(seconds) * time.Second, true
+		}
+		return 0, false
+	}
+
+	retryAt, err := http.ParseTime(value)
+	if err != nil {
+		return 0, false
+	}
+	delay := retryAt.Sub(now)
+	if delay <= 0 {
+		return 0, false
+	}
+	return delay, true
 }
