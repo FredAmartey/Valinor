@@ -463,6 +463,9 @@ func TestHandleMessage_ConcurrentRequestsRouteByFrameID(t *testing.T) {
 		})
 	}()
 
+	_, err = pool.Get(ctx, agentID, cid)
+	require.NoError(t, err)
+
 	type requestResult struct {
 		name string
 		body string
