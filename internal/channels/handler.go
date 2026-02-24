@@ -28,6 +28,7 @@ type upsertLinkFunc func(ctx context.Context, tenantID, userID, platform, platfo
 type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
 type listOutboxFunc func(ctx context.Context, tenantID, status string, limit int) ([]ChannelOutbox, error)
 type requeueOutboxDeadFunc func(ctx context.Context, tenantID string, outboxID uuid.UUID) error
+type listConversationFunc func(ctx context.Context, tenantID, userID string, limit int) ([]ChannelConversationTurn, error)
 type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
 type getMessageByIdempotencyKeyFunc func(ctx context.Context, tenantID, platform, idempotencyKey string) (*ChannelMessageRecord, error)
 type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, outboxThreadTS, correlationID, responseContent string) error
@@ -43,6 +44,7 @@ type Handler struct {
 	deleteLink                 deleteLinkFunc
 	listOutbox                 listOutboxFunc
 	requeueOutboxDead          requeueOutboxDeadFunc
+	listConversation           listConversationFunc
 	updateMessageStatus        updateMessageStatusFunc
 	getMessageByIdempotencyKey getMessageByIdempotencyKeyFunc
 	enqueueOutbound            enqueueOutboundFunc
@@ -68,6 +70,7 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		h.deleteLink = nil
 		h.listOutbox = nil
 		h.requeueOutboxDead = nil
+		h.listConversation = nil
 		h.updateMessageStatus = nil
 		h.getMessageByIdempotencyKey = nil
 		h.enqueueOutbound = nil
@@ -124,6 +127,16 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			return store.RequeueOutboxDead(ctx, q, outboxID)
 		})
+	}
+
+	h.listConversation = func(ctx context.Context, tenantID, userID string, limit int) ([]ChannelConversationTurn, error) {
+		var history []ChannelConversationTurn
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var listErr error
+			history, listErr = store.ListRecentConversationByUser(ctx, q, userID, limit)
+			return listErr
+		})
+		return history, err
 	}
 
 	h.updateMessageStatus = func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error {
@@ -296,6 +309,10 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		messageResponseContent := ""
 		statusMetadataExtra := map[string]any{}
 		enqueueFailed := false
+		content := strings.TrimSpace(meta.Content)
+		if content != "" {
+			statusMetadataExtra["request_content"] = content
+		}
 
 		platformMessageID := meta.PlatformMessageID
 		platformUserID := meta.PlatformUserID
@@ -339,6 +356,9 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		messageDecision := result.Decision
+		if result.Link != nil && result.Link.UserID != uuid.Nil {
+			statusMetadataExtra["user_id"] = result.Link.UserID.String()
+		}
 		if result.Decision == IngressDuplicate && h.getMessageByIdempotencyKey != nil && h.enqueueOutbound != nil {
 			recoveredAgentID, recoveredResponse, recovered, recoverErr := h.recoverDuplicateDispatchFailure(
 				ctx,
@@ -385,16 +405,33 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if h.execute != nil && result.Decision == IngressAccepted && result.Link != nil {
-			content := strings.TrimSpace(meta.Content)
 			if content != "" {
+				conversationHistory := make([]ChannelConversationTurn, 0)
+				if h.listConversation != nil && result.Link.UserID != uuid.Nil {
+					history, historyErr := h.listConversation(ctx, tenantID, result.Link.UserID.String(), ConversationHistoryMaxTurns)
+					if historyErr != nil {
+						slog.Warn(
+							"channel conversation history lookup failed",
+							"tenant_id", tenantID,
+							"provider", provider,
+							"user_id", result.Link.UserID.String(),
+							"correlation_id", correlationID,
+							"error", historyErr,
+						)
+					} else {
+						conversationHistory = history
+					}
+				}
+
 				execResult := h.execute(ctx, ExecutionMessage{
-					TenantID:          tenantID,
-					Platform:          provider,
-					PlatformUserID:    platformUserID,
-					PlatformMessageID: platformMessageID,
-					CorrelationID:     correlationID,
-					Content:           content,
-					Link:              *result.Link,
+					TenantID:            tenantID,
+					Platform:            provider,
+					PlatformUserID:      platformUserID,
+					PlatformMessageID:   platformMessageID,
+					CorrelationID:       correlationID,
+					Content:             content,
+					ConversationHistory: conversationHistory,
+					Link:                *result.Link,
 				})
 				if execResult.Decision != "" {
 					messageDecision = execResult.Decision
@@ -406,6 +443,9 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				messageResponseContent = execResult.ResponseContent
 				if messageResponseContent == "" {
 					messageResponseContent = defaultOutboundContentForDecision(messageDecision)
+				}
+				if messageResponseContent != "" {
+					statusMetadataExtra["response_content"] = messageResponseContent
 				}
 				shouldEnqueue := h.enqueueOutbound != nil &&
 					shouldEnqueueOutboundForDecision(messageDecision) &&

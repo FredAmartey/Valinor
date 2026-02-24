@@ -711,6 +711,65 @@ func (s *Store) GetMessageByIdempotencyKey(ctx context.Context, q database.Queri
 	return &record, nil
 }
 
+// ListRecentConversationByUser returns recent tenant-scoped turns for a linked user.
+// Results are returned in chronological order (oldest first) with a hard max cap.
+func (s *Store) ListRecentConversationByUser(
+	ctx context.Context,
+	q database.Querier,
+	userID string,
+	limit int,
+) ([]ChannelConversationTurn, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrUserIDRequired
+	}
+	if limit <= 0 || limit > ConversationHistoryMaxTurns {
+		limit = ConversationHistoryMaxTurns
+	}
+
+	rows, err := q.Query(ctx,
+		`SELECT
+			NULLIF(BTRIM(msg.metadata->>'request_content'), '') AS request_content,
+			COALESCE(NULLIF(BTRIM(msg.metadata->>'response_content'), ''), '') AS response_content
+		FROM channel_messages msg
+		WHERE msg.tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		  AND NULLIF(BTRIM(msg.metadata->>'user_id'), '') = $1
+		  AND msg.status IN ($2, $3, $4, $5, $6)
+		  AND NULLIF(BTRIM(msg.metadata->>'request_content'), '') IS NOT NULL
+		ORDER BY msg.first_seen_at DESC, msg.created_at DESC, msg.id DESC
+		LIMIT $7`,
+		userID,
+		MessageStatusExecuted,
+		MessageStatusDeniedRBAC,
+		MessageStatusDeniedNoAgent,
+		MessageStatusDeniedSentinel,
+		MessageStatusDispatchFailed,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing recent conversation history: %w", err)
+	}
+	defer rows.Close()
+
+	turns := make([]ChannelConversationTurn, 0, limit)
+	for rows.Next() {
+		var turn ChannelConversationTurn
+		if scanErr := rows.Scan(&turn.RequestContent, &turn.ResponseContent); scanErr != nil {
+			return nil, fmt.Errorf("scanning recent conversation row: %w", scanErr)
+		}
+		turns = append(turns, turn)
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, fmt.Errorf("iterating recent conversation rows: %w", rowsErr)
+	}
+
+	// Query is newest-first for efficiency; return chronological for prompt assembly.
+	for left, right := 0, len(turns)-1; left < right; left, right = left+1, right-1 {
+		turns[left], turns[right] = turns[right], turns[left]
+	}
+	return turns, nil
+}
+
 // RecoverDispatchFailuresToOutbox claims tenant-scoped terminal rows that failed
 // initial outbox enqueue, creates outbox jobs, and marks recovered metadata.
 // dispatch_failed rows are transitioned back to executed; denied_* rows keep status.

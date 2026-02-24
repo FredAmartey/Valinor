@@ -250,12 +250,13 @@ func run() error {
 				}
 				return orchStore.ListByTenant(ctx, pool, tenantID)
 			},
-			func(ctx context.Context, agent orchestrator.AgentInstance, content string) (string, error) {
+			func(ctx context.Context, agent orchestrator.AgentInstance, content string, history []channels.ChannelConversationTurn) (string, error) {
 				return dispatchChannelMessageToAgent(
 					ctx,
 					connPool,
 					agent,
 					content,
+					history,
 					time.Duration(cfg.Proxy.MessageTimeout)*time.Second,
 				)
 			},

@@ -53,7 +53,9 @@ func TestNewChannelExecutor_ReturnsNilWhenRequiredDepsMissing(t *testing.T) {
 		return &rbac.Decision{Allowed: true}, nil
 	}
 	listAgents := func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) { return nil, nil }
-	dispatch := func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) { return "", nil }
+	dispatch := func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		return "", nil
+	}
 
 	assert.Nil(t, newChannelExecutor(nil, authorize, listAgents, dispatch, nil, nil))
 	assert.Nil(t, newChannelExecutor(lookup, nil, listAgents, dispatch, nil, nil))
@@ -81,7 +83,7 @@ func TestNewChannelExecutor_EmptyContentShortCircuits(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			dispatchCalled = true
 			return "", nil
 		},
@@ -116,7 +118,7 @@ func TestNewChannelExecutor_RejectsMissingLinkUserID(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", nil
 		},
 		nil,
@@ -153,7 +155,7 @@ func TestNewChannelExecutor_DeniesRBAC(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			dispatchCalled = true
 			return "", nil
 		},
@@ -185,7 +187,7 @@ func TestNewChannelExecutor_RejectsTenantMismatch(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", nil
 		},
 		nil,
@@ -217,7 +219,7 @@ func TestNewChannelExecutor_IdentityLookupError(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", nil
 		},
 		nil,
@@ -250,7 +252,7 @@ func TestNewChannelExecutor_AuthorizeError(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", nil
 		},
 		nil,
@@ -285,7 +287,7 @@ func TestNewChannelExecutor_DeniesSentinel(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", nil
 		},
 		func(_ context.Context, _, _, _ string) (sentinel.ScanResult, error) {
@@ -322,7 +324,7 @@ func TestNewChannelExecutor_SentinelError(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", nil
 		},
 		func(_ context.Context, _, _, _ string) (sentinel.ScanResult, error) {
@@ -358,7 +360,7 @@ func TestNewChannelExecutor_DeniesWhenNoRunningAgent(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return []orchestrator.AgentInstance{}, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			dispatchCalled = true
 			return "", nil
 		},
@@ -411,7 +413,7 @@ func TestNewChannelExecutor_ExecutesAgainstPreferredDepartmentAgent(t *testing.T
 				},
 			}, nil
 		},
-		func(_ context.Context, agent orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, agent orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			dispatchCalled = true
 			dispatchedAgentID = agent.ID
 			return "agent response", nil
@@ -453,7 +455,7 @@ func TestNewChannelExecutor_MapsDispatchError(t *testing.T) {
 				VsockCID: &cid,
 			}}, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
 			return "", errors.New("downstream timeout")
 		},
 		nil,
@@ -550,7 +552,7 @@ func TestDispatchChannelMessageToAgent_IgnoresMismatchedFrameID(t *testing.T) {
 		VsockCID: &cid,
 	}
 
-	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "hello", 5*time.Second)
+	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "hello", nil, 5*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, "right", response)
 }
@@ -631,11 +633,11 @@ func TestDispatchChannelMessageToAgent_ConcurrentRequestsRouteByFrameID(t *testi
 	results := make(chan result, 2)
 
 	go func() {
-		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-first", 5*time.Second)
+		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-first", nil, 5*time.Second)
 		results <- result{name: "first", resp: resp, err: err}
 	}()
 	go func() {
-		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-second", 5*time.Second)
+		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-second", nil, 5*time.Second)
 		results <- result{name: "second", resp: resp, err: err}
 	}()
 
@@ -652,4 +654,144 @@ func TestDispatchChannelMessageToAgent_ConcurrentRequestsRouteByFrameID(t *testi
 
 	assert.Equal(t, "first", firstResp)
 	assert.Equal(t, "second", secondResp)
+}
+
+func TestDispatchChannelMessageToAgent_IncludesConversationMessages(t *testing.T) {
+	transport := proxy.NewTCPTransport(9870)
+	connPool := proxy.NewConnPool(transport)
+	defer connPool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cid := uint32(44)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	payloadSeen := make(chan map[string]any, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		var payload map[string]any
+		_ = json.Unmarshal(frame.Payload, &payload)
+		payloadSeen <- payload
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"ok","done":true}`),
+		})
+	}()
+
+	agent := orchestrator.AgentInstance{
+		ID:       "agent-history",
+		Status:   orchestrator.StatusRunning,
+		VsockCID: &cid,
+	}
+
+	history := []channels.ChannelConversationTurn{
+		{RequestContent: "older request", ResponseContent: "older response"},
+		{RequestContent: "recent request", ResponseContent: ""},
+	}
+	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "latest request", history, 5*time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", response)
+
+	payload := <-payloadSeen
+	messagesRaw, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messagesRaw, 4)
+
+	first, ok := messagesRaw[0].(map[string]any)
+	require.True(t, ok)
+	second, ok := messagesRaw[1].(map[string]any)
+	require.True(t, ok)
+	third, ok := messagesRaw[2].(map[string]any)
+	require.True(t, ok)
+	fourth, ok := messagesRaw[3].(map[string]any)
+	require.True(t, ok)
+
+	assert.Equal(t, "user", first["role"])
+	assert.Equal(t, "older request", first["content"])
+	assert.Equal(t, "assistant", second["role"])
+	assert.Equal(t, "older response", second["content"])
+	assert.Equal(t, "user", third["role"])
+	assert.Equal(t, "recent request", third["content"])
+	assert.Equal(t, "user", fourth["role"])
+	assert.Equal(t, "latest request", fourth["content"])
+}
+
+func TestDispatchChannelMessageToAgent_PreservesLegacyRoleContentFields(t *testing.T) {
+	transport := proxy.NewTCPTransport(9871)
+	connPool := proxy.NewConnPool(transport)
+	defer connPool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cid := uint32(45)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	payloadSeen := make(chan map[string]any, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		var payload map[string]any
+		_ = json.Unmarshal(frame.Payload, &payload)
+		payloadSeen <- payload
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"ok","done":true}`),
+		})
+	}()
+
+	agent := orchestrator.AgentInstance{
+		ID:       "agent-legacy",
+		Status:   orchestrator.StatusRunning,
+		VsockCID: &cid,
+	}
+
+	response, err := dispatchChannelMessageToAgent(
+		ctx,
+		connPool,
+		agent,
+		"latest request",
+		[]channels.ChannelConversationTurn{{RequestContent: "older request"}},
+		5*time.Second,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", response)
+
+	payload := <-payloadSeen
+	assert.Equal(t, "user", payload["role"])
+	assert.Equal(t, "latest request", payload["content"])
+
+	messagesRaw, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messagesRaw, 2)
 }

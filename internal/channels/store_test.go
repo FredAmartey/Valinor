@@ -1022,6 +1022,175 @@ func TestMessageStore_DeleteExpiredMessages_RespectsLimit(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStore_ListRecentConversationByUser_ReturnsChronologicalLimitedTurns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Conversation', 'tenant-conversation') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	userA := uuid.NewString()
+	userB := uuid.NewString()
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		for i := 1; i <= 15; i++ {
+			req := fmt.Sprintf("req-%02d", i)
+			resp := fmt.Sprintf("resp-%02d", i)
+			_, execErr := q.Exec(ctx,
+				`INSERT INTO channel_messages (
+					tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+					payload_fingerprint, correlation_id, status, metadata, first_seen_at, expires_at
+				) VALUES (
+					current_setting('app.current_tenant_id', true)::UUID,
+					'whatsapp', '+15550001111', $1, $2,
+					$3, $4, 'executed', jsonb_build_object('user_id', $5::text, 'request_content', $6::text, 'response_content', $7::text), $8, $9
+				)`,
+				fmt.Sprintf("msg-conv-a-%02d", i),
+				fmt.Sprintf("idem-conv-a-%02d", i),
+				fmt.Sprintf("fp-conv-a-%02d", i),
+				fmt.Sprintf("corr-conv-a-%02d", i),
+				userA,
+				req,
+				resp,
+				base.Add(time.Duration(i)*time.Minute),
+				base.Add(24*time.Hour),
+			)
+			if execErr != nil {
+				return execErr
+			}
+		}
+
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, first_seen_at, expires_at
+			) VALUES (
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15559990000', 'msg-conv-b-01', 'idem-conv-b-01',
+				'fp-conv-b-01', 'corr-conv-b-01', 'executed',
+				jsonb_build_object('user_id', $1::text, 'request_content', 'other-user', 'response_content', 'other-user-resp'),
+				$2, $3
+			)`,
+			userB,
+			base.Add(30*time.Minute),
+			base.Add(24*time.Hour),
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		history, listErr := store.ListRecentConversationByUser(ctx, q, userA, 100)
+		require.NoError(t, listErr)
+		require.Len(t, history, 12)
+
+		for i := 0; i < len(history); i++ {
+			n := i + 4
+			assert.Equal(t, fmt.Sprintf("req-%02d", n), history[i].RequestContent)
+			assert.Equal(t, fmt.Sprintf("resp-%02d", n), history[i].ResponseContent)
+		}
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestStore_ListRecentConversationByUser_IgnoresRowsWithoutRequestContent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	store := channels.NewStore()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Conversation Filter', 'tenant-conversation-filter') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	userID := uuid.NewString()
+	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, first_seen_at, expires_at
+			) VALUES
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-conv-filter-1', 'idem-conv-filter-1',
+				'fp-conv-filter-1', 'corr-conv-filter-1', 'executed',
+				jsonb_build_object('user_id', $1::text, 'request_content', '', 'response_content', 'ignored-empty-request'),
+				$2, $3
+			),
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-conv-filter-2', 'idem-conv-filter-2',
+				'fp-conv-filter-2', 'corr-conv-filter-2', 'executed',
+				jsonb_build_object('user_id', $1::text, 'response_content', 'ignored-missing-request'),
+				$4, $5
+			),
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-conv-filter-3', 'idem-conv-filter-3',
+				'fp-conv-filter-3', 'corr-conv-filter-3', 'accepted',
+				jsonb_build_object('user_id', $1::text, 'request_content', 'ignored-accepted', 'response_content', 'ignored-accepted'),
+				$6, $7
+			),
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-conv-filter-4', 'idem-conv-filter-4',
+				'fp-conv-filter-4', 'corr-conv-filter-4', 'executed',
+				jsonb_build_object('user_id', $1::text, 'request_content', 'keep-1', 'response_content', 'keep-resp-1'),
+				$8, $9
+			),
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15550002222', 'msg-conv-filter-5', 'idem-conv-filter-5',
+				'fp-conv-filter-5', 'corr-conv-filter-5', 'denied_rbac',
+				jsonb_build_object('user_id', $1::text, 'request_content', 'keep-2', 'response_content', ''),
+				$10, $11
+			)`,
+			userID,
+			base.Add(1*time.Minute), base.Add(24*time.Hour),
+			base.Add(2*time.Minute), base.Add(24*time.Hour),
+			base.Add(3*time.Minute), base.Add(24*time.Hour),
+			base.Add(4*time.Minute), base.Add(24*time.Hour),
+			base.Add(5*time.Minute), base.Add(24*time.Hour),
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		history, listErr := store.ListRecentConversationByUser(ctx, q, userID, 12)
+		require.NoError(t, listErr)
+		require.Len(t, history, 2)
+
+		assert.Equal(t, "keep-1", history[0].RequestContent)
+		assert.Equal(t, "keep-resp-1", history[0].ResponseContent)
+		assert.Equal(t, "keep-2", history[1].RequestContent)
+		assert.Equal(t, "", history[1].ResponseContent)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestOutboxStore_EnqueueAndClaim(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
