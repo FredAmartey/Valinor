@@ -327,22 +327,27 @@ func (m *Manager) healthCheckLoop(ctx context.Context) {
 	}
 }
 
-// HealthCheckOnce checks all running VMs and handles unhealthy ones.
+// HealthCheckOnce checks running VMs and retries replacement for unhealthy records.
 func (m *Manager) HealthCheckOnce(ctx context.Context) {
-	instances, err := m.store.ListByStatus(ctx, m.pool, StatusRunning)
+	runningInstances, err := m.store.ListByStatus(ctx, m.pool, StatusRunning)
 	if err != nil {
 		slog.Error("listing running instances failed", "error", err)
 		return
 	}
+	unhealthyInstances, err := m.store.ListByStatus(ctx, m.pool, StatusUnhealthy)
+	if err != nil {
+		slog.Error("listing unhealthy instances failed", "error", err)
+		return
+	}
 
-	if len(instances) == 0 {
+	if len(runningInstances) == 0 && len(unhealthyInstances) == 0 {
 		return
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // concurrency cap
 
-	for _, inst := range instances {
+	for _, inst := range runningInstances {
 		inst := inst
 		g.Go(func() error {
 			if inst.VMID == nil {
@@ -373,6 +378,14 @@ func (m *Manager) HealthCheckOnce(ctx context.Context) {
 				}
 			}
 
+			return nil
+		})
+	}
+	for _, inst := range unhealthyInstances {
+		inst := inst
+		g.Go(func() error {
+			slog.Warn("retrying replacement for unhealthy VM record", "id", inst.ID)
+			m.replaceUnhealthy(ctx, &inst)
 			return nil
 		})
 	}

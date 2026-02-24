@@ -364,3 +364,92 @@ func TestManager_HealthCheckOnce_DoesNotReplaceWhenDestroyStatusUpdateFails(t *t
 	assert.Equal(t, inst.ID, agents[0].ID)
 	assert.Equal(t, orchestrator.StatusUnhealthy, agents[0].Status)
 }
+
+func TestManager_HealthCheckOnce_RetriesUnhealthyReplacementAfterTransientDestroyFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{
+		Driver:                 "mock",
+		WarmPoolSize:           0,
+		MaxConsecutiveFailures: 1,
+	}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Destroy Retry Tenant', 'destroy-retry-tenant') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		CREATE OR REPLACE FUNCTION fail_agent_destroyed_status_update_retry()
+		RETURNS trigger AS $$
+		BEGIN
+			IF NEW.status = 'destroyed' THEN
+				RAISE EXCEPTION 'blocked destroyed status update';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+	`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		CREATE TRIGGER trg_fail_agent_destroyed_status_update_retry
+		BEFORE UPDATE OF status ON agent_instances
+		FOR EACH ROW
+		EXECUTE FUNCTION fail_agent_destroyed_status_update_retry();
+	`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DROP TRIGGER IF EXISTS trg_fail_agent_destroyed_status_update_retry ON agent_instances`)
+		_, _ = pool.Exec(context.Background(), `DROP FUNCTION IF EXISTS fail_agent_destroyed_status_update_retry()`)
+	})
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{})
+	require.NoError(t, err)
+
+	driver.SetUnhealthy(*inst.VMID)
+	mgr.HealthCheckOnce(ctx)
+
+	agents, err := mgr.ListByTenant(ctx, tenantID)
+	require.NoError(t, err)
+	require.Len(t, agents, 1)
+	assert.Equal(t, inst.ID, agents[0].ID)
+	assert.Equal(t, orchestrator.StatusUnhealthy, agents[0].Status)
+
+	_, err = pool.Exec(ctx, `DROP TRIGGER IF EXISTS trg_fail_agent_destroyed_status_update_retry ON agent_instances`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `DROP FUNCTION IF EXISTS fail_agent_destroyed_status_update_retry()`)
+	require.NoError(t, err)
+
+	mgr.HealthCheckOnce(ctx)
+
+	agents, err = mgr.ListByTenant(ctx, tenantID)
+	require.NoError(t, err)
+
+	var replacement *orchestrator.AgentInstance
+	var original *orchestrator.AgentInstance
+	for i := range agents {
+		current := &agents[i]
+		if current.ID == inst.ID {
+			original = current
+		}
+		if current.Status == orchestrator.StatusRunning {
+			replacement = current
+		}
+	}
+
+	require.NotNil(t, replacement, "unhealthy instance should be retried and replaced after transient failure clears")
+	assert.NotEqual(t, inst.ID, replacement.ID)
+	if original != nil {
+		assert.Equal(t, orchestrator.StatusDestroyed, original.Status)
+	}
+}
