@@ -29,6 +29,7 @@ jobs:
           claude_args: --model claude-sonnet-4-6
           prompt: |
             Review this PR against the project rules in CLAUDE.md.
-            Focus on: security vulnerabilities, architecture violations,
+            Focus on security vulnerabilities, architecture violations,
             Go idiom violations, missing tests, and performance concerns.
-            Be specific — cite file paths and line numbers.
+            Be specific and cite file paths and line numbers.
+          show_full_output: true
