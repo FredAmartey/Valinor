@@ -681,6 +681,21 @@ func TestSelectChannelTargetAgent_EmptyRequestedUserNoSharedCandidateReturnsNil(
 	assert.Nil(t, target)
 }
 
+func TestSelectChannelTargetAgent_EmptyRequestedUserMatchesBlankUserIDAgent(t *testing.T) {
+	blankCID := uint32(204)
+
+	target := selectChannelTargetAgent([]orchestrator.AgentInstance{
+		{
+			ID:       "agent-blank-userid",
+			UserID:   ptrString(""),
+			Status:   orchestrator.StatusRunning,
+			VsockCID: &blankCID,
+		},
+	}, "", nil)
+	require.NotNil(t, target)
+	assert.Equal(t, "agent-blank-userid", target.ID)
+}
+
 func TestDispatchChannelMessageToAgent_IgnoresMismatchedFrameID(t *testing.T) {
 	transport := proxy.NewTCPTransport(9860)
 	connPool := proxy.NewConnPool(transport)
