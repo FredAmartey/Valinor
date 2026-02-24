@@ -287,8 +287,8 @@ func TestHandleContext_Success(t *testing.T) {
 	}, nil, nil)
 
 	ctx := context.Background()
-	ln, err := transport.Listen(ctx, cid)
-	require.NoError(t, err)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
 	defer ln.Close()
 
 	// Mock agent that acks context updates
@@ -413,8 +413,8 @@ func TestHandleMessage_ConcurrentRequestsRouteByFrameID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ln, err := transport.Listen(ctx, cid)
-	require.NoError(t, err)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
 	defer ln.Close()
 
 	go func() {
@@ -463,8 +463,8 @@ func TestHandleMessage_ConcurrentRequestsRouteByFrameID(t *testing.T) {
 		})
 	}()
 
-	_, err = pool.Get(ctx, agentID, cid)
-	require.NoError(t, err)
+	_, getErr := pool.Get(ctx, agentID, cid)
+	require.NoError(t, getErr)
 
 	type requestResult struct {
 		name string
