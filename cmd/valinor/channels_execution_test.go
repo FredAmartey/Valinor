@@ -645,6 +645,57 @@ func TestSelectChannelTargetAgent_DoesNotFallbackToOtherDepartment(t *testing.T)
 	assert.Nil(t, target)
 }
 
+func TestSelectChannelTargetAgent_EmptyRequestedUserPrefersSharedAgents(t *testing.T) {
+	affineCID := uint32(201)
+	sharedCID := uint32(202)
+
+	target := selectChannelTargetAgent([]orchestrator.AgentInstance{
+		{
+			ID:       "agent-user-affine",
+			UserID:   ptrString("user-a"),
+			Status:   orchestrator.StatusRunning,
+			VsockCID: &affineCID,
+		},
+		{
+			ID:       "agent-shared",
+			UserID:   nil,
+			Status:   orchestrator.StatusRunning,
+			VsockCID: &sharedCID,
+		},
+	}, "   ", nil)
+	require.NotNil(t, target)
+	assert.Equal(t, "agent-shared", target.ID)
+}
+
+func TestSelectChannelTargetAgent_EmptyRequestedUserNoSharedCandidateReturnsNil(t *testing.T) {
+	affineCID := uint32(203)
+
+	target := selectChannelTargetAgent([]orchestrator.AgentInstance{
+		{
+			ID:       "agent-user-affine",
+			UserID:   ptrString("user-a"),
+			Status:   orchestrator.StatusRunning,
+			VsockCID: &affineCID,
+		},
+	}, "", nil)
+	assert.Nil(t, target)
+}
+
+func TestSelectChannelTargetAgent_EmptyRequestedUserMatchesBlankUserIDAgent(t *testing.T) {
+	blankCID := uint32(204)
+
+	target := selectChannelTargetAgent([]orchestrator.AgentInstance{
+		{
+			ID:       "agent-blank-userid",
+			UserID:   ptrString(""),
+			Status:   orchestrator.StatusRunning,
+			VsockCID: &blankCID,
+		},
+	}, "", nil)
+	require.NotNil(t, target)
+	assert.Equal(t, "agent-blank-userid", target.ID)
+}
+
 func TestDispatchChannelMessageToAgent_IgnoresMismatchedFrameID(t *testing.T) {
 	transport := proxy.NewTCPTransport(9860)
 	connPool := proxy.NewConnPool(transport)

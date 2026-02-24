@@ -392,7 +392,10 @@ func (m *Manager) replaceUnhealthy(ctx context.Context, inst *AgentInstance) {
 		_ = m.driver.Stop(ctx, *inst.VMID)
 		_ = m.driver.Cleanup(ctx, *inst.VMID)
 	}
-	_ = m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusDestroyed)
+	if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusDestroyed); err != nil {
+		slog.Error("marking destroyed failed, skipping replacement", "id", inst.ID, "error", err)
+		return
+	}
 
 	// Provision replacement if this VM had a tenant, carrying forward config.
 	if inst.TenantID != nil {

@@ -9,11 +9,9 @@ import (
 // ConnPool maintains open connections to agents, keyed by agent instance ID.
 // Connections are created lazily on first Get.
 //
-// NOTE: The current implementation returns the same AgentConn for all requests
-// to a given agent. Frame-ID multiplexing is not yet implemented, so concurrent
-// requests to the same agent will interleave on a shared connection. Callers
-// must serialize requests per agent or accept that responses may be mis-routed.
-// Full frame-ID dispatching is deferred to a future phase.
+// NOTE: The pool returns one shared AgentConn per agent. AgentConn's request
+// stream API (`SendRequest`) routes replies by Frame.ID, so concurrent in-flight
+// requests to the same agent are supported without response cross-talk.
 type ConnPool struct {
 	transport Transport
 	mu        sync.Mutex
