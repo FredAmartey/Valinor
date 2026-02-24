@@ -191,12 +191,14 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.MessageTimeout)
 	defer cancel()
 
-	if err := conn.Send(ctx, frame); err != nil {
+	request, err := conn.SendRequest(ctx, frame)
+	if err != nil {
 		h.pool.Remove(agentID)
 		slog.Error("proxy send failed", "agent", agentID, "error", err)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
 	}
+	defer request.Close()
 
 	// Audit: message sent
 	if h.audit != nil {
@@ -210,7 +212,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	// Collect chunks until done
 	var contentParts []string
 	for {
-		reply, err := conn.Recv(ctx)
+		reply, err := request.Recv(ctx)
 		if err != nil {
 			h.pool.Remove(agentID)
 			slog.Error("proxy recv failed", "agent", agentID, "error", err)
@@ -386,11 +388,13 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.MessageTimeout)
 	defer cancel()
 
-	if err := conn.Send(ctx, frame); err != nil {
+	request, err := conn.SendRequest(ctx, frame)
+	if err != nil {
 		h.pool.Remove(agentID)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
 	}
+	defer request.Close()
 
 	// Audit: message sent (stream)
 	if h.audit != nil {
@@ -414,7 +418,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	flusher, _ := w.(http.Flusher)
 
 	for {
-		reply, err := conn.Recv(ctx)
+		reply, err := request.Recv(ctx)
 		if err != nil {
 			h.pool.Remove(agentID)
 			return
@@ -547,41 +551,33 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.ConfigTimeout)
 	defer cancel()
 
-	err = conn.Send(ctx, frame)
+	request, err := conn.SendRequest(ctx, frame)
 	if err != nil {
 		h.pool.Remove(agentID)
 		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
 	}
+	defer request.Close()
 
-	// Wait for matching ack — skip unsolicited frames (e.g. heartbeats)
-	for {
-		reply, recvErr := conn.Recv(ctx)
-		if recvErr != nil {
-			h.pool.Remove(agentID)
-			writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
-			return
-		}
-
-		// Skip frames that don't match our request ID (e.g. heartbeats)
-		if reply.ID != reqID {
-			continue
-		}
-
-		if reply.Type == TypeError {
-			writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
-			return
-		}
-
-		if reply.Type == TypeConfigAck {
-			writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
-			return
-		}
-
-		// Unexpected frame type with matching ID
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
+	reply, recvErr := request.Recv(ctx)
+	if recvErr != nil {
+		h.pool.Remove(agentID)
+		writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
 		return
 	}
+
+	if reply.Type == TypeError {
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
+		return
+	}
+
+	if reply.Type == TypeConfigAck {
+		writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+		return
+	}
+
+	// Unexpected frame type with matching ID
+	writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
 }
 
 // auditFromRequest builds a base AuditEvent from the request context.

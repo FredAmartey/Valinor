@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -12,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/valinor-ai/valinor/internal/proxy"
 	"github.com/valinor-ai/valinor/internal/rbac"
 	"github.com/valinor-ai/valinor/internal/sentinel"
 )
@@ -501,4 +504,152 @@ func TestSelectChannelTargetAgent_DoesNotFallbackToOtherDepartment(t *testing.T)
 		},
 	}, []string{"dept-y"})
 	assert.Nil(t, target)
+}
+
+func TestDispatchChannelMessageToAgent_IgnoresMismatchedFrameID(t *testing.T) {
+	transport := proxy.NewTCPTransport(9860)
+	connPool := proxy.NewConnPool(transport)
+	defer connPool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cid := uint32(42)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      "other-request-id",
+			Payload: json.RawMessage(`{"content":"wrong","done":true}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"right","done":true}`),
+		})
+	}()
+
+	agent := orchestrator.AgentInstance{
+		ID:       "agent-1",
+		Status:   orchestrator.StatusRunning,
+		VsockCID: &cid,
+	}
+
+	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "hello", 5*time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, "right", response)
+}
+
+func TestDispatchChannelMessageToAgent_ConcurrentRequestsRouteByFrameID(t *testing.T) {
+	transport := proxy.NewTCPTransport(9865)
+	connPool := proxy.NewConnPool(transport)
+	defer connPool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cid := uint32(43)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		first, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+		second, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		type payload struct {
+			Content string `json:"content"`
+		}
+		var firstPayload payload
+		var secondPayload payload
+		_ = json.Unmarshal(first.Payload, &firstPayload)
+		_ = json.Unmarshal(second.Payload, &secondPayload)
+
+		firstReply := "second"
+		if firstPayload.Content == "request-first" {
+			firstReply = "first"
+		}
+		secondReply := "second"
+		if secondPayload.Content == "request-first" {
+			secondReply = "first"
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      second.ID,
+			Payload: json.RawMessage(`{"content":"` + secondReply + `","done":true}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      first.ID,
+			Payload: json.RawMessage(`{"content":"` + firstReply + `","done":true}`),
+		})
+	}()
+
+	agent := orchestrator.AgentInstance{
+		ID:       "agent-concurrent",
+		Status:   orchestrator.StatusRunning,
+		VsockCID: &cid,
+	}
+
+	_, getErr := connPool.Get(ctx, agent.ID, cid)
+	require.NoError(t, getErr)
+
+	type result struct {
+		name string
+		resp string
+		err  error
+	}
+	results := make(chan result, 2)
+
+	go func() {
+		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-first", 5*time.Second)
+		results <- result{name: "first", resp: resp, err: err}
+	}()
+	go func() {
+		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-second", 5*time.Second)
+		results <- result{name: "second", resp: resp, err: err}
+	}()
+
+	var firstResp, secondResp string
+	for i := 0; i < 2; i++ {
+		res := <-results
+		require.NoError(t, res.err)
+		if res.name == "first" {
+			firstResp = res.resp
+		} else {
+			secondResp = res.resp
+		}
+	}
+
+	assert.Equal(t, "first", firstResp)
+	assert.Equal(t, "second", secondResp)
 }

@@ -30,7 +30,6 @@ Implement the first production-safe execution path after ingress acceptance:
 
 - Provider outbound send path (e.g., WhatsApp API response delivery).
 - Guaranteed retry queue for dispatch failures after idempotency reservation.
-- Full frame-ID multiplexing for concurrent channel executions against same agent.
 
 ## Verification
 

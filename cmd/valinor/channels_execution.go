@@ -219,14 +219,16 @@ func dispatchChannelMessageToAgent(
 	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	if err := conn.Send(sendCtx, frame); err != nil {
+	request, err := conn.SendRequest(sendCtx, frame)
+	if err != nil {
 		connPool.Remove(agent.ID)
 		return "", fmt.Errorf("sending agent message: %w", err)
 	}
+	defer request.Close()
 
 	contentParts := make([]string, 0)
 	for {
-		reply, err := conn.Recv(sendCtx)
+		reply, err := request.Recv(sendCtx)
 		if err != nil {
 			connPool.Remove(agent.ID)
 			return "", fmt.Errorf("receiving agent response: %w", err)
