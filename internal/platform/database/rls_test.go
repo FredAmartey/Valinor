@@ -206,6 +206,18 @@ func seedTwoTenants(t *testing.T, superConnStr string) (tenantA, tenantB string)
 		tenantB, messageBID)
 	require.NoError(t, err)
 
+	// channel_provider_credentials
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_provider_credentials (tenant_id, provider, access_token, phone_number_id)
+		 VALUES ($1, 'whatsapp', 'tenant-a-token', '1000000001')`,
+		tenantA)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO channel_provider_credentials (tenant_id, provider, access_token, phone_number_id)
+		 VALUES ($1, 'whatsapp', 'tenant-b-token', '1000000002')`,
+		tenantB)
+	require.NoError(t, err)
+
 	return tenantA, tenantB
 }
 
@@ -242,6 +254,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 		"channel_links",
 		"channel_messages",
 		"channel_outbox",
+		"channel_provider_credentials",
 	}
 
 	for _, table := range tables {

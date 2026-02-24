@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_channel_provider_credentials_tenant_provider;
+DROP TABLE IF EXISTS channel_provider_credentials;

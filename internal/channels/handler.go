@@ -29,6 +29,9 @@ type deleteLinkFunc func(ctx context.Context, tenantID, id string) error
 type updateMessageStatusFunc func(ctx context.Context, tenantID, platform, idempotencyKey, status string, metadata json.RawMessage) error
 type getMessageByIdempotencyKeyFunc func(ctx context.Context, tenantID, platform, idempotencyKey string) (*ChannelMessageRecord, error)
 type enqueueOutboundFunc func(ctx context.Context, tenantID, platform, idempotencyKey, recipientID, outboxThreadTS, correlationID, responseContent string) error
+type getProviderCredentialFunc func(ctx context.Context, tenantID, provider string) (*ProviderCredential, error)
+type upsertProviderCredentialFunc func(ctx context.Context, tenantID string, params UpsertProviderCredentialParams) (*ProviderCredential, error)
+type deleteProviderCredentialFunc func(ctx context.Context, tenantID, provider string) error
 
 // Handler handles channel webhook and link management endpoints.
 type Handler struct {
@@ -39,6 +42,9 @@ type Handler struct {
 	updateMessageStatus        updateMessageStatusFunc
 	getMessageByIdempotencyKey getMessageByIdempotencyKeyFunc
 	enqueueOutbound            enqueueOutboundFunc
+	getProviderCredential      getProviderCredentialFunc
+	upsertProviderCredential   upsertProviderCredentialFunc
+	deleteProviderCredential   deleteProviderCredentialFunc
 	execute                    executeFunc
 }
 
@@ -59,6 +65,9 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 		h.updateMessageStatus = nil
 		h.getMessageByIdempotencyKey = nil
 		h.enqueueOutbound = nil
+		h.getProviderCredential = nil
+		h.upsertProviderCredential = nil
+		h.deleteProviderCredential = nil
 		return h
 	}
 
@@ -141,6 +150,32 @@ func (h *Handler) WithLinkStore(pool *database.Pool, store *Store) *Handler {
 				return fmt.Errorf("enqueuing outbound response: %w", err)
 			}
 			return nil
+		})
+	}
+
+	h.getProviderCredential = func(ctx context.Context, tenantID, provider string) (*ProviderCredential, error) {
+		var credential *ProviderCredential
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var lookupErr error
+			credential, lookupErr = store.GetProviderCredential(ctx, q, provider)
+			return lookupErr
+		})
+		return credential, err
+	}
+
+	h.upsertProviderCredential = func(ctx context.Context, tenantID string, params UpsertProviderCredentialParams) (*ProviderCredential, error) {
+		var credential *ProviderCredential
+		err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			var upsertErr error
+			credential, upsertErr = store.UpsertProviderCredential(ctx, q, params)
+			return upsertErr
+		})
+		return credential, err
+	}
+
+	h.deleteProviderCredential = func(ctx context.Context, tenantID, provider string) error {
+		return database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			return store.DeleteProviderCredential(ctx, q, provider)
 		})
 	}
 
@@ -723,6 +758,145 @@ func (h *Handler) HandleDeleteLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleGetProviderCredential returns tenant-scoped provider credentials in sanitized form.
+// GET /api/v1/channels/providers/{provider}/credentials
+func (h *Handler) HandleGetProviderCredential(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.getProviderCredential == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "provider credentials are not configured"})
+		return
+	}
+
+	provider := strings.TrimSpace(r.PathValue("provider"))
+	credential, err := h.getProviderCredential(r.Context(), tenantID, provider)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPlatformEmpty), errors.Is(err, ErrProviderUnsupported):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		case errors.Is(err, ErrProviderCredentialNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "getting provider credential failed"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, sanitizeProviderCredentialResponse(credential))
+}
+
+// HandleUpsertProviderCredential creates or updates tenant-scoped provider credentials.
+// PUT /api/v1/channels/providers/{provider}/credentials
+func (h *Handler) HandleUpsertProviderCredential(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.upsertProviderCredential == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "provider credentials are not configured"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+
+	var req struct {
+		AccessToken   string `json:"access_token"`
+		APIBaseURL    string `json:"api_base_url"`
+		APIVersion    string `json:"api_version"`
+		PhoneNumberID string `json:"phone_number_id"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if decodeErr := decoder.Decode(&req); decodeErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	credential, err := h.upsertProviderCredential(r.Context(), tenantID, UpsertProviderCredentialParams{
+		Provider:      strings.TrimSpace(r.PathValue("provider")),
+		AccessToken:   strings.TrimSpace(req.AccessToken),
+		APIBaseURL:    strings.TrimSpace(req.APIBaseURL),
+		APIVersion:    strings.TrimSpace(req.APIVersion),
+		PhoneNumberID: strings.TrimSpace(req.PhoneNumberID),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPlatformEmpty),
+			errors.Is(err, ErrProviderUnsupported),
+			errors.Is(err, ErrProviderAccessTokenRequired),
+			errors.Is(err, ErrProviderPhoneNumberIDRequired):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "upserting provider credential failed"})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, sanitizeProviderCredentialResponse(credential))
+}
+
+// HandleDeleteProviderCredential deletes tenant-scoped provider credentials.
+// DELETE /api/v1/channels/providers/{provider}/credentials
+func (h *Handler) HandleDeleteProviderCredential(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := resolveTenantID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if h.deleteProviderCredential == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "provider credentials are not configured"})
+		return
+	}
+
+	provider := strings.TrimSpace(r.PathValue("provider"))
+	err = h.deleteProviderCredential(r.Context(), tenantID, provider)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPlatformEmpty), errors.Is(err, ErrProviderUnsupported):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		case errors.Is(err, ErrProviderCredentialNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "deleting provider credential failed"})
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type providerCredentialResponse struct {
+	Provider       string    `json:"provider"`
+	APIBaseURL     string    `json:"api_base_url"`
+	APIVersion     string    `json:"api_version"`
+	PhoneNumberID  string    `json:"phone_number_id"`
+	HasAccessToken bool      `json:"has_access_token"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func sanitizeProviderCredentialResponse(credential *ProviderCredential) providerCredentialResponse {
+	if credential == nil {
+		return providerCredentialResponse{}
+	}
+	return providerCredentialResponse{
+		Provider:       credential.Provider,
+		APIBaseURL:     credential.APIBaseURL,
+		APIVersion:     credential.APIVersion,
+		PhoneNumberID:  credential.PhoneNumberID,
+		HasAccessToken: strings.TrimSpace(credential.AccessToken) != "",
+		UpdatedAt:      credential.UpdatedAt,
+	}
 }
 
 func resolveTenantID(r *http.Request) (string, error) {

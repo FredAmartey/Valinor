@@ -3,131 +3,107 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/platform/config"
 )
 
+type stubOutboxProviderCredentialResolver struct {
+	resolve func(ctx context.Context, tenantID, provider string) (config.ChannelProviderConfig, error)
+}
+
+func (s stubOutboxProviderCredentialResolver) Resolve(ctx context.Context, tenantID, provider string) (config.ChannelProviderConfig, error) {
+	if s.resolve == nil {
+		return config.ChannelProviderConfig{}, errors.New("resolve not configured")
+	}
+	return s.resolve(ctx, tenantID, provider)
+}
+
 func TestBuildChannelOutboxSender(t *testing.T) {
-	t.Run("slack enabled missing access token fails", func(t *testing.T) {
-		_, err := buildChannelOutboxSender(config.ChannelsConfig{
+	t.Run("missing credential resolver fails", func(t *testing.T) {
+		_, err := buildChannelOutboxSender(config.ChannelsConfig{}, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolver")
+	})
+
+	t.Run("enabled provider returns sender with resolver", func(t *testing.T) {
+		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
 			Providers: config.ChannelsProvidersConfig{
 				Slack: config.ChannelProviderConfig{
 					Enabled: true,
 				},
 			},
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "slack access token")
-	})
-
-	t.Run("slack enabled with access token returns sender", func(t *testing.T) {
-		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
-			Providers: config.ChannelsProvidersConfig{
-				Slack: config.ChannelProviderConfig{
+		}, stubOutboxProviderCredentialResolver{
+			resolve: func(_ context.Context, tenantID, provider string) (config.ChannelProviderConfig, error) {
+				assert.NotEmpty(t, tenantID)
+				assert.Equal(t, "slack", provider)
+				return config.ChannelProviderConfig{
 					Enabled:     true,
 					AccessToken: "xoxb-test-token",
 					APIBaseURL:  "https://slack.example.com",
-				},
+				}, nil
 			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, sender)
-	})
-
-	t.Run("telegram enabled missing access token fails", func(t *testing.T) {
-		_, err := buildChannelOutboxSender(config.ChannelsConfig{
-			Providers: config.ChannelsProvidersConfig{
-				Telegram: config.ChannelProviderConfig{
-					Enabled: true,
-				},
-			},
+		err = sender.Send(context.Background(), channels.ChannelOutbox{
+			TenantID:    uuid.New(),
+			Provider:    "slack",
+			RecipientID: "C123",
+			Payload:     json.RawMessage(`{"content":"hello","correlation_id":"corr-1"}`),
 		})
+		// Network call is expected to fail in this unit test; this validates routing+resolution occurred.
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "telegram access token")
+		assert.Contains(t, err.Error(), "sending slack request")
+		assert.False(t, channels.IsOutboxPermanentError(err))
 	})
 
-	t.Run("telegram enabled with access token returns sender", func(t *testing.T) {
+	t.Run("credential not found fails closed as permanent", func(t *testing.T) {
 		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
 			Providers: config.ChannelsProvidersConfig{
-				Telegram: config.ChannelProviderConfig{
-					Enabled:     true,
-					AccessToken: "123456:ABCDEF",
-					APIBaseURL:  "https://telegram.example.com",
-				},
+				Slack: config.ChannelProviderConfig{Enabled: true},
 			},
-		})
-		require.NoError(t, err)
-		require.NotNil(t, sender)
-	})
-
-	t.Run("whatsapp enabled missing access token fails", func(t *testing.T) {
-		_, err := buildChannelOutboxSender(config.ChannelsConfig{
-			Providers: config.ChannelsProvidersConfig{
-				WhatsApp: config.ChannelProviderConfig{
-					Enabled:       true,
-					SigningSecret: "wa-signing-secret",
-					PhoneNumberID: "1234567890",
-				},
-			},
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "access token")
-	})
-
-	t.Run("whatsapp enabled missing phone number id fails", func(t *testing.T) {
-		_, err := buildChannelOutboxSender(config.ChannelsConfig{
-			Providers: config.ChannelsProvidersConfig{
-				WhatsApp: config.ChannelProviderConfig{
-					Enabled:     true,
-					AccessToken: "token-123",
-				},
-			},
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "phone number id")
-	})
-
-	t.Run("whatsapp enabled with outbound config returns sender", func(t *testing.T) {
-		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
-			Providers: config.ChannelsProvidersConfig{
-				WhatsApp: config.ChannelProviderConfig{
-					Enabled:       true,
-					SigningSecret: "wa-signing-secret",
-					APIBaseURL:    "https://graph.example.com",
-					APIVersion:    "v22.0",
-					AccessToken:   "test-token",
-					PhoneNumberID: "1234567890",
-				},
+		}, stubOutboxProviderCredentialResolver{
+			resolve: func(_ context.Context, _, _ string) (config.ChannelProviderConfig, error) {
+				return config.ChannelProviderConfig{}, channels.ErrProviderCredentialNotFound
 			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, sender)
 
 		err = sender.Send(context.Background(), channels.ChannelOutbox{
+			TenantID:    uuid.New(),
 			Provider:    "slack",
-			RecipientID: "U12345",
-			Payload:     json.RawMessage(`{"content":"hello"}`),
+			RecipientID: "C123",
+			Payload:     json.RawMessage(`{"content":"hello","correlation_id":"corr-1"}`),
 		})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported outbox provider")
+		assert.True(t, channels.IsOutboxPermanentError(err))
+		assert.Contains(t, err.Error(), "resolving provider credential")
 	})
 
 	t.Run("no supported provider config fails closed on send", func(t *testing.T) {
-		sender, err := buildChannelOutboxSender(config.ChannelsConfig{})
+		sender, err := buildChannelOutboxSender(config.ChannelsConfig{}, stubOutboxProviderCredentialResolver{
+			resolve: func(_ context.Context, _, _ string) (config.ChannelProviderConfig, error) {
+				return config.ChannelProviderConfig{Enabled: true}, nil
+			},
+		})
 		require.NoError(t, err)
 		require.NotNil(t, sender)
 
 		err = sender.Send(context.Background(), channels.ChannelOutbox{
+			TenantID:    uuid.New(),
 			Provider:    "whatsapp",
 			RecipientID: "15550009999",
-			Payload:     json.RawMessage(`{"content":"hello"}`),
+			Payload:     json.RawMessage(`{"content":"hello","correlation_id":"corr-1"}`),
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported outbox provider")

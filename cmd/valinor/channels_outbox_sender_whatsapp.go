@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
 const (
@@ -22,47 +24,151 @@ const (
 )
 
 type routingOutboxSender struct {
-	byProvider map[string]channels.OutboxSender
+	resolver   outboxProviderCredentialResolver
+	byProvider map[string]func(config.ChannelProviderConfig) channels.OutboxSender
 }
 
 func (s routingOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox) error {
 	provider := strings.ToLower(strings.TrimSpace(job.Provider))
-	if sender, ok := s.byProvider[provider]; ok {
-		return sender.Send(ctx, job)
+	buildSender, ok := s.byProvider[provider]
+	if !ok {
+		return fmt.Errorf("unsupported outbox provider: %s", provider)
 	}
-	return fmt.Errorf("unsupported outbox provider: %s", provider)
+
+	tenantID := strings.TrimSpace(job.TenantID.String())
+	credentialCfg, err := s.resolver.Resolve(ctx, tenantID, provider)
+	if err != nil {
+		if isOutboxCredentialResolutionPermanent(err) {
+			return channels.NewOutboxPermanentError(fmt.Errorf("resolving provider credential: %w", err))
+		}
+		return fmt.Errorf("resolving provider credential: %w", err)
+	}
+
+	return buildSender(credentialCfg).Send(ctx, job)
 }
 
-func buildChannelOutboxSender(cfg config.ChannelsConfig) (channels.OutboxSender, error) {
-	providers := make(map[string]channels.OutboxSender)
+type outboxProviderCredentialResolver interface {
+	Resolve(ctx context.Context, tenantID, provider string) (config.ChannelProviderConfig, error)
+}
+
+func buildChannelOutboxSender(cfg config.ChannelsConfig, resolver outboxProviderCredentialResolver) (channels.OutboxSender, error) {
+	if resolver == nil {
+		return nil, fmt.Errorf("outbox provider credential resolver is required")
+	}
+
+	providers := make(map[string]func(config.ChannelProviderConfig) channels.OutboxSender)
 	if cfg.Providers.Slack.Enabled {
-		slackCfg := cfg.Providers.Slack
-		if strings.TrimSpace(slackCfg.AccessToken) == "" {
-			return nil, fmt.Errorf("slack access token is required for outbox sender")
+		providers["slack"] = func(providerCfg config.ChannelProviderConfig) channels.OutboxSender {
+			return newSlackOutboxSender(providerCfg, nil)
 		}
-		providers["slack"] = newSlackOutboxSender(slackCfg, nil)
 	}
 	if cfg.Providers.Telegram.Enabled {
-		telegramCfg := cfg.Providers.Telegram
-		if strings.TrimSpace(telegramCfg.AccessToken) == "" {
-			return nil, fmt.Errorf("telegram access token is required for outbox sender")
+		providers["telegram"] = func(providerCfg config.ChannelProviderConfig) channels.OutboxSender {
+			return newTelegramOutboxSender(providerCfg, nil)
 		}
-		providers["telegram"] = newTelegramOutboxSender(telegramCfg, nil)
 	}
 	if cfg.Providers.WhatsApp.Enabled {
-		waCfg := cfg.Providers.WhatsApp
-		if strings.TrimSpace(waCfg.AccessToken) == "" {
-			return nil, fmt.Errorf("whatsapp access token is required for outbox sender")
+		providers["whatsapp"] = func(providerCfg config.ChannelProviderConfig) channels.OutboxSender {
+			return newWhatsAppOutboxSender(providerCfg, nil)
 		}
-		if strings.TrimSpace(waCfg.PhoneNumberID) == "" {
-			return nil, fmt.Errorf("whatsapp phone number id is required for outbox sender")
-		}
-		providers["whatsapp"] = newWhatsAppOutboxSender(waCfg, nil)
 	}
 
 	return routingOutboxSender{
+		resolver:   resolver,
 		byProvider: providers,
 	}, nil
+}
+
+type dbOutboxProviderCredentialResolver struct {
+	pool      *database.Pool
+	store     *channels.Store
+	providers config.ChannelsProvidersConfig
+}
+
+func newDBOutboxProviderCredentialResolver(pool *database.Pool, store *channels.Store, providers config.ChannelsProvidersConfig) *dbOutboxProviderCredentialResolver {
+	return &dbOutboxProviderCredentialResolver{
+		pool:      pool,
+		store:     store,
+		providers: providers,
+	}
+}
+
+func (r *dbOutboxProviderCredentialResolver) Resolve(ctx context.Context, tenantID, provider string) (config.ChannelProviderConfig, error) {
+	if r == nil || r.pool == nil || r.store == nil {
+		return config.ChannelProviderConfig{}, fmt.Errorf("provider credential resolver is not configured")
+	}
+	if strings.TrimSpace(tenantID) == "" {
+		return config.ChannelProviderConfig{}, fmt.Errorf("outbox tenant id is required")
+	}
+
+	normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+	baseCfg, err := r.baseProviderConfig(normalizedProvider)
+	if err != nil {
+		return config.ChannelProviderConfig{}, err
+	}
+	if !baseCfg.Enabled {
+		return config.ChannelProviderConfig{}, channels.ErrProviderUnsupported
+	}
+
+	var credential *channels.ProviderCredential
+	err = database.WithTenantConnection(ctx, r.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var lookupErr error
+		credential, lookupErr = r.store.GetProviderCredential(ctx, q, normalizedProvider)
+		return lookupErr
+	})
+	if err != nil {
+		return config.ChannelProviderConfig{}, err
+	}
+
+	baseCfg.AccessToken = strings.TrimSpace(credential.AccessToken)
+	if value := strings.TrimSpace(credential.APIBaseURL); value != "" {
+		baseCfg.APIBaseURL = value
+	}
+	if value := strings.TrimSpace(credential.APIVersion); value != "" {
+		baseCfg.APIVersion = value
+	}
+	if value := strings.TrimSpace(credential.PhoneNumberID); value != "" {
+		baseCfg.PhoneNumberID = value
+	}
+
+	if strings.TrimSpace(baseCfg.AccessToken) == "" {
+		return config.ChannelProviderConfig{}, channels.ErrProviderAccessTokenRequired
+	}
+	if normalizedProvider == "whatsapp" && strings.TrimSpace(baseCfg.PhoneNumberID) == "" {
+		return config.ChannelProviderConfig{}, channels.ErrProviderPhoneNumberIDRequired
+	}
+
+	return baseCfg, nil
+}
+
+func (r *dbOutboxProviderCredentialResolver) baseProviderConfig(provider string) (config.ChannelProviderConfig, error) {
+	switch provider {
+	case "slack":
+		return r.providers.Slack, nil
+	case "telegram":
+		return r.providers.Telegram, nil
+	case "whatsapp":
+		return r.providers.WhatsApp, nil
+	default:
+		return config.ChannelProviderConfig{}, channels.ErrProviderUnsupported
+	}
+}
+
+func isOutboxCredentialResolutionPermanent(err error) bool {
+	switch {
+	case errors.Is(err, channels.ErrProviderCredentialNotFound):
+		return true
+	case errors.Is(err, channels.ErrProviderUnsupported):
+		return true
+	case errors.Is(err, channels.ErrProviderAccessTokenRequired):
+		return true
+	case errors.Is(err, channels.ErrProviderPhoneNumberIDRequired):
+		return true
+	case errors.Is(err, channels.ErrPlatformEmpty):
+		return true
+	default:
+		return false
+	}
 }
 
 type whatsAppOutboxSender struct {
