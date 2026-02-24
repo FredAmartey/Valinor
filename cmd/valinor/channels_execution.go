@@ -21,7 +21,7 @@ import (
 type channelIdentityLookupFunc func(ctx context.Context, userID string) (*auth.Identity, error)
 type channelAuthorizeFunc func(ctx context.Context, identity *auth.Identity, action string) (*rbac.Decision, error)
 type channelListAgentsFunc func(ctx context.Context, tenantID string) ([]orchestrator.AgentInstance, error)
-type channelDispatchFunc func(ctx context.Context, agent orchestrator.AgentInstance, content string) (string, error)
+type channelDispatchFunc func(ctx context.Context, agent orchestrator.AgentInstance, content string, history []channels.ChannelConversationTurn) (string, error)
 type channelSentinelScanFunc func(ctx context.Context, tenantID, userID, content string) (sentinel.ScanResult, error)
 
 func newChannelExecutor(
@@ -113,7 +113,7 @@ func newChannelExecutor(
 			return channels.ExecutionResult{Decision: channels.IngressDeniedNoAgent}
 		}
 
-		response, dispatchErr := dispatch(ctx, *target, content)
+		response, dispatchErr := dispatch(ctx, *target, content, msg.ConversationHistory)
 		if dispatchErr != nil {
 			logChannelExecutionEvent(ctx, auditLogger, audit.ActionChannelActionDispatchFailed, msg, map[string]any{
 				"reason":   "dispatch to agent failed",
@@ -185,6 +185,7 @@ func dispatchChannelMessageToAgent(
 	connPool *proxy.ConnPool,
 	agent orchestrator.AgentInstance,
 	content string,
+	history []channels.ChannelConversationTurn,
 	timeout time.Duration,
 ) (string, error) {
 	if connPool == nil {
@@ -202,8 +203,10 @@ func dispatchChannelMessageToAgent(
 		return "", fmt.Errorf("dialing agent connection: %w", err)
 	}
 
-	reqBody, err := json.Marshal(map[string]string{
-		"content": content,
+	reqBody, err := json.Marshal(map[string]any{
+		"messages": buildDispatchConversationMessages(history, content),
+		"role":     "user",
+		"content":  content,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshaling message payload: %w", err)
@@ -274,6 +277,36 @@ func dispatchChannelMessageToAgent(
 			return "", fmt.Errorf("unexpected frame type from agent: %s", reply.Type)
 		}
 	}
+}
+
+func buildDispatchConversationMessages(history []channels.ChannelConversationTurn, latestContent string) []map[string]string {
+	messages := make([]map[string]string, 0, len(history)*2+1)
+	for _, turn := range history {
+		request := strings.TrimSpace(turn.RequestContent)
+		if request != "" {
+			messages = append(messages, map[string]string{
+				"role":    "user",
+				"content": request,
+			})
+		}
+
+		response := strings.TrimSpace(turn.ResponseContent)
+		if response != "" {
+			messages = append(messages, map[string]string{
+				"role":    "assistant",
+				"content": response,
+			})
+		}
+	}
+
+	latest := strings.TrimSpace(latestContent)
+	if latest != "" {
+		messages = append(messages, map[string]string{
+			"role":    "user",
+			"content": latest,
+		})
+	}
+	return messages
 }
 
 func logChannelExecutionEvent(
