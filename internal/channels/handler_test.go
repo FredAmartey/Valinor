@@ -1077,10 +1077,11 @@ func TestHandleGetProviderCredential_ReturnsSanitizedCredential(t *testing.T) {
 		assert.Equal(t, "tenant-provider", tenantID)
 		assert.Equal(t, "slack", provider)
 		return &ProviderCredential{
-			ID:          uuid.New(),
-			Provider:    "slack",
-			AccessToken: "xoxb-secret",
-			APIBaseURL:  "https://slack.example.com",
+			ID:            uuid.New(),
+			Provider:      "slack",
+			AccessToken:   "xoxb-secret",
+			SigningSecret: "slack-signing-secret",
+			APIBaseURL:    "https://slack.example.com",
 		}, nil
 	}
 
@@ -1096,8 +1097,12 @@ func TestHandleGetProviderCredential_ReturnsSanitizedCredential(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
 	assert.Equal(t, "slack", out["provider"])
 	assert.Equal(t, true, out["has_access_token"])
+	assert.Equal(t, true, out["has_signing_secret"])
+	assert.Equal(t, false, out["has_secret_token"])
 	_, hasToken := out["access_token"]
 	assert.False(t, hasToken, "response must not include raw access_token")
+	_, hasSigning := out["signing_secret"]
+	assert.False(t, hasSigning, "response must not include raw signing_secret")
 }
 
 func TestHandleUpsertProviderCredential_ValidRequest(t *testing.T) {
@@ -1106,17 +1111,20 @@ func TestHandleUpsertProviderCredential_ValidRequest(t *testing.T) {
 		assert.Equal(t, "tenant-provider", tenantID)
 		assert.Equal(t, "whatsapp", params.Provider)
 		assert.Equal(t, "wa-token", params.AccessToken)
+		assert.Equal(t, "wa-signing-secret", params.SigningSecret)
 		assert.Equal(t, "15550001111", params.PhoneNumberID)
 		return &ProviderCredential{
 			ID:            uuid.New(),
 			Provider:      params.Provider,
 			AccessToken:   params.AccessToken,
+			SigningSecret: params.SigningSecret,
 			PhoneNumberID: params.PhoneNumberID,
 		}, nil
 	}
 
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/providers/whatsapp/credentials", strings.NewReader(`{
   "access_token": "wa-token",
+  "signing_secret": "wa-signing-secret",
   "phone_number_id": "15550001111"
 }`))
 	req.SetPathValue("provider", "whatsapp")
@@ -1130,6 +1138,8 @@ func TestHandleUpsertProviderCredential_ValidRequest(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
 	assert.Equal(t, "whatsapp", out["provider"])
 	assert.Equal(t, true, out["has_access_token"])
+	assert.Equal(t, true, out["has_signing_secret"])
+	assert.Equal(t, false, out["has_secret_token"])
 }
 
 func TestHandleUpsertProviderCredential_ValidationError(t *testing.T) {
@@ -1165,4 +1175,37 @@ func TestHandleDeleteProviderCredential_NotFound(t *testing.T) {
 	h.HandleDeleteProviderCredential(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandleUpsertProviderCredential_TelegramSecretToken(t *testing.T) {
+	h := NewHandler(nil)
+	h.upsertProviderCredential = func(_ context.Context, tenantID string, params UpsertProviderCredentialParams) (*ProviderCredential, error) {
+		assert.Equal(t, "tenant-provider", tenantID)
+		assert.Equal(t, "telegram", params.Provider)
+		assert.Equal(t, "123456:ABC", params.AccessToken)
+		assert.Equal(t, "telegram-secret", params.SecretToken)
+		return &ProviderCredential{
+			ID:          uuid.New(),
+			Provider:    params.Provider,
+			AccessToken: params.AccessToken,
+			SecretToken: params.SecretToken,
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/providers/telegram/credentials", strings.NewReader(`{
+  "access_token": "123456:ABC",
+  "secret_token": "telegram-secret"
+}`))
+	req.SetPathValue("provider", "telegram")
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "tenant-provider"))
+	w := httptest.NewRecorder()
+
+	h.HandleUpsertProviderCredential(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &out))
+	assert.Equal(t, true, out["has_access_token"])
+	assert.Equal(t, true, out["has_secret_token"])
+	assert.Equal(t, false, out["has_signing_secret"])
 }

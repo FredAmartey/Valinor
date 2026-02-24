@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -16,6 +17,21 @@ type stubVerifier struct {
 
 func (s stubVerifier) Verify(_ http.Header, _ []byte, _ time.Time) error {
 	return s.verifyErr
+}
+
+type contextAwareVerifier struct {
+	verifyErr        error
+	contextVerifyErr error
+	seenContext      context.Context
+}
+
+func (v *contextAwareVerifier) Verify(_ http.Header, _ []byte, _ time.Time) error {
+	return v.verifyErr
+}
+
+func (v *contextAwareVerifier) VerifyContext(ctx context.Context, _ http.Header, _ []byte, _ time.Time) error {
+	v.seenContext = ctx
+	return v.contextVerifyErr
 }
 
 func TestIngress_RejectsInvalidSignature(t *testing.T) {
@@ -231,4 +247,40 @@ func TestIngress_VerifiedLinkAccepted(t *testing.T) {
 	assert.Equal(t, IngressAccepted, result.Decision)
 	assert.NotNil(t, result.Link)
 	assert.True(t, result.Link.IsVerified())
+}
+
+func TestIngress_ContextAwareVerifierUsesRequestContext(t *testing.T) {
+	type contextKey string
+	const key contextKey = "tenant"
+
+	verifier := &contextAwareVerifier{
+		verifyErr:        errors.New("base verifier should not be used"),
+		contextVerifyErr: nil,
+	}
+	guard := NewIngressGuard(
+		verifier,
+		24*time.Hour,
+		func(_ context.Context, _, _ string) (*ChannelLink, error) {
+			return &ChannelLink{State: LinkStateVerified}, nil
+		},
+		func(_ context.Context, _ IngressMessage) (bool, error) {
+			return true, nil
+		},
+	)
+
+	reqCtx := context.WithValue(context.Background(), key, "tenant-a")
+	result, err := guard.Process(reqCtx, IngressMessage{
+		Platform:           "whatsapp",
+		PlatformUserID:     "+15550001111",
+		IdempotencyKey:     "idem-context",
+		PayloadFingerprint: "fp-context",
+		CorrelationID:      "corr-context",
+		Headers:            http.Header{},
+		Body:               []byte(`{}`),
+		OccurredAt:         time.Now(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, IngressAccepted, result.Decision)
+	require.NotNil(t, verifier.seenContext)
+	assert.Equal(t, "tenant-a", verifier.seenContext.Value(key))
 }

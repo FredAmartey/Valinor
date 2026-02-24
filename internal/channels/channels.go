@@ -100,6 +100,8 @@ type ProviderCredential struct {
 	TenantID      uuid.UUID `json:"tenant_id"`
 	Provider      string    `json:"provider"`
 	AccessToken   string    `json:"-"`
+	SigningSecret string    `json:"-"`
+	SecretToken   string    `json:"-"`
 	APIBaseURL    string    `json:"api_base_url"`
 	APIVersion    string    `json:"api_version"`
 	PhoneNumberID string    `json:"phone_number_id"`
@@ -111,6 +113,8 @@ type ProviderCredential struct {
 type UpsertProviderCredentialParams struct {
 	Provider      string
 	AccessToken   string
+	SigningSecret string
+	SecretToken   string
 	APIBaseURL    string
 	APIVersion    string
 	PhoneNumberID string
@@ -165,4 +169,6 @@ var (
 	ErrProviderCredentialNotFound    = errors.New("provider credential not found")
 	ErrProviderAccessTokenRequired   = errors.New("provider access token is required")
 	ErrProviderPhoneNumberIDRequired = errors.New("provider phone number id is required")
+	ErrProviderSigningSecretRequired = errors.New("provider signing secret is required")
+	ErrProviderSecretTokenRequired   = errors.New("provider secret token is required")
 )

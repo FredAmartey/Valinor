@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add tenant-scoped provider credentials so outbound channel delivery is isolated per tenant and does not rely on global provider tokens.
+Add tenant-scoped provider credentials so outbound channel delivery and inbound webhook verification are isolated per tenant and do not rely on global provider secrets.
 
 ## Scope
 
@@ -12,13 +12,13 @@ Add tenant-scoped provider credentials so outbound channel delivery is isolated 
 - Store APIs to upsert, read, and delete provider credentials in tenant context.
 - RBAC-protected HTTP endpoints to manage credentials for a tenant.
 - Outbox sender credential resolution per job tenant + provider.
+- Inbound webhook verifier secret resolution per request tenant + provider.
 - Fail-closed delivery behavior when credentials are missing/invalid.
 - Integration tests for tenant isolation and sender behavior.
 
 ### Out of Scope (deferred)
 
 - Application-level encryption for stored credentials.
-- Per-tenant dynamic inbound webhook verifier secret resolution.
 - Secret rotation workflows/versioning.
 
 ## Approaches Considered
@@ -41,6 +41,8 @@ Add `channel_provider_credentials`:
 - `tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE`
 - `provider TEXT NOT NULL`
 - `access_token TEXT NOT NULL`
+- `signing_secret TEXT NOT NULL DEFAULT ''`
+- `secret_token TEXT NOT NULL DEFAULT ''`
 - `api_base_url TEXT NOT NULL DEFAULT ''`
 - `api_version TEXT NOT NULL DEFAULT ''`
 - `phone_number_id TEXT NOT NULL DEFAULT ''`
@@ -65,6 +67,8 @@ Response from GET/PUT is sanitized (never returns access token):
 - `api_version`
 - `phone_number_id`
 - `has_access_token`
+- `has_signing_secret`
+- `has_secret_token`
 - `updated_at`
 
 RBAC:
@@ -78,10 +82,18 @@ RBAC:
 - If credentials are missing/invalid, return `OutboxPermanentError` and dead-letter immediately.
 - If credentials are present, construct provider sender with resolved credentials and send normally.
 
+### Inbound webhook verification path
+
+- Ingress verifier resolves provider credentials using request tenant context + `provider`.
+- Slack and WhatsApp verification use tenant `signing_secret`; Telegram uses tenant `secret_token`.
+- Missing tenant credential or missing required verifier secret is treated as invalid signature (fail-closed).
+
 ### Validation rules
 
 - All providers require non-empty `access_token`.
 - WhatsApp additionally requires non-empty `phone_number_id`.
+- Slack and WhatsApp additionally require non-empty `signing_secret`.
+- Telegram additionally requires non-empty `secret_token`.
 - `api_base_url` and `api_version` optional; fallback to provider defaults when empty.
 
 ## Risks and Mitigations
@@ -102,4 +114,4 @@ RBAC:
 
 ## Product Outcome
 
-After this slice, two tenants can use the same provider integration type without sharing delivery credentials, and delivery failures from mis-scoped credentials are isolated to the owning tenant.
+After this slice, two tenants can use the same provider integration type without sharing delivery credentials or inbound verifier secrets, and failures from mis-scoped credentials are isolated to the owning tenant.
