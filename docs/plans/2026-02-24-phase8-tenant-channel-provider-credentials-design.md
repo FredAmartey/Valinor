@@ -18,7 +18,7 @@ Add tenant-scoped provider credentials so outbound channel delivery and inbound 
 
 ### Out of Scope (deferred)
 
-- Application-level encryption for stored credentials.
+- KMS-backed key management and envelope key rotation orchestration.
 - Secret rotation workflows/versioning.
 
 ## Approaches Considered
@@ -49,6 +49,7 @@ Add `channel_provider_credentials`:
 - `created_at`, `updated_at`
 - Unique `(tenant_id, provider)`
 - RLS policy aligned with existing tenant tables
+- Secret fields are stored encrypted at rest using AES-GCM with a versioned prefix.
 
 `provider` allowed values in app validation: `slack`, `whatsapp`, `telegram`.
 
@@ -96,14 +97,21 @@ RBAC:
 - Telegram additionally requires non-empty `secret_token`.
 - `api_base_url` and `api_version` optional; fallback to provider defaults when empty.
 
+### Encryption-at-rest behavior
+
+- Encryption key is configured via `channels.credentials.key` / `VALINOR_CHANNELS_CREDENTIALS_KEY`.
+- New/updated secret writes are encrypted before persistence.
+- Reads decrypt prefixed ciphertext (`enc:v1:`) and preserve legacy plaintext compatibility.
+- Encrypted values fail closed if key is missing or decryption fails.
+
 ## Risks and Mitigations
 
 1. Credentials leaked via API responses
    - Mitigation: sanitize responses; never return raw token.
 2. Operational failure from missing credentials
    - Mitigation: explicit fail-closed permanent errors with clear `last_error` text.
-3. Plaintext-at-rest storage risk
-   - Mitigation: keep scope minimal now; schedule envelope-encryption follow-up.
+3. Key misconfiguration risk (missing/invalid key)
+   - Mitigation: fail-fast config validation in channel builder paths and fail-closed decrypt behavior.
 
 ## Rollout
 
@@ -114,4 +122,4 @@ RBAC:
 
 ## Product Outcome
 
-After this slice, two tenants can use the same provider integration type without sharing delivery credentials or inbound verifier secrets, and failures from mis-scoped credentials are isolated to the owning tenant.
+After this slice, two tenants can use the same provider integration type without sharing delivery credentials or inbound verifier secrets, secrets are encrypted at rest for new writes, and failures from mis-scoped credentials are isolated to the owning tenant.
