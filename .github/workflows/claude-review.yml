@@ -26,10 +26,10 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
           claude_args: --model claude-sonnet-4-6
           prompt: |
             Review this PR against the project rules in CLAUDE.md.
             Focus on security vulnerabilities, architecture violations,
             Go idiom violations, missing tests, and performance concerns.
             Be specific and cite file paths and line numbers.
-          show_full_output: true
