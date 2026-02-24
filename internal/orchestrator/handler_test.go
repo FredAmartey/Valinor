@@ -176,6 +176,81 @@ func TestHandler_Configure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, resp.Config, "gpt-4")
 	assert.Contains(t, resp.ToolAllowlist, "search")
+
+	var configMap map[string]any
+	require.NoError(t, json.Unmarshal([]byte(resp.Config), &configMap))
+	assert.Equal(t, "non-main", nestedLookupString(configMap, "agents", "defaults", "sandbox", "mode"))
+	assert.Equal(t, true, nestedLookupBool(configMap, "tools", "exec", "workspaceOnly"))
+	assert.Equal(t, true, nestedLookupBool(configMap, "tools", "exec", "applyPatch", "workspaceOnly"))
+	assert.Equal(t, "loopback", nestedLookupString(configMap, "gateway", "bind"))
+}
+
+func TestHandler_Configure_RejectsInsecureRuntimePolicy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
+	handler := orchestrator.NewHandler(mgr, nil)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Policy Reject', 'policy-reject') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{})
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{
+		"config":{
+			"agents":{"defaults":{"sandbox":{"mode":"off"}}}
+		},
+		"tool_allowlist":["search"]
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+inst.ID+"/configure", body)
+	req.SetPathValue("id", inst.ID)
+	req = withIdentity(req, tenantID, false)
+	w := httptest.NewRecorder()
+
+	handler.HandleConfigure(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "sandbox.mode")
+}
+
+func nestedLookupString(root map[string]any, path ...string) string {
+	val := nestedLookupAny(root, path...)
+	str, _ := val.(string)
+	return str
+}
+
+func nestedLookupBool(root map[string]any, path ...string) bool {
+	val := nestedLookupAny(root, path...)
+	boolean, _ := val.(bool)
+	return boolean
+}
+
+func nestedLookupAny(root map[string]any, path ...string) any {
+	current := any(root)
+	for _, key := range path {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		next, ok := m[key]
+		if !ok {
+			return nil
+		}
+		current = next
+	}
+	return current
 }
 
 func TestHandler_DestroyAgent(t *testing.T) {
