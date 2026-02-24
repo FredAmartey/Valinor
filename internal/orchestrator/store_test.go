@@ -106,14 +106,14 @@ func TestStore_ClaimWarm(t *testing.T) {
 	require.NoError(t, err)
 
 	// Claim it
-	claimed, err := store.ClaimWarm(ctx, pool, tenantID, nil, "{}")
+	claimed, err := store.ClaimWarm(ctx, pool, tenantID, nil, nil, "{}")
 	require.NoError(t, err)
 	assert.Equal(t, inst.ID, claimed.ID)
 	assert.Equal(t, &tenantID, claimed.TenantID)
 	assert.Equal(t, orchestrator.StatusProvisioning, claimed.Status)
 
 	// No more warm VMs
-	_, err = store.ClaimWarm(ctx, pool, tenantID, nil, "{}")
+	_, err = store.ClaimWarm(ctx, pool, tenantID, nil, nil, "{}")
 	assert.ErrorIs(t, err, orchestrator.ErrNoWarmVMs)
 }
 
@@ -217,6 +217,57 @@ func TestStore_CountByStatus(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
+func TestStore_GetRunningByTenantUser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := orchestrator.NewStore()
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('User Agent Tenant', 'user-agent-tenant') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	running := &orchestrator.AgentInstance{
+		TenantID:      &tenantID,
+		UserID:        ptrString("user-1"),
+		Status:        orchestrator.StatusRunning,
+		Config:        "{}",
+		VMDriver:      "mock",
+		ToolAllowlist: "[]",
+	}
+	require.NoError(t, store.Create(ctx, pool, running))
+
+	destroyed := &orchestrator.AgentInstance{
+		TenantID:      &tenantID,
+		UserID:        ptrString("user-1"),
+		Status:        orchestrator.StatusDestroyed,
+		Config:        "{}",
+		VMDriver:      "mock",
+		ToolAllowlist: "[]",
+	}
+	require.NoError(t, store.Create(ctx, pool, destroyed))
+
+	got, err := store.GetRunningByTenantUser(ctx, pool, tenantID, "user-1")
+	require.NoError(t, err)
+	assert.Equal(t, running.ID, got.ID)
+	require.NotNil(t, got.UserID)
+	assert.Equal(t, "user-1", *got.UserID)
+
+	_, err = store.GetRunningByTenantUser(ctx, pool, tenantID, "missing-user")
+	assert.ErrorIs(t, err, orchestrator.ErrVMNotFound)
+}
+
 func ptrUint32(v uint32) *uint32 {
+	return &v
+}
+
+func ptrString(v string) *string {
 	return &v
 }

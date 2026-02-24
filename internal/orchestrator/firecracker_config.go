@@ -9,4 +9,7 @@ type FirecrackerJailerConfig struct {
 	GID           int
 	NetNSPath     string
 	Daemonize     bool
+	NetworkPolicy string
+	TapDevice     string
+	GuestMAC      string
 }

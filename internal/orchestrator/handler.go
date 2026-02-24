@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/auth"
@@ -40,6 +41,7 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
+		UserID       *string        `json:"user_id,omitempty"`
 		DepartmentID *string        `json:"department_id,omitempty"`
 		Config       map[string]any `json:"config,omitempty"`
 	}
@@ -56,7 +58,38 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	identity := auth.GetIdentity(r.Context())
+	if identity == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+	if identity.IsPlatformAdmin {
+		if req.UserID != nil {
+			userID := strings.TrimSpace(*req.UserID)
+			if userID == "" {
+				req.UserID = nil
+			} else {
+				req.UserID = &userID
+			}
+		}
+	} else {
+		callerUserID := strings.TrimSpace(identity.UserID)
+		if callerUserID == "" {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "user identity required"})
+			return
+		}
+		if req.UserID != nil {
+			requestedUserID := strings.TrimSpace(*req.UserID)
+			if requestedUserID != "" && requestedUserID != callerUserID {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "user_id must match authenticated user"})
+				return
+			}
+		}
+		req.UserID = &callerUserID
+	}
+
 	inst, err := h.manager.Provision(r.Context(), tenantID, ProvisionOpts{
+		UserID:       req.UserID,
 		DepartmentID: req.DepartmentID,
 		Config:       req.Config,
 	})

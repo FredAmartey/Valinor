@@ -84,7 +84,9 @@ type FirecrackerWorkspaceConfig struct {
 }
 
 type FirecrackerNetworkConfig struct {
-	Policy string `koanf:"policy"`
+	Policy    string `koanf:"policy"`
+	TapDevice string `koanf:"tap_device"`
+	GuestMAC  string `koanf:"guest_mac"`
 }
 
 type JailerConfig struct {
@@ -207,6 +209,8 @@ func Load(configPaths ...string) (*Config, error) {
 		"orchestrator.firecracker.workspace.enabled":       true,
 		"orchestrator.firecracker.workspace.quotamb":       2048,
 		"orchestrator.firecracker.network.policy":          "outbound_only",
+		"orchestrator.firecracker.network.tap_device":      "",
+		"orchestrator.firecracker.network.guest_mac":       "",
 		"proxy.transport":                                  "tcp",
 		"proxy.tcp_base_port":                              9100,
 		"proxy.message_timeout":                            60,

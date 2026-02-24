@@ -3,8 +3,10 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +59,27 @@ func NewManager(pool *database.Pool, driver VMDriver, store *Store, cfg ManagerC
 
 // Provision assigns a VM to a tenant. Tries warm pool first, falls back to cold-start.
 func (m *Manager) Provision(ctx context.Context, tenantID string, opts ProvisionOpts) (*AgentInstance, error) {
+	var normalizedUserID *string
+	if opts.UserID != nil {
+		userID := strings.TrimSpace(*opts.UserID)
+		if userID != "" {
+			normalizedUserID = &userID
+		}
+	}
+	opts.UserID = normalizedUserID
+	if normalizedUserID != nil {
+		existing, err := m.store.GetRunningByTenantUser(ctx, m.pool, tenantID, *normalizedUserID)
+		switch {
+		case err == nil:
+			slog.Info("reusing existing user-affine agent", "id", existing.ID, "tenant", tenantID, "user", *normalizedUserID)
+			return existing, nil
+		case errors.Is(err, ErrVMNotFound):
+			// No active user-affine agent yet; provision one below.
+		default:
+			return nil, fmt.Errorf("checking existing user-affine agent: %w", err)
+		}
+	}
+
 	// Build config string for claim
 	configStr := "{}"
 	if opts.Config != nil {
@@ -69,7 +92,7 @@ func (m *Manager) Provision(ctx context.Context, tenantID string, opts Provision
 	}
 
 	// Try claiming a warm VM — dept/config are set atomically in the claim query.
-	inst, err := m.store.ClaimWarm(ctx, m.pool, tenantID, opts.DepartmentID, configStr)
+	inst, err := m.store.ClaimWarm(ctx, m.pool, tenantID, opts.UserID, opts.DepartmentID, configStr)
 	if err == nil {
 		// Transition to running
 		if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusRunning); err != nil {
@@ -123,6 +146,7 @@ func (m *Manager) coldStart(ctx context.Context, tenantID string, opts Provision
 
 	inst := &AgentInstance{
 		TenantID:      &tenantID,
+		UserID:        opts.UserID,
 		DepartmentID:  opts.DepartmentID,
 		VMID:          &vmID,
 		Status:        StatusRunning,
@@ -377,6 +401,7 @@ func (m *Manager) replaceUnhealthy(ctx context.Context, inst *AgentInstance) {
 			_ = json.Unmarshal([]byte(inst.Config), &prevConfig)
 		}
 		replacement, err := m.Provision(ctx, *inst.TenantID, ProvisionOpts{
+			UserID:       inst.UserID,
 			DepartmentID: inst.DepartmentID,
 			Config:       prevConfig,
 		})

@@ -42,6 +42,46 @@ func TestManager_Provision_ColdStart(t *testing.T) {
 	assert.Equal(t, 512, spec.DataDriveQuotaMB)
 }
 
+func TestManager_Provision_ReusesRunningUserAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{Driver: "mock", WarmPoolSize: 0}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Reuse Tenant', 'reuse-tenant') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	existing := &orchestrator.AgentInstance{
+		TenantID:      &tenantID,
+		UserID:        ptrString("user-123"),
+		Status:        orchestrator.StatusRunning,
+		Config:        "{}",
+		VMID:          ptrString("existing-vm"),
+		VsockCID:      ptrUint32(42),
+		VMDriver:      "mock",
+		ToolAllowlist: "[]",
+	}
+	require.NoError(t, store.Create(ctx, pool, existing))
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{
+		UserID: ptrString("user-123"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, existing.ID, inst.ID)
+	assert.Equal(t, 0, driver.RunningCount(), "provision should not cold-start when user agent already exists")
+}
+
 func TestManager_Provision_FromWarmPool(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -210,4 +250,55 @@ func TestManager_HealthCheckOnce_ReplacesUnhealthy(t *testing.T) {
 	mgr.HealthCheckOnce(ctx)
 	got, _ = mgr.GetByID(ctx, inst.ID)
 	assert.Equal(t, orchestrator.StatusDestroyed, got.Status)
+}
+
+func TestManager_HealthCheckOnce_ReplacesUnhealthyPreservesUserAffinity(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{
+		Driver:                 "mock",
+		WarmPoolSize:           0,
+		MaxConsecutiveFailures: 1,
+	}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Affinity Replace', 'affinity-replace') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{
+		UserID: ptrString("user-42"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, inst.UserID)
+	assert.Equal(t, "user-42", *inst.UserID)
+
+	driver.SetUnhealthy(*inst.VMID)
+	mgr.HealthCheckOnce(ctx)
+
+	agents, err := mgr.ListByTenant(ctx, tenantID)
+	require.NoError(t, err)
+
+	var replacement *orchestrator.AgentInstance
+	for i := range agents {
+		if agents[i].Status == orchestrator.StatusRunning {
+			replacement = &agents[i]
+			break
+		}
+	}
+
+	require.NotNil(t, replacement)
+	assert.NotEqual(t, inst.ID, replacement.ID)
+	require.NotNil(t, replacement.UserID)
+	assert.Equal(t, "user-42", *replacement.UserID)
 }

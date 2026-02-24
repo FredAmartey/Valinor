@@ -159,6 +159,8 @@ orchestrator:
       quotamb: 2048
     network:
       policy: "outbound_only"
+      tap_device: "tap0"
+      guest_mac: "06:00:ac:10:00:02" # optional
 ```
 
 Set `daemonize: true` if you want detached jailer execution. Valinor now supervises the daemonized Firecracker process using the jailer `.pid` file under the jail root.
@@ -171,7 +173,7 @@ Startup preflight now fails early if:
 - jailer binary is not found in `PATH`
 - jailer `uid`/`gid` is invalid (<0)
 - workspace is enabled with non-positive `workspace.quotamb`
-- network policy is `outbound_only` without jailer enabled and `jailer.netns_path`
+- network policy is `outbound_only` without jailer enabled, `jailer.netns_path`, and `network.tap_device`
 - non-dev mode uses `network.policy=isolated`
 
 This avoids deferred runtime failures on first VM provisioning.
