@@ -3,6 +3,7 @@ package channels_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
+
+const testCredentialCryptoKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 func setupTestDB(t *testing.T) (*database.Pool, func()) {
 	t.Helper()
@@ -49,6 +52,14 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 	return pool, cleanup
 }
 
+func newCredentialStore(t *testing.T) *channels.Store {
+	t.Helper()
+
+	crypto, err := channels.NewCredentialCrypto(testCredentialCryptoKey)
+	require.NoError(t, err)
+	return channels.NewStore(channels.WithCredentialCrypto(crypto))
+}
+
 func TestChannelLinkStore_GetByIdentity_TenantScoped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -58,7 +69,7 @@ func TestChannelLinkStore_GetByIdentity_TenantScoped(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantA, tenantB string
 	err := pool.QueryRow(ctx,
@@ -133,7 +144,7 @@ func TestMessageStore_InsertIdempotency_FirstSeen(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantID string
 	err := pool.QueryRow(ctx,
@@ -167,7 +178,7 @@ func TestMessageStore_InsertIdempotency_Duplicate(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantID string
 	err := pool.QueryRow(ctx,
@@ -224,7 +235,7 @@ func TestChannelLinkStore_UpsertLink_CreatesAndUpdatesState(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantID string
 	err := pool.QueryRow(ctx,
@@ -1141,7 +1152,7 @@ func TestChannelProviderCredentialStore_UpsertGetDelete(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantID string
 	err := pool.QueryRow(ctx,
@@ -1194,6 +1205,131 @@ func TestChannelProviderCredentialStore_UpsertGetDelete(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestChannelProviderCredentialStore_EncryptsSecretsAtRest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	crypto, err := channels.NewCredentialCrypto(testCredentialCryptoKey)
+	require.NoError(t, err)
+	store := channels.NewStore(channels.WithCredentialCrypto(crypto))
+
+	var tenantID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Encrypted Creds', 'tenant-encrypted-creds') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		created, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:      "whatsapp",
+			AccessToken:   "wa-token-enc",
+			SigningSecret: "wa-signing-enc",
+			PhoneNumberID: "15550009999",
+		})
+		require.NoError(t, upsertErr)
+		assert.Equal(t, "wa-token-enc", created.AccessToken)
+		assert.Equal(t, "wa-signing-enc", created.SigningSecret)
+
+		var rawAccessToken, rawSigningSecret string
+		rawErr := q.QueryRow(ctx,
+			`SELECT access_token, signing_secret
+			 FROM channel_provider_credentials
+			 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+			   AND provider = 'whatsapp'`,
+		).Scan(&rawAccessToken, &rawSigningSecret)
+		require.NoError(t, rawErr)
+		assert.True(t, channels.IsEncryptedCredentialValue(rawAccessToken))
+		assert.True(t, channels.IsEncryptedCredentialValue(rawSigningSecret))
+		assert.NotEqual(t, "wa-token-enc", rawAccessToken)
+		assert.NotEqual(t, "wa-signing-enc", rawSigningSecret)
+
+		loaded, getErr := store.GetProviderCredential(ctx, q, "whatsapp")
+		require.NoError(t, getErr)
+		assert.Equal(t, "wa-token-enc", loaded.AccessToken)
+		assert.Equal(t, "wa-signing-enc", loaded.SigningSecret)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelProviderCredentialStore_LegacyPlaintextCompat(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	crypto, err := channels.NewCredentialCrypto(testCredentialCryptoKey)
+	require.NoError(t, err)
+	store := channels.NewStore(channels.WithCredentialCrypto(crypto))
+
+	var tenantID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Legacy Creds', 'tenant-legacy-creds') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, insertErr := q.Exec(ctx,
+			`INSERT INTO channel_provider_credentials (tenant_id, provider, access_token, signing_secret)
+			 VALUES (current_setting('app.current_tenant_id', true)::UUID, 'slack', $1, $2)`,
+			"xoxb-legacy-plaintext",
+			"slack-signing-legacy",
+		)
+		require.NoError(t, insertErr)
+
+		loaded, getErr := store.GetProviderCredential(ctx, q, "slack")
+		require.NoError(t, getErr)
+		assert.Equal(t, "xoxb-legacy-plaintext", loaded.AccessToken)
+		assert.Equal(t, "slack-signing-legacy", loaded.SigningSecret)
+		assert.False(t, strings.HasPrefix(loaded.AccessToken, "enc:v1:"))
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestChannelProviderCredentialStore_EncryptedValueRequiresKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	crypto, err := channels.NewCredentialCrypto(testCredentialCryptoKey)
+	require.NoError(t, err)
+	encryptedStore := channels.NewStore(channels.WithCredentialCrypto(crypto))
+	plaintextStore := channels.NewStore()
+
+	var tenantID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Tenant Missing Key', 'tenant-missing-key') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, upsertErr := encryptedStore.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:      "slack",
+			AccessToken:   "xoxb-encrypted",
+			SigningSecret: "slack-signing-encrypted",
+		})
+		require.NoError(t, upsertErr)
+
+		_, getErr := plaintextStore.GetProviderCredential(ctx, q, "slack")
+		require.ErrorIs(t, getErr, channels.ErrProviderCredentialCipherRequired)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -1203,7 +1339,7 @@ func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantA, tenantB string
 	err := pool.QueryRow(ctx,
@@ -1263,7 +1399,7 @@ func TestChannelProviderCredentialStore_Validation(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	store := channels.NewStore()
+	store := newCredentialStore(t)
 
 	var tenantID string
 	err := pool.QueryRow(ctx,

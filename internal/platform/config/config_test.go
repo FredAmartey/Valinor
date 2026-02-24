@@ -72,6 +72,7 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, cfg.Channels.Ingress.Enabled)
+	assert.Equal(t, "", cfg.Channels.Credentials.Key)
 	assert.Equal(t, 86400, cfg.Channels.Ingress.ReplayWindowSeconds)
 	assert.True(t, cfg.Channels.Ingress.RetentionCleanupEnabled)
 	assert.Equal(t, 3600, cfg.Channels.Ingress.RetentionCleanupIntervalSeconds)
@@ -88,6 +89,7 @@ func TestLoad_ChannelsDefaults(t *testing.T) {
 
 func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_INGRESS_ENABLED", "true")
+	os.Setenv("VALINOR_CHANNELS_CREDENTIALS_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 	os.Setenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPENABLED", "false")
 	os.Setenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPINTERVALSECONDS", "1800")
 	os.Setenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPBATCHSIZE", "333")
@@ -106,6 +108,7 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_CHANNELS_PROVIDERS_TELEGRAM_ACCESSTOKEN", "123456:ABCDEF")
 	defer func() {
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_ENABLED")
+		os.Unsetenv("VALINOR_CHANNELS_CREDENTIALS_KEY")
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPENABLED")
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPINTERVALSECONDS")
 		os.Unsetenv("VALINOR_CHANNELS_INGRESS_RETENTIONCLEANUPBATCHSIZE")
@@ -128,6 +131,7 @@ func TestLoad_ChannelsEnvOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, cfg.Channels.Ingress.Enabled)
+	assert.Equal(t, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=", cfg.Channels.Credentials.Key)
 	assert.False(t, cfg.Channels.Ingress.RetentionCleanupEnabled)
 	assert.Equal(t, 1800, cfg.Channels.Ingress.RetentionCleanupIntervalSeconds)
 	assert.Equal(t, 333, cfg.Channels.Ingress.RetentionCleanupBatchSize)

@@ -90,6 +90,30 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 		assert.Contains(t, err.Error(), "resolving provider credential")
 	})
 
+	t.Run("credential decrypt failure fails closed as permanent", func(t *testing.T) {
+		sender, err := buildChannelOutboxSender(config.ChannelsConfig{
+			Providers: config.ChannelsProvidersConfig{
+				Slack: config.ChannelProviderConfig{Enabled: true},
+			},
+		}, stubOutboxProviderCredentialResolver{
+			resolve: func(_ context.Context, _, _ string) (config.ChannelProviderConfig, error) {
+				return config.ChannelProviderConfig{}, channels.ErrProviderCredentialDecryptFailed
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, sender)
+
+		err = sender.Send(context.Background(), channels.ChannelOutbox{
+			TenantID:    uuid.New(),
+			Provider:    "slack",
+			RecipientID: "C123",
+			Payload:     json.RawMessage(`{"content":"hello","correlation_id":"corr-1"}`),
+		})
+		require.Error(t, err)
+		assert.True(t, channels.IsOutboxPermanentError(err))
+		assert.Contains(t, err.Error(), "resolving provider credential")
+	})
+
 	t.Run("no supported provider config fails closed on send", func(t *testing.T) {
 		sender, err := buildChannelOutboxSender(config.ChannelsConfig{}, stubOutboxProviderCredentialResolver{
 			resolve: func(_ context.Context, _, _ string) (config.ChannelProviderConfig, error) {
