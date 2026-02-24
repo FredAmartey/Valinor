@@ -171,3 +171,94 @@ func TestChannelOutboxWorker_SweepRecoversDispatchFailures(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+func TestChannelOutboxWorker_SweepRecoversDispatchFailures_DrainsBatches(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupWorkerTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Recovery Drain Tenant', 'recovery-drain-tenant') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		_, execErr := q.Exec(ctx,
+			`INSERT INTO channel_messages (
+				tenant_id, platform, platform_user_id, platform_message_id, idempotency_key,
+				payload_fingerprint, correlation_id, status, metadata, expires_at
+			) VALUES
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15556667771', 'msg-sweep-drain-1', 'idem-sweep-drain-1',
+				'fp-sweep-drain-1', 'corr-sweep-drain-1', 'dispatch_failed',
+				'{"decision":"dispatch_failed","outbox_enqueue_failed":true,"outbox_recipient_id":"+15556667771","response_content":"recover drain 1"}'::jsonb,
+				now() + interval '1 day'
+			),
+			(
+				current_setting('app.current_tenant_id', true)::UUID,
+				'whatsapp', '+15556667772', 'msg-sweep-drain-2', 'idem-sweep-drain-2',
+				'fp-sweep-drain-2', 'corr-sweep-drain-2', 'dispatch_failed',
+				'{"decision":"dispatch_failed","outbox_enqueue_failed":true,"outbox_recipient_id":"+15556667772","response_content":"recover drain 2"}'::jsonb,
+				now() + interval '1 day'
+			)`,
+		)
+		return execErr
+	})
+	require.NoError(t, err)
+
+	store := channels.NewStore()
+	dispatcher := channels.NewOutboxDispatcher(store, noopOutboxSender{}, channels.OutboxDispatcherConfig{
+		ClaimBatchSize:    10,
+		RecoveryBatchSize: 10,
+		MaxAttempts:       5,
+		BaseRetryDelay:    time.Second,
+		MaxRetryDelay:     10 * time.Second,
+	})
+	worker := &channelOutboxWorker{
+		pool:                pool,
+		store:               store,
+		dispatcher:          dispatcher,
+		pollInterval:        time.Second,
+		tenantScanPageSize:  100,
+		recoveryBatchSize:   1,
+		recoveryMaxAttempts: 7,
+	}
+
+	worker.sweep(ctx)
+
+	err = database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var executedCount int
+		if scanErr := q.QueryRow(ctx,
+			`SELECT COUNT(*)
+			 FROM channel_messages
+			 WHERE idempotency_key IN ('idem-sweep-drain-1', 'idem-sweep-drain-2')
+			   AND status = $1`,
+			channels.MessageStatusExecuted,
+		).Scan(&executedCount); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, 2, executedCount)
+
+		var sentCount int
+		if scanErr := q.QueryRow(ctx,
+			`SELECT COUNT(*)
+			 FROM channel_outbox outbox
+			 JOIN channel_messages msg ON msg.id = outbox.channel_message_id
+			 WHERE msg.idempotency_key IN ('idem-sweep-drain-1', 'idem-sweep-drain-2')
+			   AND outbox.status = $1`,
+			channels.OutboxStatusSent,
+		).Scan(&sentCount); scanErr != nil {
+			return scanErr
+		}
+		assert.Equal(t, 2, sentCount)
+		return nil
+	})
+	require.NoError(t, err)
+}

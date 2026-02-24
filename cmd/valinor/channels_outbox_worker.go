@@ -112,20 +112,27 @@ func (w *channelOutboxWorker) sweep(ctx context.Context) {
 		}
 
 		tenantErr := database.WithTenantConnection(ctx, w.pool, tenantID, func(ctx context.Context, q database.Querier) error {
-			recovered, recoverErr := w.store.RecoverDispatchFailuresToOutbox(
-				ctx,
-				q,
-				w.recoveryBatchSize,
-				w.recoveryMaxAttempts,
-			)
-			if recoverErr != nil {
-				return recoverErr
+			totalRecovered := 0
+			for {
+				recovered, recoverErr := w.store.RecoverDispatchFailuresToOutbox(
+					ctx,
+					q,
+					w.recoveryBatchSize,
+					w.recoveryMaxAttempts,
+				)
+				if recoverErr != nil {
+					return recoverErr
+				}
+				totalRecovered += recovered
+				if recovered < w.recoveryBatchSize {
+					break
+				}
 			}
-			if recovered > 0 {
+			if totalRecovered > 0 {
 				slog.Info(
 					"channel outbox worker recovered dispatch failures",
 					"tenant_id", tenantID,
-					"recovered_rows", recovered,
+					"recovered_rows", totalRecovered,
 				)
 			}
 
