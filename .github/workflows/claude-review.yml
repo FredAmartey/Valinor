@@ -23,12 +23,78 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@v1
+      - name: Claude review (OAuth)
+        id: claude_oauth
+        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: true
+          claude_args: --model claude-opus-4-6
+          prompt: |
+            Review this PR against the project rules in CLAUDE.md.
+            Focus on: security vulnerabilities, architecture violations,
+            Go idiom violations, missing tests, and performance concerns.
+            Be specific — cite file paths and line numbers.
+
+      - name: Claude review (API key fallback)
+        id: claude_api
+        if: ${{ steps.claude_oauth.outcome != 'success' && secrets.ANTHROPIC_API_KEY != '' }}
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
           claude_args: --model claude-sonnet-4-6
           prompt: |
             Review this PR against the project rules in CLAUDE.md.
             Focus on: security vulnerabilities, architecture violations,
             Go idiom violations, missing tests, and performance concerns.
             Be specific — cite file paths and line numbers.
+
+      - name: Evaluate review result
+        id: evaluate
+        run: |
+          set -euo pipefail
+          oauth="${{ steps.claude_oauth.outcome }}"
+          api="${{ steps.claude_api.outcome }}"
+          if [[ "${oauth}" == "success" || "${api}" == "success" ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "oauth=${oauth}" >> "$GITHUB_OUTPUT"
+          echo "api=${api}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment failure on @claude trigger
+        if: ${{ steps.evaluate.outputs.ok != 'true' && github.event_name == 'issue_comment' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = context.payload.issue.number;
+            const actor = context.actor;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const oauth = "${{ steps.evaluate.outputs.oauth }}";
+            const api = "${{ steps.evaluate.outputs.api }}";
+            const body = [
+              `@${actor} Claude review failed.`,
+              "",
+              `- OAuth attempt: \`${oauth}\``,
+              `- API key fallback: \`${api}\``,
+              `- Workflow run: ${runUrl}`,
+              "",
+              "Check repository secrets: `CLAUDE_CODE_OAUTH_TOKEN` (primary) and `ANTHROPIC_API_KEY` (fallback).",
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body,
+            });
+
+      - name: Fail when no auth path succeeds
+        if: ${{ steps.evaluate.outputs.ok != 'true' }}
+        run: |
+          echo "Claude PR review failed: OAuth and API-key paths both did not succeed." >&2
+          exit 1
