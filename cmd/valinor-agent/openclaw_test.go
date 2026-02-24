@@ -196,3 +196,125 @@ func TestOpenClawProxy_CanaryDetected(t *testing.T) {
 	assert.Equal(t, "canary_leak", halt.Reason)
 	assert.Equal(t, "CANARY-secret123", halt.Token)
 }
+
+func TestOpenClawProxy_MessageArrayForwarded(t *testing.T) {
+	var seenMessages []map[string]any
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&reqBody))
+
+		raw, ok := reqBody["messages"].([]any)
+		require.True(t, ok)
+		for _, item := range raw {
+			msg, castOK := item.(map[string]any)
+			require.True(t, castOK)
+			seenMessages = append(seenMessages, msg)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": "history-aware response"}},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	agent := &Agent{
+		cfg:        AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type: proxy.TypeMessage,
+		ID:   "msg-array",
+		Payload: json.RawMessage(`{
+			"messages":[
+				{"role":"user","content":"older request"},
+				{"role":"assistant","content":"older response"},
+				{"role":"user","content":"latest request"}
+			]
+		}`),
+	}
+	err = cp.Send(ctx, msg)
+	require.NoError(t, err)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeChunk, reply.Type)
+	require.Len(t, seenMessages, 3)
+	assert.Equal(t, "older request", seenMessages[0]["content"])
+	assert.Equal(t, "older response", seenMessages[1]["content"])
+	assert.Equal(t, "latest request", seenMessages[2]["content"])
+}
+
+func TestOpenClawProxy_FallbacksToLegacyRoleContent(t *testing.T) {
+	var seenMessages []map[string]any
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&reqBody))
+		raw, ok := reqBody["messages"].([]any)
+		require.True(t, ok)
+		for _, item := range raw {
+			msg, castOK := item.(map[string]any)
+			require.True(t, castOK)
+			seenMessages = append(seenMessages, msg)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": "legacy response"}},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	agent := &Agent{
+		cfg:        AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-legacy",
+		Payload: json.RawMessage(`{"role":"user","content":"legacy request"}`),
+	}
+	err = cp.Send(ctx, msg)
+	require.NoError(t, err)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeChunk, reply.Type)
+	require.Len(t, seenMessages, 1)
+	assert.Equal(t, "user", seenMessages[0]["role"])
+	assert.Equal(t, "legacy request", seenMessages[0]["content"])
+}

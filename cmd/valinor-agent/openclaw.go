@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/valinor-ai/valinor/internal/proxy"
 )
@@ -32,17 +33,44 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	var msg struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
 	}
 	if err := json.Unmarshal(frame.Payload, &msg); err != nil {
 		a.sendError(ctx, conn, frame.ID, "invalid_message", "invalid message payload")
 		return
 	}
 
+	messages := make([]map[string]string, 0, len(msg.Messages)+1)
+	for _, item := range msg.Messages {
+		role := strings.TrimSpace(item.Role)
+		content := strings.TrimSpace(item.Content)
+		if role == "" || content == "" {
+			continue
+		}
+		messages = append(messages, map[string]string{
+			"role":    role,
+			"content": content,
+		})
+	}
+	if len(messages) == 0 {
+		role := strings.TrimSpace(msg.Role)
+		content := strings.TrimSpace(msg.Content)
+		if role == "" || content == "" {
+			a.sendError(ctx, conn, frame.ID, "invalid_message", "invalid message payload")
+			return
+		}
+		messages = append(messages, map[string]string{
+			"role":    role,
+			"content": content,
+		})
+	}
+
 	// Build OpenClaw request
 	reqBody := map[string]any{
-		"messages": []map[string]string{
-			{"role": msg.Role, "content": msg.Content},
-		},
+		"messages": messages,
 	}
 	bodyJSON, err := json.Marshal(reqBody)
 	if err != nil {
