@@ -66,11 +66,12 @@ type HandlerConfig struct {
 
 // Handler serves proxy HTTP endpoints for agent communication.
 type Handler struct {
-	pool     *ConnPool
-	agents   AgentLookup
-	cfg      HandlerConfig
-	sentinel Sentinel
-	audit    AuditLogger
+	pool             *ConnPool
+	agents           AgentLookup
+	cfg              HandlerConfig
+	sentinel         Sentinel
+	audit            AuditLogger
+	userContextStore UserContextStore
 }
 
 // NewHandler creates a proxy Handler.
@@ -85,6 +86,15 @@ func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig, sentinel 
 		cfg.PingTimeout = 3 * time.Second
 	}
 	return &Handler{pool: pool, agents: agents, cfg: cfg, sentinel: sentinel, audit: audit}
+}
+
+// WithUserContextStore wires persistent per-user context snapshots into handler flows.
+func (h *Handler) WithUserContextStore(store UserContextStore) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.userContextStore = store
+	return h
 }
 
 // HandleMessage sends a user message to an agent and returns the full response.
@@ -171,6 +181,8 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	body = h.injectPersistedUserContext(r.Context(), body, agentTenant, agentID)
 
 	// Get or create connection
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
@@ -371,6 +383,8 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	messageBody = h.injectPersistedUserContext(r.Context(), messageBody, agentTenant, agentID)
+
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
 	if err != nil {
 		slog.Error("proxy dial failed", "agent", agentID, "error", err)
@@ -493,7 +507,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleContext pushes a context update to a running agent.
+// HandleContext persists a context snapshot for the caller and agent.
 // POST /agents/:id/context
 func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
@@ -516,68 +530,48 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if inst.Status != orchestrator.StatusRunning {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
+	if h.userContextStore == nil {
+		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "context store unavailable"})
 		return
 	}
 
-	if inst.VsockCID == nil {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
+	identity := auth.GetIdentity(r.Context())
+	if identity == nil || strings.TrimSpace(identity.UserID) == "" {
+		writeProxyJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if inst.TenantID != nil && strings.TrimSpace(*inst.TenantID) != "" {
+		tenantID = strings.TrimSpace(*inst.TenantID)
+	}
+	if tenantID == "" {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	var body json.RawMessage
+	var body struct {
+		Context string `json:"context"`
+	}
 	err = json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-
-	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
-	if err != nil {
-		slog.Error("proxy dial failed", "agent", agentID, "error", err)
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
+	contextText := strings.TrimSpace(body.Context)
+	if contextText == "" {
+		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "context is required"})
 		return
 	}
 
-	reqID := uuid.New().String()
-	frame := Frame{
-		Type:    TypeContextUpdate,
-		ID:      reqID,
-		Payload: body,
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), h.cfg.ConfigTimeout)
-	defer cancel()
-
-	request, err := conn.SendRequest(ctx, frame)
-	if err != nil {
-		h.pool.Remove(agentID)
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
-		return
-	}
-	defer request.Close()
-
-	reply, recvErr := request.Recv(ctx)
-	if recvErr != nil {
-		h.pool.Remove(agentID)
-		writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
+	if err := h.userContextStore.UpsertUserContext(r.Context(), tenantID, agentID, identity.UserID, contextText); err != nil {
+		slog.Error("persisting user context failed", "agent", agentID, "tenant", tenantID, "user", identity.UserID, "error", err)
+		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "context update failed"})
 		return
 	}
 
-	if reply.Type == TypeError {
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
-		return
-	}
-
-	if reply.Type == TypeConfigAck {
-		writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
-		return
-	}
-
-	// Unexpected frame type with matching ID
-	writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
+	writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }
 
 // auditFromRequest builds a base AuditEvent from the request context.
@@ -626,6 +620,82 @@ func verifyTenantOwnership(w http.ResponseWriter, r *http.Request, inst *orchest
 // writeSSE writes an SSE event to the response writer without using fmt.Fprintf.
 func writeSSE(w io.Writer, event string, data json.RawMessage) {
 	_, _ = io.WriteString(w, "event: "+event+"\ndata: "+string(data)+"\n\n")
+}
+
+func (h *Handler) injectPersistedUserContext(ctx context.Context, body json.RawMessage, tenantID, agentID string) json.RawMessage {
+	if h == nil || h.userContextStore == nil {
+		return body
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	agentID = strings.TrimSpace(agentID)
+	if tenantID == "" || agentID == "" {
+		return body
+	}
+	identity := auth.GetIdentity(ctx)
+	if identity == nil || strings.TrimSpace(identity.UserID) == "" {
+		return body
+	}
+
+	userContext, err := h.userContextStore.GetUserContext(ctx, tenantID, agentID, identity.UserID)
+	if err != nil {
+		if !errors.Is(err, ErrUserContextNotFound) {
+			slog.Warn("loading persisted user context failed", "agent", agentID, "tenant", tenantID, "user", identity.UserID, "error", err)
+		}
+		return body
+	}
+	updatedBody, updateErr := prependSystemContext(body, userContext)
+	if updateErr != nil {
+		slog.Warn("injecting persisted user context failed", "agent", agentID, "error", updateErr)
+		return body
+	}
+	return updatedBody
+}
+
+func prependSystemContext(body json.RawMessage, contextText string) (json.RawMessage, error) {
+	contextText = strings.TrimSpace(contextText)
+	if contextText == "" {
+		return body, nil
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+
+	messages := make([]any, 0, 2)
+	messages = append(messages, map[string]any{
+		"role":    "system",
+		"content": "Persisted user context:\n" + contextText,
+	})
+
+	if rawMessages, ok := payload["messages"]; ok {
+		existing, ok := rawMessages.([]any)
+		if !ok {
+			return nil, errors.New("messages must be an array")
+		}
+		messages = append(messages, existing...)
+	} else {
+		role, _ := payload["role"].(string)
+		content, _ := payload["content"].(string)
+		role = strings.TrimSpace(role)
+		content = strings.TrimSpace(content)
+		if role == "" {
+			role = "user"
+		}
+		if content != "" {
+			messages = append(messages, map[string]any{
+				"role":    role,
+				"content": content,
+			})
+		}
+	}
+
+	payload["messages"] = messages
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 func writeProxyJSON(w http.ResponseWriter, status int, v any) {
