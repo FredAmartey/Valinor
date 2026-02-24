@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,6 +129,16 @@ func validateFirecrackerPrereqs(cfg config.FirecrackerConfig, devMode bool) (orc
 	if networkPolicy == firecrackerNetworkPolicyOutboundOnly && strings.TrimSpace(cfg.Jailer.NetNSPath) == "" {
 		return jailerCfg, fmt.Errorf("firecracker jailer netns_path is required for network policy %q", networkPolicy)
 	}
+	tapDevice := strings.TrimSpace(cfg.Network.TapDevice)
+	if networkPolicy == firecrackerNetworkPolicyOutboundOnly && tapDevice == "" {
+		return jailerCfg, fmt.Errorf("firecracker network tap_device is required for network policy %q", networkPolicy)
+	}
+	guestMAC := strings.TrimSpace(cfg.Network.GuestMAC)
+	if guestMAC != "" {
+		if _, err := net.ParseMAC(guestMAC); err != nil {
+			return jailerCfg, fmt.Errorf("firecracker network guest_mac %q is invalid: %w", guestMAC, err)
+		}
+	}
 
 	jailerCfg = orchestrator.FirecrackerJailerConfig{
 		Enabled:       true,
@@ -137,6 +148,9 @@ func validateFirecrackerPrereqs(cfg config.FirecrackerConfig, devMode bool) (orc
 		GID:           cfg.Jailer.GID,
 		NetNSPath:     strings.TrimSpace(cfg.Jailer.NetNSPath),
 		Daemonize:     cfg.Jailer.Daemonize,
+		NetworkPolicy: networkPolicy,
+		TapDevice:     tapDevice,
+		GuestMAC:      guestMAC,
 	}
 
 	return jailerCfg, nil

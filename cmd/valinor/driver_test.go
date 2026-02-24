@@ -63,7 +63,8 @@ func TestSelectVMDriver_FirecrackerPlatformAndConfig(t *testing.T) {
 			NetNSPath:     "/var/run/netns/valinor",
 		},
 		Network: config.FirecrackerNetworkConfig{
-			Policy: "outbound_only",
+			Policy:    "outbound_only",
+			TapDevice: "tap0",
 		},
 	}
 
@@ -146,6 +147,10 @@ func TestSelectVMDriver_FirecrackerJailerEnabledOnLinux(t *testing.T) {
 				UID:           1001,
 				GID:           1001,
 				NetNSPath:     "/var/run/netns/valinor",
+			},
+			Network: config.FirecrackerNetworkConfig{
+				Policy:    "outbound_only",
+				TapDevice: "tap0",
 			},
 		},
 	}, false)
@@ -265,12 +270,47 @@ func TestSelectVMDriver_FirecrackerNetworkPolicyRequiresNetNSInProd(t *testing.T
 				GID:           1001,
 			},
 			Network: config.FirecrackerNetworkConfig{
-				Policy: "outbound_only",
+				Policy:    "outbound_only",
+				TapDevice: "tap0",
 			},
 		},
 	}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "netns_path is required")
+}
+
+func TestSelectVMDriver_FirecrackerNetworkPolicyRequiresTapDeviceInProd(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	_, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Jailer: config.JailerConfig{
+				Enabled:       true,
+				BinaryPath:    "true",
+				ChrootBaseDir: filepath.Join(tmp, "jailer"),
+				UID:           1001,
+				GID:           1001,
+				NetNSPath:     "/var/run/netns/valinor",
+			},
+			Network: config.FirecrackerNetworkConfig{
+				Policy: "outbound_only",
+			},
+		},
+	}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tap_device is required")
 }
 
 func TestSelectVMDriver_FirecrackerRejectsIsolatedNetworkPolicyInProd(t *testing.T) {

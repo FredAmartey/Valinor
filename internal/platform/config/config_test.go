@@ -74,6 +74,8 @@ func TestLoad_OrchestratorFirecrackerSecurityDefaults(t *testing.T) {
 	assert.True(t, cfg.Orchestrator.Firecracker.Workspace.Enabled)
 	assert.Equal(t, 2048, cfg.Orchestrator.Firecracker.Workspace.QuotaMB)
 	assert.Equal(t, "outbound_only", cfg.Orchestrator.Firecracker.Network.Policy)
+	assert.Equal(t, "", cfg.Orchestrator.Firecracker.Network.TapDevice)
+	assert.Equal(t, "", cfg.Orchestrator.Firecracker.Network.GuestMAC)
 }
 
 func TestLoad_ChannelsDefaults(t *testing.T) {

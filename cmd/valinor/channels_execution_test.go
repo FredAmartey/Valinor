@@ -23,6 +23,10 @@ type captureAuditLogger struct {
 	events []audit.Event
 }
 
+func ptrString(v string) *string {
+	return &v
+}
+
 func (l *captureAuditLogger) Log(_ context.Context, event audit.Event) {
 	l.events = append(l.events, event)
 }
@@ -410,12 +414,14 @@ func TestNewChannelExecutor_ExecutesAgainstPreferredDepartmentAgent(t *testing.T
 			return []orchestrator.AgentInstance{
 				{
 					ID:           "agent-shared",
+					UserID:       ptrString("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
 					Status:       orchestrator.StatusRunning,
 					VsockCID:     &sharedCID,
 					DepartmentID: nil,
 				},
 				{
 					ID:           "agent-dept-a",
+					UserID:       ptrString("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
 					Status:       orchestrator.StatusRunning,
 					VsockCID:     &preferredCID,
 					DepartmentID: &deptID,
@@ -461,6 +467,7 @@ func TestNewChannelExecutor_MapsDispatchError(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return []orchestrator.AgentInstance{{
 				ID:       "agent-1",
+				UserID:   ptrString("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
 				Status:   orchestrator.StatusRunning,
 				VsockCID: &cid,
 			}}, nil
@@ -500,6 +507,7 @@ func TestNewChannelExecutor_PassesPersistedUserContextToDispatch(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return []orchestrator.AgentInstance{{
 				ID:       "agent-ctx",
+				UserID:   ptrString("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
 				Status:   orchestrator.StatusRunning,
 				VsockCID: &cid,
 			}}, nil
@@ -540,6 +548,7 @@ func TestNewChannelExecutor_ContextLookupErrorFailsDispatch(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return []orchestrator.AgentInstance{{
 				ID:       "agent-ctx",
+				UserID:   ptrString("2f6a9b58-c56f-49d5-a06f-45b0145b9e1f"),
 				Status:   orchestrator.StatusRunning,
 				VsockCID: &cid,
 			}}, nil
@@ -569,17 +578,19 @@ func TestSelectChannelTargetAgent_FallbackToSharedAgent(t *testing.T) {
 	target := selectChannelTargetAgent([]orchestrator.AgentInstance{
 		{
 			ID:           "agent-wrong-dept",
+			UserID:       ptrString("user-a"),
 			Status:       orchestrator.StatusRunning,
 			VsockCID:     &deptCID,
 			DepartmentID: &deptID,
 		},
 		{
 			ID:           "agent-shared",
+			UserID:       ptrString("user-a"),
 			Status:       orchestrator.StatusRunning,
 			VsockCID:     &sharedCID,
 			DepartmentID: nil,
 		},
-	}, []string{"dept-y"})
+	}, "user-a", []string{"dept-y"})
 	require.NotNil(t, target)
 	assert.Equal(t, "agent-shared", target.ID)
 }
@@ -591,11 +602,12 @@ func TestSelectChannelTargetAgent_DoesNotFallbackToOtherDepartment(t *testing.T)
 	target := selectChannelTargetAgent([]orchestrator.AgentInstance{
 		{
 			ID:           "agent-wrong-dept",
+			UserID:       ptrString("user-b"),
 			Status:       orchestrator.StatusRunning,
 			VsockCID:     &deptCID,
 			DepartmentID: &deptID,
 		},
-	}, []string{"dept-y"})
+	}, "user-a", []string{"dept-y"})
 	assert.Nil(t, target)
 }
 

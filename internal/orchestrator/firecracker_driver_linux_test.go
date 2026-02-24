@@ -296,6 +296,42 @@ func TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive(t *testing.T) {
 	require.NoError(t, driver.Cleanup(ctx, "vm-firecracker-auto-data"))
 }
 
+func TestFirecrackerDriver_StartFailsWhenNetworkInterfaceRejected(t *testing.T) {
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	t.Setenv(jailerTestHelperEnv, "1")
+	t.Setenv(firecrackerTestFailPathEnv, "/network-interfaces/eth0")
+
+	tmp := shortTempDir(t)
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	driver := NewFirecrackerDriverWithConfig(kernelPath, rootDrive, FirecrackerJailerConfig{
+		Enabled:       true,
+		BinaryPath:    os.Args[0],
+		ChrootBaseDir: filepath.Join(tmp, "jailer"),
+		UID:           1001,
+		GID:           1001,
+		NetNSPath:     "/var/run/netns/valinor",
+		NetworkPolicy: "outbound_only",
+		TapDevice:     "tap0",
+	})
+	driver.stateRoot = filepath.Join(tmp, "state")
+	driver.socketWaitTimeout = 2 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := driver.Start(ctx, VMSpec{
+		VMID:     "vm-firecracker-net-reject",
+		VsockCID: 57,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "configuring network interface")
+}
+
 func TestCreateSparseDataDrive_RejectsNonPositiveQuota(t *testing.T) {
 	err := createSparseDataDrive("/tmp/data.ext4", 0)
 	require.Error(t, err)
@@ -617,6 +653,7 @@ func runFakeFirecracker() int {
 			"PUT /boot-source",
 			"PUT /drives/rootfs",
 			"PUT /drives/data",
+			"PUT /network-interfaces/eth0",
 			"PUT /vsock",
 			"PUT /actions":
 			if r.Method == http.MethodPut && r.URL.Path == "/machine-config" {
@@ -766,6 +803,7 @@ func runFakeJailerServer(hostSock, pidPath string) int {
 			"PUT /boot-source",
 			"PUT /drives/rootfs",
 			"PUT /drives/data",
+			"PUT /network-interfaces/eth0",
 			"PUT /vsock",
 			"PUT /actions":
 			w.WriteHeader(http.StatusNoContent)

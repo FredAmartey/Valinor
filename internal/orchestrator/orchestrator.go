@@ -61,6 +61,7 @@ type VMHandle struct {
 type AgentInstance struct {
 	ID                  string     `json:"id"`
 	TenantID            *string    `json:"tenant_id,omitempty"`
+	UserID              *string    `json:"user_id,omitempty"`
 	DepartmentID        *string    `json:"department_id,omitempty"`
 	VMID                *string    `json:"vm_id,omitempty"`
 	Status              string     `json:"status"`
@@ -75,6 +76,7 @@ type AgentInstance struct {
 
 // ProvisionOpts are options passed when provisioning a new agent.
 type ProvisionOpts struct {
+	UserID       *string
 	DepartmentID *string
 	// Config accepts arbitrary JSON since agent configuration varies by driver and use-case.
 	Config map[string]any

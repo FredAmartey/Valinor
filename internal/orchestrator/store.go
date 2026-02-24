@@ -25,10 +25,10 @@ func (s *Store) Create(ctx context.Context, q database.Querier, inst *AgentInsta
 	}
 
 	return q.QueryRow(ctx,
-		`INSERT INTO agent_instances (tenant_id, department_id, vm_id, status, config, vsock_cid, vm_driver, tool_allowlist)
-		 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+		`INSERT INTO agent_instances (tenant_id, user_id, department_id, vm_id, status, config, vsock_cid, vm_driver, tool_allowlist)
+		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
 		 RETURNING id, created_at`,
-		inst.TenantID, inst.DepartmentID, inst.VMID, inst.Status, config,
+		inst.TenantID, inst.UserID, inst.DepartmentID, inst.VMID, inst.Status, config,
 		inst.VsockCID, inst.VMDriver, inst.ToolAllowlist,
 	).Scan(&inst.ID, &inst.CreatedAt)
 }
@@ -36,11 +36,11 @@ func (s *Store) Create(ctx context.Context, q database.Querier, inst *AgentInsta
 func (s *Store) GetByID(ctx context.Context, q database.Querier, id string) (*AgentInstance, error) {
 	var inst AgentInstance
 	err := q.QueryRow(ctx,
-		`SELECT id, tenant_id, department_id, vm_id, status, config, vsock_cid,
+		`SELECT id, tenant_id, user_id, department_id, vm_id, status, config, vsock_cid,
 		        vm_driver, tool_allowlist, consecutive_failures, created_at, last_health_check
 		 FROM agent_instances WHERE id = $1`,
 		id,
-	).Scan(&inst.ID, &inst.TenantID, &inst.DepartmentID, &inst.VMID, &inst.Status,
+	).Scan(&inst.ID, &inst.TenantID, &inst.UserID, &inst.DepartmentID, &inst.VMID, &inst.Status,
 		&inst.Config, &inst.VsockCID, &inst.VMDriver, &inst.ToolAllowlist,
 		&inst.ConsecutiveFailures, &inst.CreatedAt, &inst.LastHealthCheck)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *Store) UpdateStatus(ctx context.Context, q database.Querier, id, status
 
 func (s *Store) ListByStatus(ctx context.Context, q database.Querier, status string) ([]AgentInstance, error) {
 	rows, err := q.Query(ctx,
-		`SELECT id, tenant_id, department_id, vm_id, status, config, vsock_cid,
+		`SELECT id, tenant_id, user_id, department_id, vm_id, status, config, vsock_cid,
 		        vm_driver, tool_allowlist, consecutive_failures, created_at, last_health_check
 		 FROM agent_instances WHERE status = $1 ORDER BY created_at`,
 		status,
@@ -83,7 +83,7 @@ func (s *Store) ListByStatus(ctx context.Context, q database.Querier, status str
 
 func (s *Store) ListByTenant(ctx context.Context, q database.Querier, tenantID string) ([]AgentInstance, error) {
 	rows, err := q.Query(ctx,
-		`SELECT id, tenant_id, department_id, vm_id, status, config, vsock_cid,
+		`SELECT id, tenant_id, user_id, department_id, vm_id, status, config, vsock_cid,
 		        vm_driver, tool_allowlist, consecutive_failures, created_at, last_health_check
 		 FROM agent_instances WHERE tenant_id = $1 AND status != $2 ORDER BY created_at`,
 		tenantID, StatusDestroyed,
@@ -98,21 +98,21 @@ func (s *Store) ListByTenant(ctx context.Context, q database.Querier, tenantID s
 
 // ClaimWarm atomically assigns a warm VM to a tenant, setting department and config in one UPDATE.
 // Uses FOR UPDATE SKIP LOCKED to avoid contention.
-func (s *Store) ClaimWarm(ctx context.Context, q database.Querier, tenantID string, deptID *string, config string) (*AgentInstance, error) {
+func (s *Store) ClaimWarm(ctx context.Context, q database.Querier, tenantID string, userID, deptID *string, config string) (*AgentInstance, error) {
 	var inst AgentInstance
 	err := q.QueryRow(ctx,
 		`UPDATE agent_instances
-		 SET tenant_id = $1, status = $2, department_id = $3, config = $4::jsonb
+		 SET tenant_id = $1, user_id = $2, status = $3, department_id = $4, config = $5::jsonb
 		 WHERE id = (
 		     SELECT id FROM agent_instances
-		     WHERE status = $5 AND tenant_id IS NULL
+		     WHERE status = $6 AND tenant_id IS NULL
 		     ORDER BY created_at LIMIT 1
 		     FOR UPDATE SKIP LOCKED
 		 )
-		 RETURNING id, tenant_id, department_id, vm_id, status, config, vsock_cid,
+		 RETURNING id, tenant_id, user_id, department_id, vm_id, status, config, vsock_cid,
 		           vm_driver, tool_allowlist, consecutive_failures, created_at, last_health_check`,
-		tenantID, StatusProvisioning, deptID, config, StatusWarm,
-	).Scan(&inst.ID, &inst.TenantID, &inst.DepartmentID, &inst.VMID, &inst.Status,
+		tenantID, userID, StatusProvisioning, deptID, config, StatusWarm,
+	).Scan(&inst.ID, &inst.TenantID, &inst.UserID, &inst.DepartmentID, &inst.VMID, &inst.Status,
 		&inst.Config, &inst.VsockCID, &inst.VMDriver, &inst.ToolAllowlist,
 		&inst.ConsecutiveFailures, &inst.CreatedAt, &inst.LastHealthCheck)
 	if err != nil {
@@ -120,6 +120,30 @@ func (s *Store) ClaimWarm(ctx context.Context, q database.Querier, tenantID stri
 			return nil, ErrNoWarmVMs
 		}
 		return nil, fmt.Errorf("claiming warm VM: %w", err)
+	}
+	return &inst, nil
+}
+
+func (s *Store) GetRunningByTenantUser(ctx context.Context, q database.Querier, tenantID, userID string) (*AgentInstance, error) {
+	var inst AgentInstance
+	err := q.QueryRow(ctx,
+		`SELECT id, tenant_id, user_id, department_id, vm_id, status, config, vsock_cid,
+		        vm_driver, tool_allowlist, consecutive_failures, created_at, last_health_check
+		 FROM agent_instances
+		 WHERE tenant_id = $1
+		   AND user_id = $2
+		   AND status IN ($3, $4)
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		tenantID, userID, StatusRunning, StatusProvisioning,
+	).Scan(&inst.ID, &inst.TenantID, &inst.UserID, &inst.DepartmentID, &inst.VMID, &inst.Status,
+		&inst.Config, &inst.VsockCID, &inst.VMDriver, &inst.ToolAllowlist,
+		&inst.ConsecutiveFailures, &inst.CreatedAt, &inst.LastHealthCheck)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrVMNotFound
+		}
+		return nil, fmt.Errorf("getting running agent by tenant/user: %w", err)
 	}
 	return &inst, nil
 }
@@ -192,7 +216,7 @@ func scanAgentInstances(rows pgx.Rows) ([]AgentInstance, error) {
 	var instances []AgentInstance
 	for rows.Next() {
 		var inst AgentInstance
-		if err := rows.Scan(&inst.ID, &inst.TenantID, &inst.DepartmentID, &inst.VMID,
+		if err := rows.Scan(&inst.ID, &inst.TenantID, &inst.UserID, &inst.DepartmentID, &inst.VMID,
 			&inst.Status, &inst.Config, &inst.VsockCID, &inst.VMDriver, &inst.ToolAllowlist,
 			&inst.ConsecutiveFailures, &inst.CreatedAt, &inst.LastHealthCheck); err != nil {
 			return nil, fmt.Errorf("scanning agent instance: %w", err)

@@ -42,6 +42,46 @@ func TestManager_Provision_ColdStart(t *testing.T) {
 	assert.Equal(t, 512, spec.DataDriveQuotaMB)
 }
 
+func TestManager_Provision_ReusesRunningUserAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	cfg := orchestrator.ManagerConfig{Driver: "mock", WarmPoolSize: 0}
+	mgr := orchestrator.NewManager(pool, driver, store, cfg)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ('Reuse Tenant', 'reuse-tenant') RETURNING id",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	existing := &orchestrator.AgentInstance{
+		TenantID:      &tenantID,
+		UserID:        ptrString("user-123"),
+		Status:        orchestrator.StatusRunning,
+		Config:        "{}",
+		VMID:          ptrString("existing-vm"),
+		VsockCID:      ptrUint32(42),
+		VMDriver:      "mock",
+		ToolAllowlist: "[]",
+	}
+	require.NoError(t, store.Create(ctx, pool, existing))
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{
+		UserID: ptrString("user-123"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, existing.ID, inst.ID)
+	assert.Equal(t, 0, driver.RunningCount(), "provision should not cold-start when user agent already exists")
+}
+
 func TestManager_Provision_FromWarmPool(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

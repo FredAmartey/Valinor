@@ -23,18 +23,19 @@ import (
 )
 
 const (
-	defaultFirecrackerBinary      = "firecracker"
-	defaultJailerBinary           = "jailer"
-	defaultFirecrackerStateSubdir = "valinor-firecracker"
-	defaultFirecrackerBootArgs    = "console=ttyS0 reboot=k panic=1 pci=off"
-	defaultFirecrackerVCPUs       = 1
-	defaultFirecrackerMemoryMB    = 512
-	defaultSocketWaitTimeout      = 5 * time.Second
-	defaultStopTimeout            = 5 * time.Second
-	defaultJailerPIDFileName      = ".pid"
-	defaultVMStateFileName        = "vm-state.json"
-	defaultDataDriveFileName      = "data.ext4"
-	maxDataDriveQuotaMB           = 1 << 20 // 1 TiB
+	defaultFirecrackerBinary       = "firecracker"
+	defaultJailerBinary            = "jailer"
+	defaultFirecrackerStateSubdir  = "valinor-firecracker"
+	defaultFirecrackerBootArgs     = "console=ttyS0 reboot=k panic=1 pci=off"
+	defaultFirecrackerVCPUs        = 1
+	defaultFirecrackerMemoryMB     = 512
+	defaultSocketWaitTimeout       = 5 * time.Second
+	defaultStopTimeout             = 5 * time.Second
+	defaultJailerPIDFileName       = ".pid"
+	defaultVMStateFileName         = "vm-state.json"
+	defaultDataDriveFileName       = "data.ext4"
+	maxDataDriveQuotaMB            = 1 << 20 // 1 TiB
+	firecrackerNetworkOutboundOnly = "outbound_only"
 )
 
 var vmIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
@@ -375,6 +376,25 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 				_ = os.RemoveAll(jailerDir)
 			}
 			return VMHandle{}, fmt.Errorf("%w: configuring data drive: %v", ErrDriverFailure, err)
+		}
+	}
+
+	if shouldConfigureOutboundInterface(d.jailer) {
+		networkPayload := map[string]any{
+			"iface_id":      "eth0",
+			"host_dev_name": strings.TrimSpace(d.jailer.TapDevice),
+		}
+		guestMAC := strings.TrimSpace(d.jailer.GuestMAC)
+		if guestMAC != "" {
+			networkPayload["guest_mac"] = guestMAC
+		}
+		if err := client.putJSON(ctx, "/network-interfaces/eth0", networkPayload); err != nil {
+			_ = d.stopProcess(vm)
+			_ = os.RemoveAll(stateDir)
+			if jailerDir != "" {
+				_ = os.RemoveAll(jailerDir)
+			}
+			return VMHandle{}, fmt.Errorf("%w: configuring network interface: %v", ErrDriverFailure, err)
 		}
 	}
 
@@ -950,6 +970,16 @@ func resolveExecutablePath(binary string) string {
 		return candidate
 	}
 	return absPath
+}
+
+func shouldConfigureOutboundInterface(cfg FirecrackerJailerConfig) bool {
+	if !cfg.Enabled {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.NetworkPolicy), firecrackerNetworkOutboundOnly) {
+		return false
+	}
+	return strings.TrimSpace(cfg.TapDevice) != ""
 }
 
 func buildJailerCommandArgs(vmID, firecrackerBinary string, cfg FirecrackerJailerConfig, apiSockInJail string) []string {

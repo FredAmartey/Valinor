@@ -107,7 +107,7 @@ func newChannelExecutor(
 			return channels.ExecutionResult{Decision: channels.IngressDispatchFailed}
 		}
 
-		target := selectChannelTargetAgent(agents, identity.Departments)
+		target := selectChannelTargetAgent(agents, identity.UserID, identity.Departments)
 		if target == nil {
 			logChannelExecutionEvent(ctx, auditLogger, audit.ActionChannelActionDeniedNoAgent, msg, map[string]any{
 				"reason": "no running agent available",
@@ -161,7 +161,8 @@ func newChannelExecutor(
 	}
 }
 
-func selectChannelTargetAgent(instances []orchestrator.AgentInstance, preferredDepartments []string) *orchestrator.AgentInstance {
+func selectChannelTargetAgent(instances []orchestrator.AgentInstance, userID string, preferredDepartments []string) *orchestrator.AgentInstance {
+	requestedUserID := strings.TrimSpace(userID)
 	preferred := make(map[string]struct{}, len(preferredDepartments))
 	for _, departmentID := range preferredDepartments {
 		dept := strings.TrimSpace(departmentID)
@@ -174,7 +175,7 @@ func selectChannelTargetAgent(instances []orchestrator.AgentInstance, preferredD
 	if len(preferred) > 0 {
 		for i := range instances {
 			inst := &instances[i]
-			if !isChannelDispatchCandidate(inst) || inst.DepartmentID == nil {
+			if !isChannelDispatchCandidate(inst) || !isChannelDispatchUserMatch(inst, requestedUserID) || inst.DepartmentID == nil {
 				continue
 			}
 			if _, ok := preferred[*inst.DepartmentID]; ok {
@@ -185,7 +186,7 @@ func selectChannelTargetAgent(instances []orchestrator.AgentInstance, preferredD
 
 	for i := range instances {
 		inst := &instances[i]
-		if !isChannelDispatchCandidate(inst) {
+		if !isChannelDispatchCandidate(inst) || !isChannelDispatchUserMatch(inst, requestedUserID) {
 			continue
 		}
 		if inst.DepartmentID == nil {
@@ -201,6 +202,16 @@ func isChannelDispatchCandidate(inst *orchestrator.AgentInstance) bool {
 		return false
 	}
 	return inst.Status == orchestrator.StatusRunning && inst.VsockCID != nil
+}
+
+func isChannelDispatchUserMatch(inst *orchestrator.AgentInstance, requestedUserID string) bool {
+	if strings.TrimSpace(requestedUserID) == "" {
+		return true
+	}
+	if inst == nil || inst.UserID == nil {
+		return false
+	}
+	return strings.TrimSpace(*inst.UserID) == strings.TrimSpace(requestedUserID)
 }
 
 func dispatchChannelMessageToAgent(

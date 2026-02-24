@@ -15,12 +15,10 @@ This checklist maps OpenClaw's security posture to Valinor production controls.
 
 ## P1 (Next Hardening Wave)
 
-- [ ] Add per-user writable workspace/data mount with quotas in Firecracker.
-  Implemented now: per-VM writable data drive provisioning with fixed quota.
-  Remaining: per-user VM affinity/routing so each user always gets isolated writable state.
-- [ ] Add explicit guest network policy (outbound-only, no inbound gateway exposure).
-  Implemented now: fail-closed preflight policy (`outbound_only` requires jailer + `netns_path`).
-  Remaining: explicit guest NIC/tap wiring for controlled egress in the driver.
+- [x] Add per-user writable workspace/data mount with quotas in Firecracker.
+  Implemented now: per-VM quota data drives plus user-affine agent provisioning/reuse (`agent_instances.user_id`) and user-scoped channel routing.
+- [x] Add explicit guest network policy (outbound-only, no inbound gateway exposure).
+  Implemented now: fail-closed preflight policy (`outbound_only` requires jailer + `netns_path` + `network.tap_device`) and explicit guest NIC programming (`/network-interfaces/eth0`).
 - [x] Add CI checks that fail on policy regressions.
 
 ## Verification Commands
