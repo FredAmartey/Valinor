@@ -41,9 +41,9 @@ func TestBuildChannelHandler(t *testing.T) {
 		assert.Contains(t, err.Error(), "database")
 	})
 
-	t.Run("enabled provider missing secret fails", func(t *testing.T) {
+	t.Run("enabled provider without global secret still returns handler", func(t *testing.T) {
 		pool := (*database.Pool)(&pgxpool.Pool{})
-		_, err := buildChannelHandler(pool, config.ChannelsConfig{
+		handler, err := buildChannelHandler(pool, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{
 				Enabled: true,
 			},
@@ -53,8 +53,8 @@ func TestBuildChannelHandler(t *testing.T) {
 				},
 			},
 		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "signing secret")
+		require.NoError(t, err)
+		assert.NotNil(t, handler)
 	})
 
 	t.Run("enabled ingress with no providers fails", func(t *testing.T) {

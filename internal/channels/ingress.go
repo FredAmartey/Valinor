@@ -84,13 +84,21 @@ func (g *IngressGuard) WithAuditLogger(logger audit.Logger) *IngressGuard {
 
 // Verify validates provider authenticity checks without executing link/idempotency stages.
 func (g *IngressGuard) Verify(headers http.Header, body []byte) error {
+	return g.VerifyWithContext(context.Background(), headers, body)
+}
+
+// VerifyWithContext validates provider authenticity checks and can use tenant context when supported by the verifier.
+func (g *IngressGuard) VerifyWithContext(ctx context.Context, headers http.Header, body []byte) error {
+	if contextual, ok := g.verifier.(ContextVerifier); ok {
+		return contextual.VerifyContext(ctx, headers, body, g.now())
+	}
 	return g.verifier.Verify(headers, body, g.now())
 }
 
 // Process executes the required ingress checks in order:
 // signature verification -> link resolution -> verification state -> replay window -> idempotency.
 func (g *IngressGuard) Process(ctx context.Context, msg IngressMessage) (IngressResult, error) {
-	if err := g.verifier.Verify(msg.Headers, msg.Body, g.now()); err != nil {
+	if err := g.VerifyWithContext(ctx, msg.Headers, msg.Body); err != nil {
 		g.logDecision(ctx, msg, IngressRejectedSignature, nil)
 		return IngressResult{Decision: IngressRejectedSignature}, err
 	}

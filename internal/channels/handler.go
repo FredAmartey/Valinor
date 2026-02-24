@@ -248,7 +248,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	for _, meta := range metas {
 		if meta.Control != nil && meta.Control.AcknowledgeOnly {
 			if !controlVerified {
-				if verifyErr := guard.Verify(r.Header, body); verifyErr != nil {
+				if verifyErr := guard.VerifyWithContext(ctx, r.Header, body); verifyErr != nil {
 					if handled := writeIngressError(w, verifyErr, correlationID); handled {
 						return
 					}
@@ -809,6 +809,8 @@ func (h *Handler) HandleUpsertProviderCredential(w http.ResponseWriter, r *http.
 
 	var req struct {
 		AccessToken   string `json:"access_token"`
+		SigningSecret string `json:"signing_secret"`
+		SecretToken   string `json:"secret_token"`
 		APIBaseURL    string `json:"api_base_url"`
 		APIVersion    string `json:"api_version"`
 		PhoneNumberID string `json:"phone_number_id"`
@@ -823,6 +825,8 @@ func (h *Handler) HandleUpsertProviderCredential(w http.ResponseWriter, r *http.
 	credential, err := h.upsertProviderCredential(r.Context(), tenantID, UpsertProviderCredentialParams{
 		Provider:      strings.TrimSpace(r.PathValue("provider")),
 		AccessToken:   strings.TrimSpace(req.AccessToken),
+		SigningSecret: strings.TrimSpace(req.SigningSecret),
+		SecretToken:   strings.TrimSpace(req.SecretToken),
 		APIBaseURL:    strings.TrimSpace(req.APIBaseURL),
 		APIVersion:    strings.TrimSpace(req.APIVersion),
 		PhoneNumberID: strings.TrimSpace(req.PhoneNumberID),
@@ -832,7 +836,9 @@ func (h *Handler) HandleUpsertProviderCredential(w http.ResponseWriter, r *http.
 		case errors.Is(err, ErrPlatformEmpty),
 			errors.Is(err, ErrProviderUnsupported),
 			errors.Is(err, ErrProviderAccessTokenRequired),
-			errors.Is(err, ErrProviderPhoneNumberIDRequired):
+			errors.Is(err, ErrProviderPhoneNumberIDRequired),
+			errors.Is(err, ErrProviderSigningSecretRequired),
+			errors.Is(err, ErrProviderSecretTokenRequired):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		default:
@@ -877,12 +883,14 @@ func (h *Handler) HandleDeleteProviderCredential(w http.ResponseWriter, r *http.
 }
 
 type providerCredentialResponse struct {
-	Provider       string    `json:"provider"`
-	APIBaseURL     string    `json:"api_base_url"`
-	APIVersion     string    `json:"api_version"`
-	PhoneNumberID  string    `json:"phone_number_id"`
-	HasAccessToken bool      `json:"has_access_token"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	Provider         string    `json:"provider"`
+	APIBaseURL       string    `json:"api_base_url"`
+	APIVersion       string    `json:"api_version"`
+	PhoneNumberID    string    `json:"phone_number_id"`
+	HasAccessToken   bool      `json:"has_access_token"`
+	HasSigningSecret bool      `json:"has_signing_secret"`
+	HasSecretToken   bool      `json:"has_secret_token"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func sanitizeProviderCredentialResponse(credential *ProviderCredential) providerCredentialResponse {
@@ -890,12 +898,14 @@ func sanitizeProviderCredentialResponse(credential *ProviderCredential) provider
 		return providerCredentialResponse{}
 	}
 	return providerCredentialResponse{
-		Provider:       credential.Provider,
-		APIBaseURL:     credential.APIBaseURL,
-		APIVersion:     credential.APIVersion,
-		PhoneNumberID:  credential.PhoneNumberID,
-		HasAccessToken: strings.TrimSpace(credential.AccessToken) != "",
-		UpdatedAt:      credential.UpdatedAt,
+		Provider:         credential.Provider,
+		APIBaseURL:       credential.APIBaseURL,
+		APIVersion:       credential.APIVersion,
+		PhoneNumberID:    credential.PhoneNumberID,
+		HasAccessToken:   strings.TrimSpace(credential.AccessToken) != "",
+		HasSigningSecret: strings.TrimSpace(credential.SigningSecret) != "",
+		HasSecretToken:   strings.TrimSpace(credential.SecretToken) != "",
+		UpdatedAt:        credential.UpdatedAt,
 	}
 }
 

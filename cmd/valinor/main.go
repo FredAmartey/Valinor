@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -367,6 +370,7 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 	}
 
 	store := channels.NewStore()
+	resolveVerifier := newChannelVerifierResolver(pool, store)
 	resolveLink := func(ctx context.Context, platform, platformUserID string) (*channels.ChannelLink, error) {
 		tenantID := middleware.GetTenantID(ctx)
 		if tenantID == "" {
@@ -409,11 +413,8 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 	ingressByProvider := map[string]*channels.IngressGuard{}
 
 	if cfg.Providers.Slack.Enabled {
-		if cfg.Providers.Slack.SigningSecret == "" {
-			return nil, fmt.Errorf("slack signing secret is required when provider is enabled")
-		}
 		ingressByProvider["slack"] = channels.NewIngressGuard(
-			channels.NewSlackVerifier(cfg.Providers.Slack.SigningSecret, 5*time.Minute),
+			resolveVerifier.slackVerifier(),
 			replayWindow,
 			resolveLink,
 			insertIdempotency,
@@ -421,11 +422,8 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 	}
 
 	if cfg.Providers.WhatsApp.Enabled {
-		if cfg.Providers.WhatsApp.SigningSecret == "" {
-			return nil, fmt.Errorf("whatsapp signing secret is required when provider is enabled")
-		}
 		ingressByProvider["whatsapp"] = channels.NewIngressGuard(
-			channels.NewWhatsAppVerifier(cfg.Providers.WhatsApp.SigningSecret),
+			resolveVerifier.whatsAppVerifier(),
 			replayWindow,
 			resolveLink,
 			insertIdempotency,
@@ -433,11 +431,8 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 	}
 
 	if cfg.Providers.Telegram.Enabled {
-		if cfg.Providers.Telegram.SecretToken == "" {
-			return nil, fmt.Errorf("telegram secret token is required when provider is enabled")
-		}
 		ingressByProvider["telegram"] = channels.NewIngressGuard(
-			channels.NewTelegramVerifier(cfg.Providers.Telegram.SecretToken),
+			resolveVerifier.telegramVerifier(),
 			replayWindow,
 			resolveLink,
 			insertIdempotency,
@@ -450,6 +445,111 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 	}
 
 	return channels.NewHandler(ingressByProvider).WithLinkStore(pool, store), nil
+}
+
+type dynamicVerifier struct {
+	resolve func(ctx context.Context) (channels.Verifier, error)
+}
+
+func (v dynamicVerifier) Verify(headers http.Header, body []byte, now time.Time) error {
+	return v.VerifyContext(context.Background(), headers, body, now)
+}
+
+func (v dynamicVerifier) VerifyContext(ctx context.Context, headers http.Header, body []byte, now time.Time) error {
+	if v.resolve == nil {
+		return channels.ErrMissingSignature
+	}
+	resolved, err := v.resolve(ctx)
+	if err != nil {
+		if errors.Is(err, channels.ErrProviderCredentialNotFound) ||
+			errors.Is(err, channels.ErrProviderSigningSecretRequired) ||
+			errors.Is(err, channels.ErrProviderSecretTokenRequired) {
+			return channels.ErrMissingSignature
+		}
+		return err
+	}
+	return resolved.Verify(headers, body, now)
+}
+
+type channelVerifierResolver struct {
+	pool  *database.Pool
+	store *channels.Store
+}
+
+func newChannelVerifierResolver(pool *database.Pool, store *channels.Store) channelVerifierResolver {
+	return channelVerifierResolver{
+		pool:  pool,
+		store: store,
+	}
+}
+
+func (r channelVerifierResolver) credentialForTenant(ctx context.Context, provider string) (*channels.ProviderCredential, error) {
+	if r.pool == nil || r.store == nil {
+		return nil, fmt.Errorf("channel verifier resolver is not configured")
+	}
+	tenantID := middleware.GetTenantID(ctx)
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenant context required")
+	}
+
+	var credential *channels.ProviderCredential
+	err := database.WithTenantConnection(ctx, r.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var lookupErr error
+		credential, lookupErr = r.store.GetProviderCredential(ctx, q, provider)
+		return lookupErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return credential, nil
+}
+
+func (r channelVerifierResolver) slackVerifier() channels.Verifier {
+	return dynamicVerifier{
+		resolve: func(ctx context.Context) (channels.Verifier, error) {
+			credential, err := r.credentialForTenant(ctx, "slack")
+			if err != nil {
+				return nil, err
+			}
+			secret := strings.TrimSpace(credential.SigningSecret)
+			if secret == "" {
+				return nil, channels.ErrProviderSigningSecretRequired
+			}
+			return channels.NewSlackVerifier(secret, 5*time.Minute), nil
+		},
+	}
+}
+
+func (r channelVerifierResolver) whatsAppVerifier() channels.Verifier {
+	return dynamicVerifier{
+		resolve: func(ctx context.Context) (channels.Verifier, error) {
+			credential, err := r.credentialForTenant(ctx, "whatsapp")
+			if err != nil {
+				return nil, err
+			}
+			secret := strings.TrimSpace(credential.SigningSecret)
+			if secret == "" {
+				return nil, channels.ErrProviderSigningSecretRequired
+			}
+			return channels.NewWhatsAppVerifier(secret), nil
+		},
+	}
+}
+
+func (r channelVerifierResolver) telegramVerifier() channels.Verifier {
+	return dynamicVerifier{
+		resolve: func(ctx context.Context) (channels.Verifier, error) {
+			credential, err := r.credentialForTenant(ctx, "telegram")
+			if err != nil {
+				return nil, err
+			}
+			secretToken := strings.TrimSpace(credential.SecretToken)
+			if secretToken == "" {
+				return nil, channels.ErrProviderSecretTokenRequired
+			}
+			return channels.NewTelegramVerifier(secretToken), nil
+		},
+	}
 }
 
 // configPusherAdapter wraps proxy.ConnPool to implement orchestrator.ConfigPusher.

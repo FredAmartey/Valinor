@@ -255,7 +255,7 @@ func (s *Store) GetProviderCredential(ctx context.Context, q database.Querier, p
 
 	var credential ProviderCredential
 	err = q.QueryRow(ctx,
-		`SELECT id, tenant_id, provider, access_token, api_base_url, api_version, phone_number_id, created_at, updated_at
+		`SELECT id, tenant_id, provider, access_token, signing_secret, secret_token, api_base_url, api_version, phone_number_id, created_at, updated_at
 		 FROM channel_provider_credentials
 		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
 		   AND provider = $1`,
@@ -265,6 +265,8 @@ func (s *Store) GetProviderCredential(ctx context.Context, q database.Querier, p
 		&credential.TenantID,
 		&credential.Provider,
 		&credential.AccessToken,
+		&credential.SigningSecret,
+		&credential.SecretToken,
 		&credential.APIBaseURL,
 		&credential.APIVersion,
 		&credential.PhoneNumberID,
@@ -292,28 +294,42 @@ func (s *Store) UpsertProviderCredential(ctx context.Context, q database.Querier
 		return nil, ErrProviderAccessTokenRequired
 	}
 
+	signingSecret := strings.TrimSpace(params.SigningSecret)
+	secretToken := strings.TrimSpace(params.SecretToken)
 	phoneNumberID := strings.TrimSpace(params.PhoneNumberID)
 	if provider == "whatsapp" && phoneNumberID == "" {
 		return nil, ErrProviderPhoneNumberIDRequired
+	}
+	if provider == "slack" || provider == "whatsapp" {
+		if signingSecret == "" {
+			return nil, ErrProviderSigningSecretRequired
+		}
+	}
+	if provider == "telegram" && secretToken == "" {
+		return nil, ErrProviderSecretTokenRequired
 	}
 
 	var credential ProviderCredential
 	err = q.QueryRow(ctx,
 		`INSERT INTO channel_provider_credentials (
-			tenant_id, provider, access_token, api_base_url, api_version, phone_number_id
+			tenant_id, provider, access_token, signing_secret, secret_token, api_base_url, api_version, phone_number_id
 		) VALUES (
-			current_setting('app.current_tenant_id', true)::UUID, $1, $2, $3, $4, $5
+			current_setting('app.current_tenant_id', true)::UUID, $1, $2, $3, $4, $5, $6, $7
 		)
 		ON CONFLICT (tenant_id, provider)
 		DO UPDATE SET
 			access_token = EXCLUDED.access_token,
+			signing_secret = EXCLUDED.signing_secret,
+			secret_token = EXCLUDED.secret_token,
 			api_base_url = EXCLUDED.api_base_url,
 			api_version = EXCLUDED.api_version,
 			phone_number_id = EXCLUDED.phone_number_id,
 			updated_at = now()
-		RETURNING id, tenant_id, provider, access_token, api_base_url, api_version, phone_number_id, created_at, updated_at`,
+		RETURNING id, tenant_id, provider, access_token, signing_secret, secret_token, api_base_url, api_version, phone_number_id, created_at, updated_at`,
 		provider,
 		accessToken,
+		signingSecret,
+		secretToken,
 		strings.TrimSpace(params.APIBaseURL),
 		strings.TrimSpace(params.APIVersion),
 		phoneNumberID,
@@ -322,6 +338,8 @@ func (s *Store) UpsertProviderCredential(ctx context.Context, q database.Querier
 		&credential.TenantID,
 		&credential.Provider,
 		&credential.AccessToken,
+		&credential.SigningSecret,
+		&credential.SecretToken,
 		&credential.APIBaseURL,
 		&credential.APIVersion,
 		&credential.PhoneNumberID,

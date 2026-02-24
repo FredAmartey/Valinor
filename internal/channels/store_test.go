@@ -1153,6 +1153,7 @@ func TestChannelProviderCredentialStore_UpsertGetDelete(t *testing.T) {
 		created, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
 			Provider:      "whatsapp",
 			AccessToken:   "wa-token-1",
+			SigningSecret: "wa-signing-secret-1",
 			PhoneNumberID: "15550001111",
 			APIBaseURL:    "https://graph.example.com",
 			APIVersion:    "v22.0",
@@ -1161,23 +1162,27 @@ func TestChannelProviderCredentialStore_UpsertGetDelete(t *testing.T) {
 		assert.Equal(t, tenantID, created.TenantID.String())
 		assert.Equal(t, "whatsapp", created.Provider)
 		assert.Equal(t, "wa-token-1", created.AccessToken)
+		assert.Equal(t, "wa-signing-secret-1", created.SigningSecret)
 		assert.Equal(t, "15550001111", created.PhoneNumberID)
 
 		loaded, getErr := store.GetProviderCredential(ctx, q, "whatsapp")
 		require.NoError(t, getErr)
 		assert.Equal(t, created.ID, loaded.ID)
 		assert.Equal(t, "wa-token-1", loaded.AccessToken)
+		assert.Equal(t, "wa-signing-secret-1", loaded.SigningSecret)
 		assert.Equal(t, "https://graph.example.com", loaded.APIBaseURL)
 		assert.Equal(t, "v22.0", loaded.APIVersion)
 
 		updated, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
 			Provider:      "whatsapp",
 			AccessToken:   "wa-token-2",
+			SigningSecret: "wa-signing-secret-2",
 			PhoneNumberID: "15550001111",
 		})
 		require.NoError(t, upsertErr)
 		assert.Equal(t, created.ID, updated.ID)
 		assert.Equal(t, "wa-token-2", updated.AccessToken)
+		assert.Equal(t, "wa-signing-secret-2", updated.SigningSecret)
 
 		deleteErr := store.DeleteProviderCredential(ctx, q, "whatsapp")
 		require.NoError(t, deleteErr)
@@ -1212,8 +1217,9 @@ func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
 
 	err = database.WithTenantConnection(ctx, pool, tenantA, func(ctx context.Context, q database.Querier) error {
 		_, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
-			Provider:    "slack",
-			AccessToken: "xoxb-tenant-a",
+			Provider:      "slack",
+			AccessToken:   "xoxb-tenant-a",
+			SigningSecret: "slack-signing-a",
 		})
 		return upsertErr
 	})
@@ -1221,8 +1227,9 @@ func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
 
 	err = database.WithTenantConnection(ctx, pool, tenantB, func(ctx context.Context, q database.Querier) error {
 		_, upsertErr := store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
-			Provider:    "slack",
-			AccessToken: "xoxb-tenant-b",
+			Provider:      "slack",
+			AccessToken:   "xoxb-tenant-b",
+			SigningSecret: "slack-signing-b",
 		})
 		return upsertErr
 	})
@@ -1232,6 +1239,7 @@ func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
 		cred, getErr := store.GetProviderCredential(ctx, q, "slack")
 		require.NoError(t, getErr)
 		assert.Equal(t, "xoxb-tenant-a", cred.AccessToken)
+		assert.Equal(t, "slack-signing-a", cred.SigningSecret)
 		return nil
 	})
 	require.NoError(t, err)
@@ -1240,6 +1248,7 @@ func TestChannelProviderCredentialStore_TenantIsolation(t *testing.T) {
 		cred, getErr := store.GetProviderCredential(ctx, q, "slack")
 		require.NoError(t, getErr)
 		assert.Equal(t, "xoxb-tenant-b", cred.AccessToken)
+		assert.Equal(t, "slack-signing-b", cred.SigningSecret)
 		return nil
 	})
 	require.NoError(t, err)
@@ -1269,10 +1278,30 @@ func TestChannelProviderCredentialStore_Validation(t *testing.T) {
 		require.ErrorIs(t, upsertErr, channels.ErrProviderAccessTokenRequired)
 
 		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
-			Provider:    "whatsapp",
-			AccessToken: "wa-token",
+			Provider:      "whatsapp",
+			AccessToken:   "wa-token",
+			SigningSecret: "wa-signing-secret",
 		})
 		require.ErrorIs(t, upsertErr, channels.ErrProviderPhoneNumberIDRequired)
+
+		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "slack",
+			AccessToken: "xoxb-token",
+		})
+		require.ErrorIs(t, upsertErr, channels.ErrProviderSigningSecretRequired)
+
+		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "telegram",
+			AccessToken: "123456:ABC",
+		})
+		require.ErrorIs(t, upsertErr, channels.ErrProviderSecretTokenRequired)
+
+		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
+			Provider:    "telegram",
+			AccessToken: "123456:ABC",
+			SecretToken: "tg-secret",
+		})
+		require.NoError(t, upsertErr)
 
 		_, upsertErr = store.UpsertProviderCredential(ctx, q, channels.UpsertProviderCredentialParams{
 			Provider:    "teams",
