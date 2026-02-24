@@ -26,7 +26,8 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
+          model: claude-sonnet-4-20250514
+          direct_prompt: |
             Review this PR against the project rules in CLAUDE.md.
             Focus on: security vulnerabilities, architecture violations,
             Go idiom violations, missing tests, and performance concerns.
