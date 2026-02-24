@@ -15,9 +15,10 @@ import (
 
 // AgentConfig holds in-guest agent configuration.
 type AgentConfig struct {
-	Transport   string
-	Port        uint32
-	OpenClawURL string
+	Transport           string
+	Port                uint32
+	OpenClawURL         string
+	AllowRemoteOpenClaw bool
 }
 
 // Agent is the in-guest valinor-agent that bridges the control plane to OpenClaw.
