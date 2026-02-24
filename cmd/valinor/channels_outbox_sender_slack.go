@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/platform/config"
@@ -99,7 +100,7 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return classifyOutboxHTTPStatus("slack", resp.StatusCode, msg)
+		return classifyOutboxHTTPStatus("slack", resp.StatusCode, msg, resp.Header.Get("Retry-After"), time.Now().UTC())
 	}
 
 	var response struct {

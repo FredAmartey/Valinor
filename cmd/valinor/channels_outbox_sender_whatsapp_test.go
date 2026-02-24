@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,6 +144,15 @@ func TestIsPermanentOutboxHTTPStatus(t *testing.T) {
 	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusNotFound))
 }
 
+func TestParseRetryAfterDuration_HTTPDate(t *testing.T) {
+	now := time.Date(2026, 2, 24, 0, 35, 0, 0, time.UTC)
+	headerValue := now.Add(75 * time.Second).Format(http.TimeFormat)
+
+	delay, ok := parseRetryAfterDuration(headerValue, now)
+	assert.True(t, ok)
+	assert.Equal(t, 75*time.Second, delay)
+}
+
 func TestSlackOutboxSender_Send(t *testing.T) {
 	t.Run("sends slack chat.postMessage payload", func(t *testing.T) {
 		var seenAuth string
@@ -234,6 +244,35 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 502")
 		assert.False(t, channels.IsOutboxPermanentError(err))
+	})
+
+	t.Run("returns transient retry-after error on 429 with retry-after header", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Retry-After", "37")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"ok":false,"error":"rate_limited"}`))
+		}))
+		defer srv.Close()
+
+		sender := newSlackOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "xoxb-test-token",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "slack",
+			RecipientID: "C12345678",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.False(t, channels.IsOutboxPermanentError(err))
+		retryAfter, ok := channels.OutboxRetryAfter(err)
+		assert.True(t, ok)
+		assert.Equal(t, 37*time.Second, retryAfter)
 	})
 
 	t.Run("returns error when slack API rejects request", func(t *testing.T) {

@@ -164,30 +164,10 @@ func (s *whatsAppOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return classifyOutboxHTTPStatus("whatsapp", resp.StatusCode, msg)
+		return classifyOutboxHTTPStatus("whatsapp", resp.StatusCode, msg, resp.Header.Get("Retry-After"), time.Now().UTC())
 	}
 
 	// WhatsApp Graph API communicates delivery failures through HTTP status codes,
 	// so there is no additional semantic ok:false body check on successful 2xx responses.
 	return nil
-}
-
-func classifyOutboxHTTPStatus(provider string, status int, message string) error {
-	msg := strings.TrimSpace(message)
-	if msg == "" {
-		msg = http.StatusText(status)
-	}
-
-	err := fmt.Errorf("%s send failed: status %d: %s", provider, status, msg)
-	if isPermanentOutboxHTTPStatus(status) {
-		return channels.NewOutboxPermanentError(err)
-	}
-	return err
-}
-
-func isPermanentOutboxHTTPStatus(status int) bool {
-	if status == http.StatusRequestTimeout || status == http.StatusTooManyRequests {
-		return false
-	}
-	return status >= http.StatusBadRequest && status < http.StatusInternalServerError
 }
