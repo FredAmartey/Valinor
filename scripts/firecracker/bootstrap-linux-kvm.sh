@@ -40,6 +40,9 @@ Use these settings in Valinor:
   orchestrator.firecracker.root_drive=${artifact_dir}/rootfs.ext4
   orchestrator.firecracker.jailer.enabled=false
 
+Pinned guest runtime manifest:
+  ${artifact_dir}/runtime-versions.json
+
 Quick e2e test:
   VALINOR_FIRECRACKER_E2E=1 \\
   VALINOR_FIRECRACKER_KERNEL_PATH=${artifact_dir}/vmlinux \\

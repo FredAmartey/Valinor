@@ -11,7 +11,7 @@ This checklist maps OpenClaw's security posture to Valinor production controls.
   - `tools.exec.applyPatch.workspaceOnly=true`
   - gateway bind local-only
 - [x] Replace `/api/v1/agents/{id}/context` no-op behavior with real persistent per-user context path.
-- [ ] Pin and verify guest runtime versions (OpenClaw + Node) in image build pipeline.
+- [x] Pin and verify guest runtime versions (OpenClaw + Node) in image build pipeline.
 
 ## P1 (Next Hardening Wave)
 
