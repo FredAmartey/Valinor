@@ -53,7 +53,9 @@ func TestNewChannelExecutor_ReturnsNilWhenRequiredDepsMissing(t *testing.T) {
 		return &rbac.Decision{Allowed: true}, nil
 	}
 	listAgents := func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) { return nil, nil }
-	dispatch := func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) { return "", nil }
+	dispatch := func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		return "", nil
+	}
 
 	assert.Nil(t, newChannelExecutor(nil, authorize, listAgents, dispatch, nil, nil))
 	assert.Nil(t, newChannelExecutor(lookup, nil, listAgents, dispatch, nil, nil))

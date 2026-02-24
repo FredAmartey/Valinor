@@ -424,14 +424,14 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 				}
 
 				execResult := h.execute(ctx, ExecutionMessage{
-					TenantID:          tenantID,
-					Platform:          provider,
-					PlatformUserID:    platformUserID,
-					PlatformMessageID: platformMessageID,
-					CorrelationID:     correlationID,
-					Content:           content,
+					TenantID:            tenantID,
+					Platform:            provider,
+					PlatformUserID:      platformUserID,
+					PlatformMessageID:   platformMessageID,
+					CorrelationID:       correlationID,
+					Content:             content,
 					ConversationHistory: conversationHistory,
-					Link:              *result.Link,
+					Link:                *result.Link,
 				})
 				if execResult.Decision != "" {
 					messageDecision = execResult.Decision

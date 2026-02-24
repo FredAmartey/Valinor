@@ -31,8 +31,8 @@ type openClawResponse struct {
 // forwardToOpenClaw sends a message to OpenClaw and returns response frames.
 func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
 	var msg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role     string `json:"role"`
+		Content  string `json:"content"`
 		Messages []struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`

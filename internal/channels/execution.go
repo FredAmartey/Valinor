@@ -4,14 +4,14 @@ import "context"
 
 // ExecutionMessage carries the accepted ingress message into execution flow.
 type ExecutionMessage struct {
-	TenantID          string
-	Platform          string
-	PlatformUserID    string
-	PlatformMessageID string
-	CorrelationID     string
-	Content           string
+	TenantID            string
+	Platform            string
+	PlatformUserID      string
+	PlatformMessageID   string
+	CorrelationID       string
+	Content             string
 	ConversationHistory []ChannelConversationTurn
-	Link              ChannelLink
+	Link                ChannelLink
 }
 
 // ExecutionResult captures execution outcome after ingress acceptance.
