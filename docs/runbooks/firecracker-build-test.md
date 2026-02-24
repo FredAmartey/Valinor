@@ -131,6 +131,11 @@ orchestrator:
     kernel_path: "/var/lib/valinor/vmlinux"
     root_drive: "/var/lib/valinor/rootfs.ext4"
     jailer_path: ""
+    workspace:
+      enabled: true
+      quotamb: 2048
+    network:
+      policy: "isolated" # dev-only
 ```
 
 Example config (phase-1 jailer mode):
@@ -147,8 +152,13 @@ orchestrator:
       chroot_base_dir: "/srv/jailer"
       uid: 1001
       gid: 1001
-      netns_path: ""
+      netns_path: "/var/run/netns/valinor-egress"
       daemonize: false
+    workspace:
+      enabled: true
+      quotamb: 2048
+    network:
+      policy: "outbound_only"
 ```
 
 Set `daemonize: true` if you want detached jailer execution. Valinor now supervises the daemonized Firecracker process using the jailer `.pid` file under the jail root.
@@ -160,6 +170,9 @@ Startup preflight now fails early if:
 - jailer is enabled but `chroot_base_dir` is missing/relative
 - jailer binary is not found in `PATH`
 - jailer `uid`/`gid` is invalid (<0)
+- workspace is enabled with non-positive `workspace.quotamb`
+- network policy is `outbound_only` without jailer enabled and `jailer.netns_path`
+- non-dev mode uses `network.policy=isolated`
 
 This avoids deferred runtime failures on first VM provisioning.
 

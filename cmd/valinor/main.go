@@ -204,12 +204,17 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("selecting orchestrator driver: %w", err)
 		}
+		workspaceQuotaMB := 0
+		if strings.EqualFold(cfg.Orchestrator.Driver, "firecracker") && cfg.Orchestrator.Firecracker.Workspace.Enabled {
+			workspaceQuotaMB = cfg.Orchestrator.Firecracker.Workspace.QuotaMB
+		}
 		orchCfg := orchestrator.ManagerConfig{
 			Driver:                 cfg.Orchestrator.Driver,
 			WarmPoolSize:           cfg.Orchestrator.WarmPoolSize,
 			HealthInterval:         time.Duration(cfg.Orchestrator.HealthIntervalSecs) * time.Second,
 			ReconcileInterval:      time.Duration(cfg.Orchestrator.ReconcileIntervalSecs) * time.Second,
 			MaxConsecutiveFailures: cfg.Orchestrator.MaxConsecutiveFailures,
+			WorkspaceDataQuotaMB:   workspaceQuotaMB,
 		}
 		orchManager = orchestrator.NewManager(pool, orchDriver, orchStore, orchCfg)
 

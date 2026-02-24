@@ -54,6 +54,17 @@ func TestSelectVMDriver_FirecrackerPlatformAndConfig(t *testing.T) {
 	cfg.Firecracker = config.FirecrackerConfig{
 		KernelPath: kernelPath,
 		RootDrive:  rootDrive,
+		Jailer: config.JailerConfig{
+			Enabled:       true,
+			BinaryPath:    "true",
+			ChrootBaseDir: filepath.Join(tmp, "jailer"),
+			UID:           1001,
+			GID:           1001,
+			NetNSPath:     "/var/run/netns/valinor",
+		},
+		Network: config.FirecrackerNetworkConfig{
+			Policy: "outbound_only",
+		},
 	}
 
 	driver, err := selectVMDriver(cfg, false)
@@ -134,6 +145,7 @@ func TestSelectVMDriver_FirecrackerJailerEnabledOnLinux(t *testing.T) {
 				ChrootBaseDir: filepath.Join(tmp, "jailer"),
 				UID:           1001,
 				GID:           1001,
+				NetNSPath:     "/var/run/netns/valinor",
 			},
 		},
 	}, false)
@@ -193,10 +205,149 @@ func TestSelectVMDriver_FirecrackerJailerDaemonizeOnLinux(t *testing.T) {
 				ChrootBaseDir: filepath.Join(tmp, "jailer"),
 				UID:           1001,
 				GID:           1001,
+				NetNSPath:     "/var/run/netns/valinor",
 				Daemonize:     true,
 			},
 		},
 	}, false)
 	require.NoError(t, err)
 	require.NotNil(t, driver)
+}
+
+func TestSelectVMDriver_FirecrackerNetworkPolicyRequiresJailerInProd(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	_, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Network: config.FirecrackerNetworkConfig{
+				Policy: "outbound_only",
+			},
+		},
+	}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires jailer enabled")
+}
+
+func TestSelectVMDriver_FirecrackerNetworkPolicyRequiresNetNSInProd(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	_, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Jailer: config.JailerConfig{
+				Enabled:       true,
+				BinaryPath:    "true",
+				ChrootBaseDir: filepath.Join(tmp, "jailer"),
+				UID:           1001,
+				GID:           1001,
+			},
+			Network: config.FirecrackerNetworkConfig{
+				Policy: "outbound_only",
+			},
+		},
+	}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "netns_path is required")
+}
+
+func TestSelectVMDriver_FirecrackerRejectsIsolatedNetworkPolicyInProd(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	_, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Network: config.FirecrackerNetworkConfig{
+				Policy: "isolated",
+			},
+		},
+	}, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "network policy")
+}
+
+func TestSelectVMDriver_FirecrackerAllowsIsolatedNetworkPolicyInDevMode(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	driver, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Network: config.FirecrackerNetworkConfig{
+				Policy: "isolated",
+			},
+		},
+	}, true)
+	require.NoError(t, err)
+	require.NotNil(t, driver)
+}
+
+func TestSelectVMDriver_FirecrackerWorkspaceQuotaMustBePositive(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	_, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Workspace: config.FirecrackerWorkspaceConfig{
+				Enabled: true,
+				QuotaMB: 0,
+			},
+		},
+	}, true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "workspace quotamb")
 }

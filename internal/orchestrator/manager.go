@@ -19,6 +19,7 @@ type ManagerConfig struct {
 	HealthInterval         time.Duration
 	ReconcileInterval      time.Duration
 	MaxConsecutiveFailures int
+	WorkspaceDataQuotaMB   int
 }
 
 // Manager orchestrates VM lifecycles.
@@ -42,6 +43,9 @@ func NewManager(pool *database.Pool, driver VMDriver, store *Store, cfg ManagerC
 	}
 	if cfg.MaxConsecutiveFailures <= 0 {
 		cfg.MaxConsecutiveFailures = 3
+	}
+	if cfg.WorkspaceDataQuotaMB < 0 {
+		cfg.WorkspaceDataQuotaMB = 0
 	}
 	return &Manager{
 		driver: driver,
@@ -97,8 +101,9 @@ func (m *Manager) coldStart(ctx context.Context, tenantID string, opts Provision
 	vmID := fmt.Sprintf("vm-%s-%d", prefix, time.Now().UnixMilli())
 
 	spec := VMSpec{
-		VMID:     vmID,
-		VsockCID: cid,
+		VMID:             vmID,
+		VsockCID:         cid,
+		DataDriveQuotaMB: m.cfg.WorkspaceDataQuotaMB,
 	}
 
 	handle, err := m.driver.Start(ctx, spec)
@@ -253,8 +258,9 @@ func (m *Manager) createWarmVM(ctx context.Context) {
 
 	vmID := fmt.Sprintf("warm-%d-%d", cid, time.Now().UnixMilli())
 	spec := VMSpec{
-		VMID:     vmID,
-		VsockCID: cid,
+		VMID:             vmID,
+		VsockCID:         cid,
+		DataDriveQuotaMB: m.cfg.WorkspaceDataQuotaMB,
 	}
 
 	handle, err := m.driver.Start(ctx, spec)

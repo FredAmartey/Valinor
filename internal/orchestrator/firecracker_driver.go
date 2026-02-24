@@ -33,6 +33,8 @@ const (
 	defaultStopTimeout            = 5 * time.Second
 	defaultJailerPIDFileName      = ".pid"
 	defaultVMStateFileName        = "vm-state.json"
+	defaultDataDriveFileName      = "data.ext4"
+	maxDataDriveQuotaMB           = 1 << 20 // 1 TiB
 )
 
 var vmIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
@@ -161,6 +163,9 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 			return VMHandle{}, fmt.Errorf("%w: %v", ErrDriverFailure, pathErr)
 		}
 	}
+	if spec.DataDriveQuotaMB < 0 {
+		return VMHandle{}, fmt.Errorf("%w: data drive quota must be >= 0", ErrDriverFailure)
+	}
 	if spec.UseJailer || strings.TrimSpace(spec.JailerPath) != "" {
 		return VMHandle{}, fmt.Errorf("%w: per-request jailer override is not supported", ErrDriverFailure)
 	}
@@ -220,6 +225,14 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 
 	if mkdirErr := os.MkdirAll(stateDir, 0o750); mkdirErr != nil {
 		return VMHandle{}, fmt.Errorf("%w: creating state dir: %v", ErrDriverFailure, mkdirErr)
+	}
+	if dataDrive == "" && spec.DataDriveQuotaMB > 0 {
+		autoDataDrivePath := filepath.Join(stateDir, defaultDataDriveFileName)
+		if createErr := createSparseDataDrive(autoDataDrivePath, spec.DataDriveQuotaMB); createErr != nil {
+			_ = os.RemoveAll(stateDir)
+			return VMHandle{}, fmt.Errorf("%w: creating data drive: %v", ErrDriverFailure, createErr)
+		}
+		dataDrive = autoDataDrivePath
 	}
 
 	if d.jailer.Enabled {
@@ -335,7 +348,6 @@ func (d *FirecrackerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, e
 	}
 
 	// Rootfs is mounted read-only for safer multi-tenant baseline.
-	// Writable data drives can be added in the next phase.
 	if err := client.putJSON(ctx, "/drives/rootfs", map[string]any{
 		"drive_id":       "rootfs",
 		"path_on_host":   firecrackerRootDrive,
@@ -644,6 +656,36 @@ func requireAbsoluteFilePath(path, label string) error {
 	}
 	if info.IsDir() {
 		return fmt.Errorf("%s %q must be a file, got directory", label, candidate)
+	}
+	return nil
+}
+
+func createSparseDataDrive(path string, quotaMB int) error {
+	if quotaMB <= 0 {
+		return fmt.Errorf("data drive quota must be > 0")
+	}
+	if quotaMB > maxDataDriveQuotaMB {
+		return fmt.Errorf("data drive quota must be <= %d MB", maxDataDriveQuotaMB)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("data drive path must be absolute")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	// #nosec G304 -- path is validated absolute and derived from driver-managed state dir.
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	sizeBytes := int64(quotaMB) * 1024 * 1024
+	if sizeBytes <= 0 {
+		return fmt.Errorf("data drive size overflow for quota %d MB", quotaMB)
+	}
+	if err := f.Truncate(sizeBytes); err != nil {
+		return err
 	}
 	return nil
 }

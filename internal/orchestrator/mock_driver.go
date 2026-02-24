@@ -15,13 +15,15 @@ type mockVM struct {
 
 // MockDriver is an in-memory VMDriver for unit testing.
 type MockDriver struct {
-	mu  sync.Mutex
-	vms map[string]*mockVM
+	mu    sync.Mutex
+	vms   map[string]*mockVM
+	specs map[string]VMSpec
 }
 
 func NewMockDriver() *MockDriver {
 	return &MockDriver{
-		vms: make(map[string]*mockVM),
+		vms:   make(map[string]*mockVM),
+		specs: make(map[string]VMSpec),
 	}
 }
 
@@ -41,6 +43,7 @@ func (d *MockDriver) Start(_ context.Context, spec VMSpec) (VMHandle, error) {
 		running: true,
 		healthy: true,
 	}
+	d.specs[spec.VMID] = spec
 
 	return handle, nil
 }
@@ -109,4 +112,12 @@ func (d *MockDriver) RunningCount() int {
 		}
 	}
 	return count
+}
+
+// LastSpec returns the most recent VM start spec for the given VM ID.
+func (d *MockDriver) LastSpec(id string) (VMSpec, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	spec, ok := d.specs[id]
+	return spec, ok
 }
