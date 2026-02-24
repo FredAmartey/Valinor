@@ -25,6 +25,10 @@ Implement the first production-safe execution path after ingress acceptance:
   - channel execution audit events
 - Wire executor into server bootstrap in `cmd/valinor/main.go`.
 - Add tests for channel handler execution hook and executor decisions.
+- Add conversation continuity context:
+  - persist request/response turn metadata per channel message
+  - load tenant-scoped, user-scoped recent history (last 12 turns)
+  - dispatch `messages[]` context payloads to in-guest agent while preserving legacy `role`/`content` fields
 
 ## Deferred
 
