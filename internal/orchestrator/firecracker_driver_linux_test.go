@@ -296,6 +296,37 @@ func TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive(t *testing.T) {
 	require.NoError(t, driver.Cleanup(ctx, "vm-firecracker-auto-data"))
 }
 
+func TestCreateSparseDataDrive_RejectsNonPositiveQuota(t *testing.T) {
+	err := createSparseDataDrive("/tmp/data.ext4", 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "quota must be > 0")
+}
+
+func TestCreateSparseDataDrive_RejectsRelativePath(t *testing.T) {
+	err := createSparseDataDrive("relative/data.ext4", 4)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "absolute")
+}
+
+func TestCreateSparseDataDrive_RejectsQuotaAboveMaximum(t *testing.T) {
+	err := createSparseDataDrive("/tmp/data.ext4", maxDataDriveQuotaMB+1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be <=")
+}
+
+func TestCreateSparseDataDrive_FailsInNonWritableDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission test is not meaningful as root")
+	}
+
+	tmp := shortTempDir(t)
+	readOnlyDir := filepath.Join(tmp, "readonly")
+	require.NoError(t, os.MkdirAll(readOnlyDir, 0o500))
+
+	err := createSparseDataDrive(filepath.Join(readOnlyDir, "data.ext4"), 4)
+	require.Error(t, err)
+}
+
 func TestFirecrackerDriver_StartStopCleanup_WithJailer(t *testing.T) {
 	tmp := shortTempDir(t)
 	kernelPath := filepath.Join(tmp, "vmlinux")

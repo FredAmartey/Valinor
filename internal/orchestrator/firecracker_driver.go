@@ -34,6 +34,7 @@ const (
 	defaultJailerPIDFileName      = ".pid"
 	defaultVMStateFileName        = "vm-state.json"
 	defaultDataDriveFileName      = "data.ext4"
+	maxDataDriveQuotaMB           = 1 << 20 // 1 TiB
 )
 
 var vmIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
@@ -662,6 +663,9 @@ func requireAbsoluteFilePath(path, label string) error {
 func createSparseDataDrive(path string, quotaMB int) error {
 	if quotaMB <= 0 {
 		return fmt.Errorf("data drive quota must be > 0")
+	}
+	if quotaMB > maxDataDriveQuotaMB {
+		return fmt.Errorf("data drive quota must be <= %d MB", maxDataDriveQuotaMB)
 	}
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("data drive path must be absolute")

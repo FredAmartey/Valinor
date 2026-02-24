@@ -299,6 +299,32 @@ func TestSelectVMDriver_FirecrackerRejectsIsolatedNetworkPolicyInProd(t *testing
 	assert.Contains(t, err.Error(), "network policy")
 }
 
+func TestSelectVMDriver_FirecrackerAllowsIsolatedNetworkPolicyInDevMode(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only validation")
+	}
+
+	tmp := t.TempDir()
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	driver, err := selectVMDriver(config.OrchestratorConfig{
+		Driver: "firecracker",
+		Firecracker: config.FirecrackerConfig{
+			KernelPath: kernelPath,
+			RootDrive:  rootDrive,
+			Network: config.FirecrackerNetworkConfig{
+				Policy: "isolated",
+			},
+		},
+	}, true)
+	require.NoError(t, err)
+	require.NotNil(t, driver)
+}
+
 func TestSelectVMDriver_FirecrackerWorkspaceQuotaMustBePositive(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only validation")
