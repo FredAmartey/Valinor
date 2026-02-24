@@ -433,6 +433,7 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 							messageDecision = IngressDispatchFailed
 							enqueueFailed = true
 						}
+						shouldEnqueue = false
 					}
 				}
 				if shouldEnqueue && !enqueueFailed {
