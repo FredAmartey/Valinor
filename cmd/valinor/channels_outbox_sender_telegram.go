@@ -109,6 +109,8 @@ func (s *telegramOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		if errMsg == "" {
 			errMsg = "unknown error"
 		}
+		// Telegram semantic rejections (ok=false) are treated as non-retryable.
+		// Transient throttling is expected via HTTP 429 and is handled above.
 		return channels.NewOutboxPermanentError(fmt.Errorf("telegram send failed: %s", errMsg))
 	}
 

@@ -133,6 +133,16 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 	})
 }
 
+func TestIsPermanentOutboxHTTPStatus(t *testing.T) {
+	assert.False(t, isPermanentOutboxHTTPStatus(http.StatusRequestTimeout))
+	assert.False(t, isPermanentOutboxHTTPStatus(http.StatusTooManyRequests))
+	assert.False(t, isPermanentOutboxHTTPStatus(http.StatusBadGateway))
+
+	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusBadRequest))
+	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusUnauthorized))
+	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusNotFound))
+}
+
 func TestSlackOutboxSender_Send(t *testing.T) {
 	t.Run("sends slack chat.postMessage payload", func(t *testing.T) {
 		var seenAuth string
@@ -249,6 +259,7 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "channel_not_found")
+		assert.True(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error for malformed outbox payload", func(t *testing.T) {
@@ -589,6 +600,7 @@ func TestTelegramOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "chat not found")
+		assert.True(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error for malformed outbox payload", func(t *testing.T) {

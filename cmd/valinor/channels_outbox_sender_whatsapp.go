@@ -167,6 +167,8 @@ func (s *whatsAppOutboxSender) Send(ctx context.Context, job channels.ChannelOut
 		return classifyOutboxHTTPStatus("whatsapp", resp.StatusCode, msg)
 	}
 
+	// WhatsApp Graph API communicates delivery failures through HTTP status codes,
+	// so there is no additional semantic ok:false body check on successful 2xx responses.
 	return nil
 }
 

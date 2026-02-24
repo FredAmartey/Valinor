@@ -114,6 +114,8 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		if errMsg == "" {
 			errMsg = "unknown error"
 		}
+		// Slack semantic rejections (ok=false) are treated as non-retryable.
+		// Transient throttling is expected via HTTP 429 and is handled above.
 		return channels.NewOutboxPermanentError(fmt.Errorf("slack send failed: %s", errMsg))
 	}
 
