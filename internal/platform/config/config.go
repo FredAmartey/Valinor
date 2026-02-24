@@ -70,10 +70,21 @@ type OrchestratorConfig struct {
 }
 
 type FirecrackerConfig struct {
-	KernelPath string       `koanf:"kernel_path"`
-	RootDrive  string       `koanf:"root_drive"`
-	JailerPath string       `koanf:"jailer_path"`
-	Jailer     JailerConfig `koanf:"jailer"`
+	KernelPath string                     `koanf:"kernel_path"`
+	RootDrive  string                     `koanf:"root_drive"`
+	JailerPath string                     `koanf:"jailer_path"`
+	Jailer     JailerConfig               `koanf:"jailer"`
+	Workspace  FirecrackerWorkspaceConfig `koanf:"workspace"`
+	Network    FirecrackerNetworkConfig   `koanf:"network"`
+}
+
+type FirecrackerWorkspaceConfig struct {
+	Enabled bool `koanf:"enabled"`
+	QuotaMB int  `koanf:"quotamb"`
+}
+
+type FirecrackerNetworkConfig struct {
+	Policy string `koanf:"policy"`
 }
 
 type JailerConfig struct {
@@ -193,6 +204,9 @@ func Load(configPaths ...string) (*Config, error) {
 		"orchestrator.docker.image":                        "valinor-agent:latest",
 		"orchestrator.firecracker.jailer.enabled":          false,
 		"orchestrator.firecracker.jailer.daemonize":        false,
+		"orchestrator.firecracker.workspace.enabled":       true,
+		"orchestrator.firecracker.workspace.quotamb":       2048,
+		"orchestrator.firecracker.network.policy":          "outbound_only",
 		"proxy.transport":                                  "tcp",
 		"proxy.tcp_base_port":                              9100,
 		"proxy.message_timeout":                            60,

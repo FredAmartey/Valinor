@@ -19,7 +19,7 @@ func TestManager_Provision_ColdStart(t *testing.T) {
 
 	driver := orchestrator.NewMockDriver()
 	store := orchestrator.NewStore()
-	cfg := orchestrator.ManagerConfig{Driver: "mock", WarmPoolSize: 0}
+	cfg := orchestrator.ManagerConfig{Driver: "mock", WarmPoolSize: 0, WorkspaceDataQuotaMB: 512}
 	mgr := orchestrator.NewManager(pool, driver, store, cfg)
 	ctx := context.Background()
 
@@ -36,6 +36,10 @@ func TestManager_Provision_ColdStart(t *testing.T) {
 	assert.Equal(t, orchestrator.StatusRunning, inst.Status)
 	assert.Equal(t, &tenantID, inst.TenantID)
 	assert.Equal(t, 1, driver.RunningCount())
+	require.NotNil(t, inst.VMID)
+	spec, ok := driver.LastSpec(*inst.VMID)
+	require.True(t, ok)
+	assert.Equal(t, 512, spec.DataDriveQuotaMB)
 }
 
 func TestManager_Provision_FromWarmPool(t *testing.T) {

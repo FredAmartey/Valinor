@@ -36,16 +36,17 @@ type VMDriver interface {
 
 // VMSpec describes the configuration for a new VM.
 type VMSpec struct {
-	VMID       string
-	RootDrive  string
-	DataDrive  string
-	KernelPath string
-	KernelArgs string
-	VCPUs      int
-	MemoryMB   int
-	VsockCID   uint32
-	UseJailer  bool
-	JailerPath string
+	VMID             string
+	RootDrive        string
+	DataDrive        string
+	DataDriveQuotaMB int
+	KernelPath       string
+	KernelArgs       string
+	VCPUs            int
+	MemoryMB         int
+	VsockCID         uint32
+	UseJailer        bool
+	JailerPath       string
 }
 
 // VMHandle is returned after a VM starts successfully.

@@ -41,6 +41,23 @@ jobs:
       - name: Firecracker driver tests (linux helper mode)
         run: go test ./internal/orchestrator -run 'TestFirecrackerDriver_' -v
 
+  security-policy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Security policy regression checks
+        run: |
+          go test ./cmd/valinor -run 'TestSelectVMDriver_Firecracker(NetworkPolicy|Workspace)' -v
+          go test ./internal/platform/config -run TestLoad_OrchestratorFirecrackerSecurityDefaults -v
+          go test ./internal/orchestrator -run TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive -v
+
   test:
     needs: build
     runs-on: ubuntu-latest

@@ -67,6 +67,15 @@ func TestLoad_AuthEnvOverrides(t *testing.T) {
 	assert.Equal(t, "super-secret-key-at-least-32-chars!!", cfg.Auth.JWT.SigningKey)
 }
 
+func TestLoad_OrchestratorFirecrackerSecurityDefaults(t *testing.T) {
+	cfg, err := config.Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Orchestrator.Firecracker.Workspace.Enabled)
+	assert.Equal(t, 2048, cfg.Orchestrator.Firecracker.Workspace.QuotaMB)
+	assert.Equal(t, "outbound_only", cfg.Orchestrator.Firecracker.Network.Policy)
+}
+
 func TestLoad_ChannelsDefaults(t *testing.T) {
 	cfg, err := config.Load()
 	require.NoError(t, err)

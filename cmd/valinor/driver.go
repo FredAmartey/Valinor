@@ -13,6 +13,11 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/config"
 )
 
+const (
+	firecrackerNetworkPolicyIsolated     = "isolated"
+	firecrackerNetworkPolicyOutboundOnly = "outbound_only"
+)
+
 // selectVMDriver resolves the VM driver from config and enforces safe defaults.
 func selectVMDriver(cfg config.OrchestratorConfig, devMode bool) (orchestrator.VMDriver, error) {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
@@ -37,7 +42,7 @@ func selectVMDriver(cfg config.OrchestratorConfig, devMode bool) (orchestrator.V
 		if strings.TrimSpace(cfg.Firecracker.RootDrive) == "" {
 			return nil, fmt.Errorf("firecracker root_drive is required")
 		}
-		jailerCfg, err := validateFirecrackerPrereqs(cfg.Firecracker)
+		jailerCfg, err := validateFirecrackerPrereqs(cfg.Firecracker, devMode)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +57,7 @@ func selectVMDriver(cfg config.OrchestratorConfig, devMode bool) (orchestrator.V
 	}
 }
 
-func validateFirecrackerPrereqs(cfg config.FirecrackerConfig) (orchestrator.FirecrackerJailerConfig, error) {
+func validateFirecrackerPrereqs(cfg config.FirecrackerConfig, devMode bool) (orchestrator.FirecrackerJailerConfig, error) {
 	var jailerCfg orchestrator.FirecrackerJailerConfig
 	if err := requireFilePath(cfg.KernelPath, "firecracker kernel_path"); err != nil {
 		return jailerCfg, err
@@ -68,8 +73,27 @@ func validateFirecrackerPrereqs(cfg config.FirecrackerConfig) (orchestrator.Fire
 	if _, err := exec.LookPath(binary); err != nil {
 		return jailerCfg, fmt.Errorf("firecracker binary %q not found in PATH (set VALINOR_FIRECRACKER_BIN to override)", binary)
 	}
+	if cfg.Workspace.Enabled && cfg.Workspace.QuotaMB <= 0 {
+		return jailerCfg, fmt.Errorf("firecracker workspace quotamb must be > 0 when workspace is enabled")
+	}
 
 	jailerEnabled := cfg.Jailer.Enabled || strings.TrimSpace(cfg.JailerPath) != ""
+	networkPolicy := strings.ToLower(strings.TrimSpace(cfg.Network.Policy))
+	if networkPolicy == "" {
+		networkPolicy = firecrackerNetworkPolicyOutboundOnly
+	}
+	switch networkPolicy {
+	case firecrackerNetworkPolicyIsolated:
+		if !devMode {
+			return jailerCfg, fmt.Errorf("firecracker network policy %q is not allowed outside dev mode", networkPolicy)
+		}
+	case firecrackerNetworkPolicyOutboundOnly:
+		if !jailerEnabled {
+			return jailerCfg, fmt.Errorf("firecracker network policy %q requires jailer enabled", networkPolicy)
+		}
+	default:
+		return jailerCfg, fmt.Errorf("unsupported firecracker network policy %q", networkPolicy)
+	}
 	if !jailerEnabled {
 		return jailerCfg, nil
 	}
@@ -100,6 +124,9 @@ func validateFirecrackerPrereqs(cfg config.FirecrackerConfig) (orchestrator.Fire
 	}
 	if strings.TrimSpace(cfg.Jailer.NetNSPath) != "" && !filepath.IsAbs(cfg.Jailer.NetNSPath) {
 		return jailerCfg, fmt.Errorf("firecracker jailer netns_path %q must be an absolute path", cfg.Jailer.NetNSPath)
+	}
+	if networkPolicy == firecrackerNetworkPolicyOutboundOnly && strings.TrimSpace(cfg.Jailer.NetNSPath) == "" {
+		return jailerCfg, fmt.Errorf("firecracker jailer netns_path is required for network policy %q", networkPolicy)
 	}
 
 	jailerCfg = orchestrator.FirecrackerJailerConfig{

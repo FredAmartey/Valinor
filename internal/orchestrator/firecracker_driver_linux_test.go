@@ -261,6 +261,41 @@ func TestFirecrackerDriver_StartUsesSMTMachineConfigWhenRequired(t *testing.T) {
 	require.NoError(t, driver.Cleanup(ctx, "vm-firecracker-require-smt"))
 }
 
+func TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive(t *testing.T) {
+	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv(firecrackerTestHelperEnv, "1")
+
+	tmp := shortTempDir(t)
+	kernelPath := filepath.Join(tmp, "vmlinux")
+	rootDrive := filepath.Join(tmp, "rootfs.ext4")
+
+	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
+	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
+
+	driver := NewFirecrackerDriver(kernelPath, rootDrive, "")
+	driver.stateRoot = filepath.Join(tmp, "state")
+	driver.socketWaitTimeout = 2 * time.Second
+	driver.stopTimeout = 2 * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := driver.Start(ctx, VMSpec{
+		VMID:             "vm-firecracker-auto-data",
+		VsockCID:         56,
+		DataDriveQuotaMB: 4,
+	})
+	require.NoError(t, err)
+
+	dataDrivePath := filepath.Join(driver.stateRoot, "vm-firecracker-auto-data", "data.ext4")
+	info, err := os.Stat(dataDrivePath)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4*1024*1024), info.Size())
+
+	require.NoError(t, driver.Stop(ctx, "vm-firecracker-auto-data"))
+	require.NoError(t, driver.Cleanup(ctx, "vm-firecracker-auto-data"))
+}
+
 func TestFirecrackerDriver_StartStopCleanup_WithJailer(t *testing.T) {
 	tmp := shortTempDir(t)
 	kernelPath := filepath.Join(tmp, "vmlinux")
