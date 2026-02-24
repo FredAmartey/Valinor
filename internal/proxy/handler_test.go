@@ -44,6 +44,56 @@ func (m *mockAgentStore) GetByID(_ context.Context, id string) (*orchestrator.Ag
 	return inst, nil
 }
 
+type contextUpsertCall struct {
+	tenantID string
+	agentID  string
+	userID   string
+	context  string
+}
+
+type mockUserContextStore struct {
+	mu        sync.Mutex
+	calls     []contextUpsertCall
+	values    map[string]string
+	upsertErr error
+	getErr    error
+}
+
+func newMockUserContextStore() *mockUserContextStore {
+	return &mockUserContextStore{
+		values: make(map[string]string),
+	}
+}
+
+func (m *mockUserContextStore) UpsertUserContext(_ context.Context, tenantID, agentID, userID, context string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.upsertErr != nil {
+		return m.upsertErr
+	}
+	m.calls = append(m.calls, contextUpsertCall{
+		tenantID: tenantID,
+		agentID:  agentID,
+		userID:   userID,
+		context:  context,
+	})
+	m.values[tenantID+"|"+agentID+"|"+userID] = context
+	return nil
+}
+
+func (m *mockUserContextStore) GetUserContext(_ context.Context, tenantID, agentID, userID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.getErr != nil {
+		return "", m.getErr
+	}
+	value, ok := m.values[tenantID+"|"+agentID+"|"+userID]
+	if !ok {
+		return "", proxy.ErrUserContextNotFound
+	}
+	return value, nil
+}
+
 func TestHandleMessage_Success(t *testing.T) {
 	transport := proxy.NewTCPTransport(9800)
 	pool := proxy.NewConnPool(transport)
@@ -262,13 +312,48 @@ func TestHandleStream_SSE(t *testing.T) {
 	assert.Contains(t, respBody, `"content":"World"`)
 }
 
-func TestHandleContext_Success(t *testing.T) {
-	transport := proxy.NewTCPTransport(9840)
+func TestHandleContext_PersistsSnapshot(t *testing.T) {
+	agentID := "agent-1"
+	tenantID := "tenant-1"
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				Status:   orchestrator.StatusProvisioning,
+			},
+		},
+	}
+	contextStore := newMockUserContextStore()
+
+	handler := proxy.NewHandler(nil, store, proxy.HandlerConfig{
+		ConfigTimeout: 5 * time.Second,
+	}, nil, nil).WithUserContextStore(contextStore)
+
+	ctxBody := `{"context":"The player is 23 years old"}`
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/context", bytes.NewBufferString(ctxBody))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleContext(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, contextStore.calls, 1)
+	assert.Equal(t, tenantID, contextStore.calls[0].tenantID)
+	assert.Equal(t, agentID, contextStore.calls[0].agentID)
+	assert.Equal(t, "test-user", contextStore.calls[0].userID)
+	assert.Equal(t, "The player is 23 years old", contextStore.calls[0].context)
+}
+
+func TestHandleMessage_InjectsPersistedContext(t *testing.T) {
+	transport := proxy.NewTCPTransport(9852)
 	pool := proxy.NewConnPool(transport)
 	defer pool.Close()
 
-	cid := uint32(3)
-	agentID := "agent-1"
+	cid := uint32(32)
+	agentID := "agent-context-message"
 	tenantID := "tenant-1"
 
 	store := &mockAgentStore{
@@ -281,17 +366,19 @@ func TestHandleContext_Success(t *testing.T) {
 			},
 		},
 	}
+	contextStore := newMockUserContextStore()
+	contextStore.values[tenantID+"|"+agentID+"|test-user"] = "The player is 23 years old"
 
 	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
-		ConfigTimeout: 5 * time.Second,
-	}, nil, nil)
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil).WithUserContextStore(contextStore)
 
 	ctx := context.Background()
 	ln, listenErr := transport.Listen(ctx, cid)
 	require.NoError(t, listenErr)
 	defer ln.Close()
 
-	// Mock agent that acks context updates
+	payloadSeen := make(chan map[string]any, 1)
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -305,23 +392,114 @@ func TestHandleContext_Success(t *testing.T) {
 			return
 		}
 
-		ack := proxy.Frame{
-			Type:    proxy.TypeConfigAck,
+		var payload map[string]any
+		_ = json.Unmarshal(frame.Payload, &payload)
+		payloadSeen <- payload
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
 			ID:      frame.ID,
-			Payload: json.RawMessage(`{"applied":true}`),
-		}
-		_ = ac.Send(ctx, ack)
+			Payload: json.RawMessage(`{"content":"ok","done":true}`),
+		})
 	}()
 
-	ctxBody := `{"context":"The player is 23 years old"}`
-	req := httptest.NewRequest("POST", "/agents/"+agentID+"/context", bytes.NewBufferString(ctxBody))
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"role":"user","content":"hello"}`))
 	req.SetPathValue("id", agentID)
 	req = withTestAuth(req, tenantID)
 	w := httptest.NewRecorder()
 
-	handler.HandleContext(w, req)
+	handler.HandleMessage(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	payload := <-payloadSeen
+	messagesRaw, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messagesRaw, 2)
+
+	systemMessage, ok := messagesRaw[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "system", systemMessage["role"])
+	assert.Contains(t, systemMessage["content"], "The player is 23 years old")
+
+	userMessage, ok := messagesRaw[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "user", userMessage["role"])
+	assert.Equal(t, "hello", userMessage["content"])
+}
+
+func TestHandleStream_InjectsPersistedContext(t *testing.T) {
+	transport := proxy.NewTCPTransport(9853)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(33)
+	agentID := "agent-context-stream"
+	tenantID := "tenant-1"
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	contextStore := newMockUserContextStore()
+	contextStore.values[tenantID+"|"+agentID+"|test-user"] = "Persistent stream context"
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil).WithUserContextStore(contextStore)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	payloadSeen := make(chan map[string]any, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		var payload map[string]any
+		_ = json.Unmarshal(frame.Payload, &payload)
+		payloadSeen <- payload
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"stream-ok","done":true}`),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/stream", bytes.NewBufferString(`{"role":"user","content":"hello"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleStream(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	payload := <-payloadSeen
+	messagesRaw, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messagesRaw, 2)
+
+	systemMessage, ok := messagesRaw[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "system", systemMessage["role"])
+	assert.Contains(t, systemMessage["content"], "Persistent stream context")
 }
 
 func TestHandleMessage_IgnoresMismatchedFrameID(t *testing.T) {

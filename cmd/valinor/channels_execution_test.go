@@ -53,14 +53,14 @@ func TestNewChannelExecutor_ReturnsNilWhenRequiredDepsMissing(t *testing.T) {
 		return &rbac.Decision{Allowed: true}, nil
 	}
 	listAgents := func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) { return nil, nil }
-	dispatch := func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+	dispatch := func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 		return "", nil
 	}
 
-	assert.Nil(t, newChannelExecutor(nil, authorize, listAgents, dispatch, nil, nil))
-	assert.Nil(t, newChannelExecutor(lookup, nil, listAgents, dispatch, nil, nil))
-	assert.Nil(t, newChannelExecutor(lookup, authorize, nil, dispatch, nil, nil))
-	assert.Nil(t, newChannelExecutor(lookup, authorize, listAgents, nil, nil, nil))
+	assert.Nil(t, newChannelExecutor(nil, authorize, listAgents, dispatch, nil, nil, nil))
+	assert.Nil(t, newChannelExecutor(lookup, nil, listAgents, dispatch, nil, nil, nil))
+	assert.Nil(t, newChannelExecutor(lookup, authorize, nil, dispatch, nil, nil, nil))
+	assert.Nil(t, newChannelExecutor(lookup, authorize, listAgents, nil, nil, nil, nil))
 }
 
 func TestNewChannelExecutor_EmptyContentShortCircuits(t *testing.T) {
@@ -83,10 +83,11 @@ func TestNewChannelExecutor_EmptyContentShortCircuits(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			dispatchCalled = true
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -118,9 +119,10 @@ func TestNewChannelExecutor_RejectsMissingLinkUserID(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -155,10 +157,11 @@ func TestNewChannelExecutor_DeniesRBAC(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			dispatchCalled = true
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -187,9 +190,10 @@ func TestNewChannelExecutor_RejectsTenantMismatch(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -219,9 +223,10 @@ func TestNewChannelExecutor_IdentityLookupError(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -252,9 +257,10 @@ func TestNewChannelExecutor_AuthorizeError(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -287,9 +293,10 @@ func TestNewChannelExecutor_DeniesSentinel(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", nil
 		},
+		nil,
 		func(_ context.Context, _, _, _ string) (sentinel.ScanResult, error) {
 			return sentinel.ScanResult{Allowed: false, Reason: "pattern:block", Score: 0.99}, nil
 		},
@@ -324,9 +331,10 @@ func TestNewChannelExecutor_SentinelError(t *testing.T) {
 			listCalled = true
 			return nil, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", nil
 		},
+		nil,
 		func(_ context.Context, _, _, _ string) (sentinel.ScanResult, error) {
 			return sentinel.ScanResult{}, errors.New("sentinel unavailable")
 		},
@@ -360,10 +368,11 @@ func TestNewChannelExecutor_DeniesWhenNoRunningAgent(t *testing.T) {
 		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
 			return []orchestrator.AgentInstance{}, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			dispatchCalled = true
 			return "", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -413,11 +422,12 @@ func TestNewChannelExecutor_ExecutesAgainstPreferredDepartmentAgent(t *testing.T
 				},
 			}, nil
 		},
-		func(_ context.Context, agent orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, agent orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			dispatchCalled = true
 			dispatchedAgentID = agent.ID
 			return "agent response", nil
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -455,9 +465,10 @@ func TestNewChannelExecutor_MapsDispatchError(t *testing.T) {
 				VsockCID: &cid,
 			}}, nil
 		},
-		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn) (string, error) {
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
 			return "", errors.New("downstream timeout")
 		},
+		nil,
 		nil,
 		logger,
 	)
@@ -468,6 +479,86 @@ func TestNewChannelExecutor_MapsDispatchError(t *testing.T) {
 	assert.Equal(t, "agent-1", result.AgentID)
 	require.Len(t, logger.events, 1)
 	assert.Equal(t, audit.ActionChannelActionDispatchFailed, logger.events[0].Action)
+}
+
+func TestNewChannelExecutor_PassesPersistedUserContextToDispatch(t *testing.T) {
+	logger := &captureAuditLogger{}
+	cid := uint32(121)
+	var capturedContext string
+
+	exec := newChannelExecutor(
+		func(_ context.Context, _ string) (*auth.Identity, error) {
+			return &auth.Identity{
+				UserID:   "2f6a9b58-c56f-49d5-a06f-45b0145b9e1f",
+				TenantID: "190f3a21-3b2c-42ce-b26e-2f448a58ec14",
+				Roles:    []string{"standard_user"},
+			}, nil
+		},
+		func(_ context.Context, _ *auth.Identity, _ string) (*rbac.Decision, error) {
+			return &rbac.Decision{Allowed: true}, nil
+		},
+		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
+			return []orchestrator.AgentInstance{{
+				ID:       "agent-ctx",
+				Status:   orchestrator.StatusRunning,
+				VsockCID: &cid,
+			}}, nil
+		},
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, userContext string) (string, error) {
+			capturedContext = userContext
+			return "ok", nil
+		},
+		func(_ context.Context, _, _, _ string) (string, error) {
+			return "persisted context", nil
+		},
+		nil,
+		logger,
+	)
+	require.NotNil(t, exec)
+
+	result := exec(context.Background(), testExecutionMessage())
+	assert.Equal(t, channels.IngressExecuted, result.Decision)
+	assert.Equal(t, "persisted context", capturedContext)
+}
+
+func TestNewChannelExecutor_ContextLookupErrorFailsDispatch(t *testing.T) {
+	logger := &captureAuditLogger{}
+	cid := uint32(122)
+	dispatchCalled := false
+
+	exec := newChannelExecutor(
+		func(_ context.Context, _ string) (*auth.Identity, error) {
+			return &auth.Identity{
+				UserID:   "2f6a9b58-c56f-49d5-a06f-45b0145b9e1f",
+				TenantID: "190f3a21-3b2c-42ce-b26e-2f448a58ec14",
+				Roles:    []string{"standard_user"},
+			}, nil
+		},
+		func(_ context.Context, _ *auth.Identity, _ string) (*rbac.Decision, error) {
+			return &rbac.Decision{Allowed: true}, nil
+		},
+		func(_ context.Context, _ string) ([]orchestrator.AgentInstance, error) {
+			return []orchestrator.AgentInstance{{
+				ID:       "agent-ctx",
+				Status:   orchestrator.StatusRunning,
+				VsockCID: &cid,
+			}}, nil
+		},
+		func(_ context.Context, _ orchestrator.AgentInstance, _ string, _ []channels.ChannelConversationTurn, _ string) (string, error) {
+			dispatchCalled = true
+			return "ok", nil
+		},
+		func(_ context.Context, _, _, _ string) (string, error) {
+			return "", errors.New("context lookup unavailable")
+		},
+		nil,
+		logger,
+	)
+	require.NotNil(t, exec)
+
+	result := exec(context.Background(), testExecutionMessage())
+	assert.Equal(t, channels.IngressDispatchFailed, result.Decision)
+	assert.False(t, dispatchCalled)
 }
 
 func TestSelectChannelTargetAgent_FallbackToSharedAgent(t *testing.T) {
@@ -552,7 +643,7 @@ func TestDispatchChannelMessageToAgent_IgnoresMismatchedFrameID(t *testing.T) {
 		VsockCID: &cid,
 	}
 
-	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "hello", nil, 5*time.Second)
+	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "hello", nil, "", 5*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, "right", response)
 }
@@ -633,11 +724,11 @@ func TestDispatchChannelMessageToAgent_ConcurrentRequestsRouteByFrameID(t *testi
 	results := make(chan result, 2)
 
 	go func() {
-		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-first", nil, 5*time.Second)
+		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-first", nil, "", 5*time.Second)
 		results <- result{name: "first", resp: resp, err: err}
 	}()
 	go func() {
-		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-second", nil, 5*time.Second)
+		resp, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "request-second", nil, "", 5*time.Second)
 		results <- result{name: "second", resp: resp, err: err}
 	}()
 
@@ -704,7 +795,7 @@ func TestDispatchChannelMessageToAgent_IncludesConversationMessages(t *testing.T
 		{RequestContent: "older request", ResponseContent: "older response"},
 		{RequestContent: "recent request", ResponseContent: ""},
 	}
-	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "latest request", history, 5*time.Second)
+	response, err := dispatchChannelMessageToAgent(ctx, connPool, agent, "latest request", history, "", 5*time.Second)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", response)
 
@@ -730,6 +821,73 @@ func TestDispatchChannelMessageToAgent_IncludesConversationMessages(t *testing.T
 	assert.Equal(t, "recent request", third["content"])
 	assert.Equal(t, "user", fourth["role"])
 	assert.Equal(t, "latest request", fourth["content"])
+}
+
+func TestDispatchChannelMessageToAgent_IncludesPersistedUserContextMessage(t *testing.T) {
+	transport := proxy.NewTCPTransport(9872)
+	connPool := proxy.NewConnPool(transport)
+	defer connPool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cid := uint32(46)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	payloadSeen := make(chan map[string]any, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		var payload map[string]any
+		_ = json.Unmarshal(frame.Payload, &payload)
+		payloadSeen <- payload
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"ok","done":true}`),
+		})
+	}()
+
+	agent := orchestrator.AgentInstance{
+		ID:       "agent-context",
+		Status:   orchestrator.StatusRunning,
+		VsockCID: &cid,
+	}
+
+	response, err := dispatchChannelMessageToAgent(
+		ctx,
+		connPool,
+		agent,
+		"latest request",
+		[]channels.ChannelConversationTurn{{RequestContent: "older request"}},
+		"Persisted scouting context",
+		5*time.Second,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", response)
+
+	payload := <-payloadSeen
+	messagesRaw, ok := payload["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messagesRaw, 3)
+
+	systemMessage, ok := messagesRaw[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "system", systemMessage["role"])
+	assert.Contains(t, systemMessage["content"], "Persisted scouting context")
 }
 
 func TestDispatchChannelMessageToAgent_PreservesLegacyRoleContentFields(t *testing.T) {
@@ -782,6 +940,7 @@ func TestDispatchChannelMessageToAgent_PreservesLegacyRoleContentFields(t *testi
 		agent,
 		"latest request",
 		[]channels.ChannelConversationTurn{{RequestContent: "older request"}},
+		"",
 		5*time.Second,
 	)
 	require.NoError(t, err)

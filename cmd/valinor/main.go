@@ -197,6 +197,7 @@ func run() error {
 	var orchStore *orchestrator.Store
 	var proxyHandler *proxy.Handler
 	var connPool *proxy.ConnPool
+	var userContextStore proxy.UserContextStore
 	if pool != nil {
 		orchStore = orchestrator.NewStore()
 		orchDriver, err := selectVMDriver(cfg.Orchestrator, cfg.Auth.DevMode)
@@ -223,11 +224,12 @@ func run() error {
 
 		agentHandler = orchestrator.NewHandler(orchManager, pusher)
 
+		userContextStore = proxy.NewDBUserContextStore(pool)
 		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{
 			MessageTimeout: time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
 			ConfigTimeout:  time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 			PingTimeout:    time.Duration(cfg.Proxy.PingTimeout) * time.Second,
-		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger})
+		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithUserContextStore(userContextStore)
 	}
 	if connPool != nil {
 		defer connPool.Close()
@@ -250,15 +252,22 @@ func run() error {
 				}
 				return orchStore.ListByTenant(ctx, pool, tenantID)
 			},
-			func(ctx context.Context, agent orchestrator.AgentInstance, content string, history []channels.ChannelConversationTurn) (string, error) {
+			func(ctx context.Context, agent orchestrator.AgentInstance, content string, history []channels.ChannelConversationTurn, userContext string) (string, error) {
 				return dispatchChannelMessageToAgent(
 					ctx,
 					connPool,
 					agent,
 					content,
 					history,
+					userContext,
 					time.Duration(cfg.Proxy.MessageTimeout)*time.Second,
 				)
+			},
+			func(ctx context.Context, tenantID, agentID, userID string) (string, error) {
+				if userContextStore == nil {
+					return "", proxy.ErrUserContextNotFound
+				}
+				return userContextStore.GetUserContext(ctx, tenantID, agentID, userID)
 			},
 			func(ctx context.Context, tenantID, userID, content string) (sentinel.ScanResult, error) {
 				if sentinelScanner == nil {

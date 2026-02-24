@@ -21,7 +21,8 @@ import (
 type channelIdentityLookupFunc func(ctx context.Context, userID string) (*auth.Identity, error)
 type channelAuthorizeFunc func(ctx context.Context, identity *auth.Identity, action string) (*rbac.Decision, error)
 type channelListAgentsFunc func(ctx context.Context, tenantID string) ([]orchestrator.AgentInstance, error)
-type channelDispatchFunc func(ctx context.Context, agent orchestrator.AgentInstance, content string, history []channels.ChannelConversationTurn) (string, error)
+type channelDispatchFunc func(ctx context.Context, agent orchestrator.AgentInstance, content string, history []channels.ChannelConversationTurn, userContext string) (string, error)
+type channelUserContextLookupFunc func(ctx context.Context, tenantID, agentID, userID string) (string, error)
 type channelSentinelScanFunc func(ctx context.Context, tenantID, userID, content string) (sentinel.ScanResult, error)
 
 func newChannelExecutor(
@@ -29,6 +30,7 @@ func newChannelExecutor(
 	authorize channelAuthorizeFunc,
 	listAgents channelListAgentsFunc,
 	dispatch channelDispatchFunc,
+	lookupUserContext channelUserContextLookupFunc,
 	scanSentinel channelSentinelScanFunc,
 	auditLogger audit.Logger,
 ) func(context.Context, channels.ExecutionMessage) channels.ExecutionResult {
@@ -113,7 +115,28 @@ func newChannelExecutor(
 			return channels.ExecutionResult{Decision: channels.IngressDeniedNoAgent}
 		}
 
-		response, dispatchErr := dispatch(ctx, *target, content, msg.ConversationHistory)
+		userContext := ""
+		if lookupUserContext != nil {
+			contextText, contextErr := lookupUserContext(ctx, msg.TenantID, target.ID, identity.UserID)
+			switch {
+			case contextErr == nil:
+				userContext = contextText
+			case errors.Is(contextErr, proxy.ErrUserContextNotFound):
+				// No persisted snapshot for this user+agent.
+			default:
+				logChannelExecutionEvent(ctx, auditLogger, audit.ActionChannelActionDispatchFailed, msg, map[string]any{
+					"reason":   "resolving user context failed",
+					"agent_id": target.ID,
+					"error":    contextErr.Error(),
+				})
+				return channels.ExecutionResult{
+					Decision: channels.IngressDispatchFailed,
+					AgentID:  target.ID,
+				}
+			}
+		}
+
+		response, dispatchErr := dispatch(ctx, *target, content, msg.ConversationHistory, userContext)
 		if dispatchErr != nil {
 			logChannelExecutionEvent(ctx, auditLogger, audit.ActionChannelActionDispatchFailed, msg, map[string]any{
 				"reason":   "dispatch to agent failed",
@@ -186,6 +209,7 @@ func dispatchChannelMessageToAgent(
 	agent orchestrator.AgentInstance,
 	content string,
 	history []channels.ChannelConversationTurn,
+	userContext string,
 	timeout time.Duration,
 ) (string, error) {
 	if connPool == nil {
@@ -204,7 +228,7 @@ func dispatchChannelMessageToAgent(
 	}
 
 	reqBody, err := json.Marshal(map[string]any{
-		"messages": buildDispatchConversationMessages(history, content),
+		"messages": buildDispatchConversationMessages(history, content, userContext),
 		"role":     "user",
 		"content":  content,
 	})
@@ -279,8 +303,15 @@ func dispatchChannelMessageToAgent(
 	}
 }
 
-func buildDispatchConversationMessages(history []channels.ChannelConversationTurn, latestContent string) []map[string]string {
-	messages := make([]map[string]string, 0, len(history)*2+1)
+func buildDispatchConversationMessages(history []channels.ChannelConversationTurn, latestContent, userContext string) []map[string]string {
+	messages := make([]map[string]string, 0, len(history)*2+2)
+	contextText := strings.TrimSpace(userContext)
+	if contextText != "" {
+		messages = append(messages, map[string]string{
+			"role":    "system",
+			"content": "Persisted user context:\n" + contextText,
+		})
+	}
 	for _, turn := range history {
 		request := strings.TrimSpace(turn.RequestContent)
 		if request != "" {

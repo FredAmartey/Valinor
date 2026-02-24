@@ -103,11 +103,12 @@ func seedTwoTenants(t *testing.T, superConnStr string) (tenantA, tenantB string)
 	require.NoError(t, err)
 
 	// Agent instances
-	_, err = pool.Exec(ctx,
-		"INSERT INTO agent_instances (tenant_id, status) VALUES ($1, 'active')", tenantA)
+	var agentAID, agentBID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO agent_instances (tenant_id, status) VALUES ($1, 'active') RETURNING id", tenantA).Scan(&agentAID)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx,
-		"INSERT INTO agent_instances (tenant_id, status) VALUES ($1, 'active')", tenantB)
+	err = pool.QueryRow(ctx,
+		"INSERT INTO agent_instances (tenant_id, status) VALUES ($1, 'active') RETURNING id", tenantB).Scan(&agentBID)
 	require.NoError(t, err)
 
 	// Connectors
@@ -218,6 +219,18 @@ func seedTwoTenants(t *testing.T, superConnStr string) (tenantA, tenantB string)
 		tenantB)
 	require.NoError(t, err)
 
+	// agent_context_snapshots
+	_, err = pool.Exec(ctx,
+		`INSERT INTO agent_context_snapshots (tenant_id, agent_id, user_id, context)
+		 VALUES ($1, $2, 'user-a', 'tenant-a context')`,
+		tenantA, agentAID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO agent_context_snapshots (tenant_id, agent_id, user_id, context)
+		 VALUES ($1, $2, 'user-b', 'tenant-b context')`,
+		tenantB, agentBID)
+	require.NoError(t, err)
+
 	return tenantA, tenantB
 }
 
@@ -255,6 +268,7 @@ func TestRLS_TenantIsolation(t *testing.T) {
 		"channel_messages",
 		"channel_outbox",
 		"channel_provider_credentials",
+		"agent_context_snapshots",
 	}
 
 	for _, table := range tables {
