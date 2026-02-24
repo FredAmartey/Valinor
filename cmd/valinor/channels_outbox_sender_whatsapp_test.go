@@ -133,6 +133,16 @@ func TestBuildChannelOutboxSender(t *testing.T) {
 	})
 }
 
+func TestIsPermanentOutboxHTTPStatus(t *testing.T) {
+	assert.False(t, isPermanentOutboxHTTPStatus(http.StatusRequestTimeout))
+	assert.False(t, isPermanentOutboxHTTPStatus(http.StatusTooManyRequests))
+	assert.False(t, isPermanentOutboxHTTPStatus(http.StatusBadGateway))
+
+	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusBadRequest))
+	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusUnauthorized))
+	assert.True(t, isPermanentOutboxHTTPStatus(http.StatusNotFound))
+}
+
 func TestSlackOutboxSender_Send(t *testing.T) {
 	t.Run("sends slack chat.postMessage payload", func(t *testing.T) {
 		var seenAuth string
@@ -197,6 +207,33 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 401")
+		assert.True(t, channels.IsOutboxPermanentError(err))
+	})
+
+	t.Run("returns transient error when slack API returns 5xx status", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"ok":false,"error":"gateway_error"}`))
+		}))
+		defer srv.Close()
+
+		sender := newSlackOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "xoxb-test-token",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "slack",
+			RecipientID: "C12345678",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "status 502")
+		assert.False(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error when slack API rejects request", func(t *testing.T) {
@@ -222,6 +259,7 @@ func TestSlackOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "channel_not_found")
+		assert.True(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error for malformed outbox payload", func(t *testing.T) {
@@ -355,6 +393,35 @@ func TestWhatsAppOutboxSender_Send(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 401")
 		assert.Contains(t, err.Error(), "bad token")
+		assert.True(t, channels.IsOutboxPermanentError(err))
+	})
+
+	t.Run("returns transient error when whatsapp API returns 5xx status", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"upstream unavailable"}}`))
+		}))
+		defer srv.Close()
+
+		sender := newWhatsAppOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:       true,
+				APIBaseURL:    srv.URL,
+				APIVersion:    "v22.0",
+				AccessToken:   "bad-token",
+				PhoneNumberID: "987654321",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "whatsapp",
+			RecipientID: "15550009999",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "status 503")
+		assert.False(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error for malformed outbox payload", func(t *testing.T) {
@@ -481,6 +548,33 @@ func TestTelegramOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 401")
+		assert.True(t, channels.IsOutboxPermanentError(err))
+	})
+
+	t.Run("returns transient error when telegram API returns 5xx status", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"gateway error"}`))
+		}))
+		defer srv.Close()
+
+		sender := newTelegramOutboxSender(
+			config.ChannelProviderConfig{
+				Enabled:     true,
+				APIBaseURL:  srv.URL,
+				AccessToken: "123456:ABCDEF",
+			},
+			srv.Client(),
+		)
+
+		err := sender.Send(context.Background(), channels.ChannelOutbox{
+			Provider:    "telegram",
+			RecipientID: "987654321",
+			Payload:     json.RawMessage(`{"content":"hello from outbox","correlation_id":"corr-123"}`),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "status 502")
+		assert.False(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error when telegram API rejects request", func(t *testing.T) {
@@ -506,6 +600,7 @@ func TestTelegramOutboxSender_Send(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "chat not found")
+		assert.True(t, channels.IsOutboxPermanentError(err))
 	})
 
 	t.Run("returns error for malformed outbox payload", func(t *testing.T) {

@@ -101,15 +101,23 @@ func (d *OutboxDispatcher) DispatchOnce(ctx context.Context, q database.Querier)
 
 		for _, job := range claimed {
 			if err := d.sender.Send(ctx, job); err != nil {
+				errText := strings.TrimSpace(err.Error())
+				if errText == "" {
+					errText = "provider send failed"
+				}
+
+				if IsOutboxPermanentError(err) {
+					if deadErr := d.store.MarkOutboxDead(ctx, q, job.ID, errText); deadErr != nil {
+						return processed, fmt.Errorf("marking outbox dead: %w", deadErr)
+					}
+					processed++
+					continue
+				}
+
 				attemptsAfter := job.AttemptCount + 1
 				maxAttempts := job.MaxAttempts
 				if maxAttempts <= 0 {
 					maxAttempts = d.cfg.MaxAttempts
-				}
-
-				errText := strings.TrimSpace(err.Error())
-				if errText == "" {
-					errText = "provider send failed"
 				}
 
 				if attemptsAfter >= maxAttempts {
