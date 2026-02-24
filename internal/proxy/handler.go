@@ -559,29 +559,25 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	}
 	defer request.Close()
 
-	// Wait for ack from this request stream.
-	for {
-		reply, recvErr := request.Recv(ctx)
-		if recvErr != nil {
-			h.pool.Remove(agentID)
-			writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
-			return
-		}
-
-		if reply.Type == TypeError {
-			writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
-			return
-		}
-
-		if reply.Type == TypeConfigAck {
-			writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
-			return
-		}
-
-		// Unexpected frame type with matching ID
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
+	reply, recvErr := request.Recv(ctx)
+	if recvErr != nil {
+		h.pool.Remove(agentID)
+		writeProxyJSON(w, http.StatusGatewayTimeout, map[string]string{"error": "ack timeout"})
 		return
 	}
+
+	if reply.Type == TypeError {
+		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent rejected context update"})
+		return
+	}
+
+	if reply.Type == TypeConfigAck {
+		writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+		return
+	}
+
+	// Unexpected frame type with matching ID
+	writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "unexpected response from agent"})
 }
 
 // auditFromRequest builds a base AuditEvent from the request context.

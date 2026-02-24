@@ -515,8 +515,8 @@ func TestDispatchChannelMessageToAgent_IgnoresMismatchedFrameID(t *testing.T) {
 	defer cancel()
 
 	cid := uint32(42)
-	ln, err := transport.Listen(ctx, cid)
-	require.NoError(t, err)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
 	defer ln.Close()
 
 	go func() {
@@ -564,8 +564,8 @@ func TestDispatchChannelMessageToAgent_ConcurrentRequestsRouteByFrameID(t *testi
 	defer cancel()
 
 	cid := uint32(43)
-	ln, err := transport.Listen(ctx, cid)
-	require.NoError(t, err)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
 	defer ln.Close()
 
 	go func() {
@@ -620,8 +620,8 @@ func TestDispatchChannelMessageToAgent_ConcurrentRequestsRouteByFrameID(t *testi
 		VsockCID: &cid,
 	}
 
-	_, err = connPool.Get(ctx, agent.ID, cid)
-	require.NoError(t, err)
+	_, getErr := connPool.Get(ctx, agent.ID, cid)
+	require.NoError(t, getErr)
 
 	type result struct {
 		name string

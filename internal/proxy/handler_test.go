@@ -70,8 +70,8 @@ func TestHandleMessage_Success(t *testing.T) {
 
 	// Start mock agent that echoes back as a done chunk
 	ctx := context.Background()
-	ln, err := transport.Listen(ctx, cid)
-	require.NoError(t, err)
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
 	defer ln.Close()
 
 	go mockAgent(t, ln)
@@ -88,8 +88,8 @@ func TestHandleMessage_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
+	decodeErr := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, decodeErr)
 	assert.Contains(t, resp, "content")
 }
 
