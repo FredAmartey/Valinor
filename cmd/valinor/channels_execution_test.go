@@ -713,10 +713,14 @@ func TestDispatchChannelMessageToAgent_IncludesConversationMessages(t *testing.T
 	require.True(t, ok)
 	require.Len(t, messagesRaw, 4)
 
-	first := messagesRaw[0].(map[string]any)
-	second := messagesRaw[1].(map[string]any)
-	third := messagesRaw[2].(map[string]any)
-	fourth := messagesRaw[3].(map[string]any)
+	first, ok := messagesRaw[0].(map[string]any)
+	require.True(t, ok)
+	second, ok := messagesRaw[1].(map[string]any)
+	require.True(t, ok)
+	third, ok := messagesRaw[2].(map[string]any)
+	require.True(t, ok)
+	fourth, ok := messagesRaw[3].(map[string]any)
+	require.True(t, ok)
 
 	assert.Equal(t, "user", first["role"])
 	assert.Equal(t, "older request", first["content"])
