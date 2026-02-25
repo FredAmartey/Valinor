@@ -87,6 +87,23 @@ func (s *Store) LookupPlatformAdminByOIDC(ctx context.Context, issuer, subject s
 	return s.GetIdentityWithRoles(ctx, userID)
 }
 
+// FindUserIDByEmail looks up a user by email address.
+// Returns the user ID or ErrUserNotFound if no user matches.
+func (s *Store) FindUserIDByEmail(ctx context.Context, email string) (string, error) {
+	var userID string
+	err := s.pool.QueryRow(ctx,
+		"SELECT id FROM users WHERE email = $1",
+		email,
+	).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrUserNotFound
+		}
+		return "", fmt.Errorf("querying user by email: %w", err)
+	}
+	return userID, nil
+}
+
 // GetIdentityWithRoles fetches a user's full identity including roles and departments.
 func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Identity, error) {
 	// Get user base info
