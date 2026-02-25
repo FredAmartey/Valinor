@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Zinc neutral palette */
+  --color-surface: #fafafa;
+  --color-surface-raised: #ffffff;
+  --color-border: #e4e4e7;
+  --color-border-subtle: #f4f4f5;
+
+  /* Single accent: Emerald */
+  --color-accent: #059669;
+  --color-accent-light: #d1fae5;
+  --color-accent-foreground: #ffffff;
+
+  /* Alert: muted Rose */
+  --color-alert: #e11d48;
+  --color-alert-light: #ffe4e6;
+  --color-alert-foreground: #ffffff;
+}
