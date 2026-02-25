@@ -1,4 +1,4 @@
-import { ApiError } from "@/lib/api"
+import { ApiError } from "@/lib/api-error"
 import type { ApiErrorResponse } from "@/lib/types"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_VALINOR_API_URL ?? "http://localhost:8080"

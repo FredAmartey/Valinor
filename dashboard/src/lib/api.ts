@@ -1,17 +1,10 @@
 import { auth } from "@/lib/auth"
+import { ApiError } from "@/lib/api-error"
 import type { ApiErrorResponse } from "@/lib/types"
 
-const API_BASE_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+export { ApiError }
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: ApiErrorResponse,
-  ) {
-    super(`API error ${status}: ${body.error}`)
-    this.name = "ApiError"
-  }
-}
+const API_BASE_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
 
 export function buildUrl(path: string, params?: Record<string, string>): string {
   const url = new URL(path, API_BASE_URL)

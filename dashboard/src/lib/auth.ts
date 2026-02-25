@@ -58,9 +58,9 @@ export const authConfig: NextAuthConfig = {
         token.accessToken = account.access_token ?? ""
         token.refreshToken = account.refresh_token ?? ""
         token.expiresAt = account.expires_at ?? 0
-        token.userId = (profile as Record<string, unknown>)?.id as string ?? ""
-        token.tenantId = (profile as Record<string, unknown>)?.tenant_id as string ?? null
-        token.isPlatformAdmin = (profile as Record<string, unknown>)?.is_platform_admin as boolean ?? false
+        token.userId = String((profile as Record<string, unknown>)?.id ?? "")
+        token.tenantId = ((profile as Record<string, unknown>)?.tenant_id as string) ?? null
+        token.isPlatformAdmin = Boolean((profile as Record<string, unknown>)?.is_platform_admin)
         return token
       }
 

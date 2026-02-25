@@ -9,19 +9,28 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Buildings, Robot, Users, Warning } from "@phosphor-icons/react"
 import type { Tenant, AgentInstance } from "@/lib/types"
 
-export function PlatformOverview() {
+interface PlatformOverviewProps {
+  initialTenants: Tenant[]
+  initialAgents: AgentInstance[]
+}
+
+export function PlatformOverview({ initialTenants, initialAgents }: PlatformOverviewProps) {
   const { data: session } = useSession()
 
   const { data: tenants, isLoading: tenantsLoading } = useQuery({
     queryKey: ["tenants", "list"],
     queryFn: () => apiClient<Tenant[]>("/api/v1/tenants", session!.accessToken),
     enabled: !!session?.accessToken,
+    initialData: initialTenants,
+    refetchInterval: 30_000,
   })
 
   const { data: agents, isLoading: agentsLoading } = useQuery({
     queryKey: ["agents", "list"],
     queryFn: () => apiClient<AgentInstance[]>("/api/v1/agents", session!.accessToken),
     enabled: !!session?.accessToken,
+    initialData: initialAgents,
+    refetchInterval: 30_000,
   })
 
   const isLoading = tenantsLoading || agentsLoading

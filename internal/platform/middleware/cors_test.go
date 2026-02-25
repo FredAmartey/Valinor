@@ -27,6 +27,9 @@ func TestCORS_AllowedOrigin(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Errorf("expected Access-Control-Allow-Credentials = %q, got %q", "true", got)
 	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("expected Vary = %q, got %q", "Origin", got)
+	}
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
@@ -47,6 +50,11 @@ func TestCORS_DisallowedOrigin(t *testing.T) {
 
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("expected no Access-Control-Allow-Origin header, got %q", got)
+	}
+	// Vary: Origin must always be present, even for disallowed origins, so
+	// intermediate caches key on Origin and never serve a wrong response.
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("expected Vary = %q even for disallowed origin, got %q", "Origin", got)
 	}
 }
 
