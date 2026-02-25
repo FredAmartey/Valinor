@@ -92,6 +92,106 @@ func (h *RoleHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, roles)
 }
 
+// HandleUpdate updates a custom role's name and permissions.
+func (h *RoleHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
+
+	roleID := r.PathValue("id")
+	if roleID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing role id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	var req struct {
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	// Reject wildcard in permissions for non-system roles
+	for _, p := range req.Permissions {
+		if p == "*" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrWildcardDenied.Error()})
+			return
+		}
+	}
+
+	var role *Role
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var updateErr error
+		role, updateErr = h.store.Update(ctx, q, roleID, req.Name, req.Permissions)
+		return updateErr
+	})
+	if err != nil {
+		if errors.Is(err, ErrRoleNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, ErrRoleIsSystem) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, ErrRoleNameEmpty) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, ErrRoleDuplicate) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role update failed"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, role)
+}
+
+// HandleDelete deletes a custom role.
+func (h *RoleHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	roleID := r.PathValue("id")
+	if roleID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing role id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return h.store.Delete(ctx, q, roleID)
+	})
+	if err != nil {
+		if errors.Is(err, ErrRoleNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, ErrRoleIsSystem) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, ErrRoleHasUsers) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role deletion failed"})
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // HandleAssignRole assigns a role to a user.
 func (h *RoleHandler) HandleAssignRole(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)

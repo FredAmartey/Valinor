@@ -128,6 +128,80 @@ func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.R
 	return defs, rows.Err()
 }
 
+// Update modifies a custom role's name and permissions. Returns ErrRoleIsSystem for system roles.
+func (s *RoleStore) Update(ctx context.Context, q database.Querier, id string, name string, permissions []string) (*Role, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, ErrRoleNameEmpty
+	}
+
+	// Check is_system before update
+	var isSystem bool
+	err := q.QueryRow(ctx, `SELECT is_system FROM roles WHERE id = $1`, id).Scan(&isSystem)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrRoleNotFound
+		}
+		return nil, fmt.Errorf("checking role: %w", err)
+	}
+	if isSystem {
+		return nil, ErrRoleIsSystem
+	}
+
+	permJSON, err := json.Marshal(permissions)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling permissions: %w", err)
+	}
+
+	var role Role
+	var permBytes []byte
+	err = q.QueryRow(ctx,
+		`UPDATE roles SET name = $1, permissions = $2 WHERE id = $3
+		 RETURNING id, tenant_id, name, permissions, is_system, created_at`,
+		name, permJSON, id,
+	).Scan(&role.ID, &role.TenantID, &role.Name, &permBytes, &role.IsSystem, &role.CreatedAt)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+			return nil, fmt.Errorf("%w: %s", ErrRoleDuplicate, name)
+		}
+		return nil, fmt.Errorf("updating role: %w", err)
+	}
+	if err := json.Unmarshal(permBytes, &role.Permissions); err != nil {
+		return nil, fmt.Errorf("unmarshaling permissions: %w", err)
+	}
+	return &role, nil
+}
+
+// Delete removes a custom role. Returns ErrRoleIsSystem for system roles,
+// ErrRoleHasUsers if the role is assigned to any users.
+func (s *RoleStore) Delete(ctx context.Context, q database.Querier, id string) error {
+	var isSystem bool
+	err := q.QueryRow(ctx, `SELECT is_system FROM roles WHERE id = $1`, id).Scan(&isSystem)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrRoleNotFound
+		}
+		return fmt.Errorf("checking role: %w", err)
+	}
+	if isSystem {
+		return ErrRoleIsSystem
+	}
+
+	var count int
+	err = q.QueryRow(ctx, `SELECT COUNT(*) FROM user_roles WHERE role_id = $1`, id).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("counting assignments: %w", err)
+	}
+	if count > 0 {
+		return ErrRoleHasUsers
+	}
+
+	_, err = q.Exec(ctx, `DELETE FROM roles WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("deleting role: %w", err)
+	}
+	return nil
+}
+
 // RoleLoaderAdapter adapts RoleStore to the rbac.RoleLoader interface.
 type RoleLoaderAdapter struct {
 	store *RoleStore

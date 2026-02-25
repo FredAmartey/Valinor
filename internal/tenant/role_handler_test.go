@@ -204,6 +204,161 @@ func TestRoleHandler(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
 
+	t.Run("Update", func(t *testing.T) {
+		tenU, err := tenantStore.Create(ctx, "Update Role Org", "update-role-org")
+		require.NoError(t, err)
+
+		var roleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenU.ID, func(ctx context.Context, q database.Querier) error {
+			role, createErr := tenant.NewRoleStore().Create(ctx, q, "custom_role", []string{"agents:read"})
+			require.NoError(t, createErr)
+			roleID = role.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		body := `{"name": "custom_role", "permissions": ["agents:read", "agents:write"]}`
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/roles/"+roleID, strings.NewReader(body))
+		req.SetPathValue("id", roleID)
+		req.Header.Set("Content-Type", "application/json")
+		req = withTenantIdentity(req, tenU.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleUpdate).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var role tenant.Role
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &role))
+		assert.Equal(t, []string{"agents:read", "agents:write"}, role.Permissions)
+	})
+
+	t.Run("Update_SystemRole_Rejected", func(t *testing.T) {
+		tenS, err := tenantStore.Create(ctx, "System Update Org", "system-update-org")
+		require.NoError(t, err)
+
+		var systemRoleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenS.ID, func(ctx context.Context, q database.Querier) error {
+			_, execErr := q.Exec(ctx,
+				`INSERT INTO roles (tenant_id, name, permissions, is_system) VALUES (current_setting('app.current_tenant_id', true)::UUID, 'sys_admin', '["*"]'::jsonb, true) RETURNING id`)
+			require.NoError(t, execErr)
+			row := q.QueryRow(ctx, `SELECT id FROM roles WHERE name = 'sys_admin' AND tenant_id = current_setting('app.current_tenant_id', true)::UUID`)
+			require.NoError(t, row.Scan(&systemRoleID))
+			return nil
+		})
+		require.NoError(t, err)
+
+		body := `{"name": "sys_admin", "permissions": ["agents:read"]}`
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/roles/"+systemRoleID, strings.NewReader(body))
+		req.SetPathValue("id", systemRoleID)
+		req.Header.Set("Content-Type", "application/json")
+		req = withTenantIdentity(req, tenS.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleUpdate).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("Update_WildcardRejected", func(t *testing.T) {
+		tenW, err := tenantStore.Create(ctx, "Wildcard Update Org", "wildcard-update-org")
+		require.NoError(t, err)
+
+		var roleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenW.ID, func(ctx context.Context, q database.Querier) error {
+			role, createErr := tenant.NewRoleStore().Create(ctx, q, "sneaky", []string{"agents:read"})
+			require.NoError(t, createErr)
+			roleID = role.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		body := `{"name": "sneaky", "permissions": ["*"]}`
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/roles/"+roleID, strings.NewReader(body))
+		req.SetPathValue("id", roleID)
+		req.Header.Set("Content-Type", "application/json")
+		req = withTenantIdentity(req, tenW.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleUpdate).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		tenD, err := tenantStore.Create(ctx, "Delete Role Org", "delete-role-org")
+		require.NoError(t, err)
+
+		var roleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenD.ID, func(ctx context.Context, q database.Querier) error {
+			role, createErr := tenant.NewRoleStore().Create(ctx, q, "temp_role", []string{"agents:read"})
+			require.NoError(t, createErr)
+			roleID = role.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/roles/"+roleID, nil)
+		req.SetPathValue("id", roleID)
+		req = withTenantIdentity(req, tenD.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleDelete).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNoContent, w.Code)
+	})
+
+	t.Run("Delete_SystemRole_Rejected", func(t *testing.T) {
+		tenDS, err := tenantStore.Create(ctx, "System Delete Org", "system-delete-org")
+		require.NoError(t, err)
+
+		var systemRoleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenDS.ID, func(ctx context.Context, q database.Querier) error {
+			_, execErr := q.Exec(ctx,
+				`INSERT INTO roles (tenant_id, name, permissions, is_system) VALUES (current_setting('app.current_tenant_id', true)::UUID, 'sys_locked', '["*"]'::jsonb, true)`)
+			require.NoError(t, execErr)
+			row := q.QueryRow(ctx, `SELECT id FROM roles WHERE name = 'sys_locked' AND tenant_id = current_setting('app.current_tenant_id', true)::UUID`)
+			require.NoError(t, row.Scan(&systemRoleID))
+			return nil
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/roles/"+systemRoleID, nil)
+		req.SetPathValue("id", systemRoleID)
+		req = withTenantIdentity(req, tenDS.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleDelete).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("Delete_AssignedRole_Rejected", func(t *testing.T) {
+		tenDA, err := tenantStore.Create(ctx, "Delete Assigned Org", "delete-assigned-org")
+		require.NoError(t, err)
+
+		var roleID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenDA.ID, func(ctx context.Context, q database.Querier) error {
+			role, createErr := tenant.NewRoleStore().Create(ctx, q, "in_use", []string{"agents:read"})
+			require.NoError(t, createErr)
+			roleID = role.ID
+			user, createErr := tenant.NewUserStore().Create(ctx, q, "assigned@test.com", "Assigned")
+			require.NoError(t, createErr)
+			assignErr := tenant.NewRoleStore().AssignToUser(ctx, q, user.ID, roleID, "org", tenDA.ID)
+			require.NoError(t, assignErr)
+			return nil
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/roles/"+roleID, nil)
+		req.SetPathValue("id", roleID)
+		req = withTenantIdentity(req, tenDA.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleDelete).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+	})
+
 	t.Run("ListUserRoles", func(t *testing.T) {
 		ten5, err := tenantStore.Create(ctx, "List Roles Handler Org", "list-roles-handler-org")
 		require.NoError(t, err)
