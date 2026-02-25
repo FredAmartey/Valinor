@@ -115,8 +115,8 @@ func run() error {
 	roleLoader := tenant.NewRoleLoaderAdapter(tenant.NewRoleStore(), pool)
 	rbacEngine := rbac.NewEvaluator(nil, rbac.WithRoleLoader(roleLoader))
 	if pool != nil {
-		if err := rbacEngine.ReloadRoles(ctx); err != nil {
-			return fmt.Errorf("loading roles from database: %w", err)
+		if reloadErr := rbacEngine.ReloadRoles(ctx); reloadErr != nil {
+			return fmt.Errorf("loading roles from database: %w", reloadErr)
 		}
 		slog.Info("RBAC roles loaded from database")
 	} else {
