@@ -169,6 +169,7 @@ func (h *RoleHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
+		slog.Error("role update failed", "role_id", roleID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role update failed"})
 		return
 	}
@@ -212,6 +213,7 @@ func (h *RoleHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
+		slog.Error("role deletion failed", "role_id", roleID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role deletion failed"})
 		return
 	}

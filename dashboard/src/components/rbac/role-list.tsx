@@ -56,7 +56,7 @@ export function RoleList({ selectedId, onSelect }: RoleListProps) {
             )}
           </div>
           <span className={`text-xs ${
-            selectedId === role.id ? "text-zinc-400" : "text-zinc-400"
+            selectedId === role.id ? "text-zinc-300" : "text-zinc-400"
           }`}>
             {role.permissions.includes("*") ? "All" : `${role.permissions.length} perms`}
           </span>

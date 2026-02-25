@@ -44,6 +44,19 @@ func TestRoleHandler(t *testing.T) {
 		assert.Equal(t, []string{"agents:read"}, role.Permissions)
 	})
 
+	t.Run("Create_WildcardRejected", func(t *testing.T) {
+		body := `{"name": "sneaky_admin", "permissions": ["*"]}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/roles", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = withTenantIdentity(req, ten.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleCreate).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "wildcard")
+	})
+
 	t.Run("List", func(t *testing.T) {
 		ten2, err := tenantStore.Create(ctx, "Role List Org", "role-list-org")
 		require.NoError(t, err)

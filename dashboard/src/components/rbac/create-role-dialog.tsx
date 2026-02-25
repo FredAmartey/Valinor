@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import { useQueryClient } from "@tanstack/react-query"
 import { roleKeys } from "@/lib/queries/roles"
@@ -21,6 +21,34 @@ export function CreateRoleDialog({ open, onClose, onCreated }: CreateRoleDialogP
   const [permissions, setPermissions] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  const handleClose = useCallback(() => {
+    setName("")
+    setPermissions([])
+    setError(null)
+    onClose()
+  }, [onClose])
+
+  // Focus the name input when dialog opens
+  useEffect(() => {
+    if (open) {
+      nameInputRef.current?.focus()
+    }
+  }, [open])
+
+  // Escape key to close
+  useEffect(() => {
+    if (!open) return
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        handleClose()
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+  }, [open, handleClose])
 
   if (!open) return null
 
@@ -48,23 +76,32 @@ export function CreateRoleDialog({ open, onClose, onCreated }: CreateRoleDialogP
     }
   }
 
-  function handleClose() {
-    setName("")
-    setPermissions([])
-    setError(null)
-    onClose()
+  function handleBackdropClick(e: React.MouseEvent) {
+    if (e.target === e.currentTarget) {
+      handleClose()
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-zinc-900">Create Role</h2>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={handleBackdropClick}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-role-title"
+        className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl"
+      >
+        <h2 id="create-role-title" className="text-lg font-semibold text-zinc-900">Create Role</h2>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label htmlFor="role-name" className="block text-sm font-medium text-zinc-700">
               Name
             </label>
             <input
+              ref={nameInputRef}
               id="role-name"
               type="text"
               value={name}

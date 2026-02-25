@@ -71,6 +71,7 @@ export function PermissionMatrix({ permissions, readonly, onChange }: Permission
                       <input
                         type="checkbox"
                         data-testid={`perm-${perm}`}
+                        aria-label={`${row.resource} ${action}`}
                         checked={permSet.has(perm)}
                         disabled={readonly}
                         onChange={() => handleToggle(perm)}

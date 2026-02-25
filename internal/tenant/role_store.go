@@ -100,13 +100,17 @@ func (s *RoleStore) List(ctx context.Context, q database.Querier) ([]Role, error
 	return roles, rows.Err()
 }
 
-// LoadRoles loads all role definitions across all tenants.
+// LoadRoles loads deduplicated role definitions across all tenants.
 // Used by the RBAC evaluator at startup and after mutations.
 // This queries the pool directly (no RLS context) because the evaluator
 // needs a global view of all role names and their permissions.
+// DISTINCT ON (name) with is_system DESC ensures system roles take priority
+// over custom roles with the same name across different tenants.
 func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.RoleDef, error) {
 	rows, err := pool.Query(ctx,
-		`SELECT name, permissions FROM roles ORDER BY name`)
+		`SELECT DISTINCT ON (name) name, permissions
+		 FROM roles
+		 ORDER BY name, is_system DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("loading roles: %w", err)
 	}
