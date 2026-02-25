@@ -1,15 +1,19 @@
 "use client"
 
 import { useState } from "react"
+import { useRolesQuery } from "@/lib/queries/roles"
 import { RoleList } from "./role-list"
 import { RoleDetail } from "./role-detail"
 import { CreateRoleDialog } from "./create-role-dialog"
 import { Plus, ShieldCheck } from "@phosphor-icons/react"
-import type { Role } from "@/lib/types"
 
 export function RBACView() {
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null)
+  const { data: roles } = useRolesQuery()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+
+  // Derive selected role from fresh query data
+  const selectedRole = roles?.find((r) => r.id === selectedId) ?? null
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
@@ -26,8 +30,8 @@ export function RBACView() {
           </button>
         </div>
         <RoleList
-          selectedId={selectedRole?.id ?? null}
-          onSelect={setSelectedRole}
+          selectedId={selectedId}
+          onSelect={(role) => setSelectedId(role.id)}
         />
       </div>
 
@@ -36,7 +40,7 @@ export function RBACView() {
         {selectedRole ? (
           <RoleDetail
             role={selectedRole}
-            onDeleted={() => setSelectedRole(null)}
+            onDeleted={() => setSelectedId(null)}
           />
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
@@ -51,7 +55,7 @@ export function RBACView() {
         onClose={() => setShowCreate(false)}
         onCreated={(role) => {
           setShowCreate(false)
-          setSelectedRole(role)
+          setSelectedId(role.id)
         }}
       />
     </div>
