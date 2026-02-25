@@ -3,7 +3,7 @@
 --   psql postgres://valinor:valinor@localhost:5432/valinor -f scripts/seed_dev_roles.sql
 --
 -- Role names must match those registered in cmd/valinor/main.go.
--- The permissions column is stored for display; enforcement uses the in-memory evaluator.
+-- The permissions column is used by the RBAC evaluator (loaded at startup and after mutations).
 
 DO $$
 DECLARE
