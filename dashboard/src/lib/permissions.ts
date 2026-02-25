@@ -1,0 +1,44 @@
+// Mirrors cmd/valinor/main.go rbacEngine.RegisterRole() calls.
+// Keep in sync with the backend when roles change.
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  org_admin: ["*"],
+  dept_head: [
+    "agents:read", "agents:write", "agents:message",
+    "users:read", "users:write",
+    "departments:read",
+    "connectors:read", "connectors:write",
+    "channels:links:read", "channels:links:write",
+    "channels:messages:write",
+    "channels:outbox:read", "channels:outbox:write",
+    "channels:providers:read", "channels:providers:write",
+  ],
+  standard_user: [
+    "agents:read", "agents:message",
+    "channels:messages:write",
+  ],
+  read_only: [
+    "agents:read",
+  ],
+}
+
+/**
+ * Pure permission check. Safe to call in server components,
+ * tests, and anywhere you already have the roles array.
+ *
+ * @param isPlatformAdmin - full bypass when true
+ * @param roles - array of role names from the session
+ * @param permission - exact permission string, e.g. "agents:write"
+ */
+export function hasPermission(
+  isPlatformAdmin: boolean,
+  roles: string[],
+  permission: string,
+): boolean {
+  if (isPlatformAdmin) return true
+  for (const role of roles) {
+    const perms = ROLE_PERMISSIONS[role]
+    if (!perms) continue
+    if (perms.includes("*") || perms.includes(permission)) return true
+  }
+  return false
+}
