@@ -1,6 +1,7 @@
 "use client"
 
 import { useSession } from "next-auth/react"
+import { useCan } from "@/components/providers/permission-provider"
 import { SidebarItem } from "./sidebar-item"
 import {
   ChartBar,
@@ -19,20 +20,24 @@ const platformAdminNav = [
   { href: "/tenants", icon: <Buildings size={20} />, label: "Tenants" },
 ]
 
-const tenantAdminNav = [
-  { href: "/", icon: <ChartBar size={20} />, label: "Overview" },
-  { href: "/users", icon: <Users size={20} />, label: "Users" },
-  { href: "/departments", icon: <TreeStructure size={20} />, label: "Departments" },
-  { href: "/agents", icon: <Robot size={20} />, label: "Agents" },
-  { href: "/rbac", icon: <ShieldCheck size={20} />, label: "RBAC" },
-  { href: "/channels", icon: <ChatCircle size={20} />, label: "Channels" },
-  { href: "/connectors", icon: <Plugs size={20} />, label: "Connectors" },
-  { href: "/audit", icon: <ClockCounterClockwise size={20} />, label: "Audit Log" },
-]
-
 export function Sidebar() {
   const { data: session } = useSession()
   const isPlatformAdmin = session?.user?.isPlatformAdmin ?? false
+
+  const canReadUsers = useCan("users:read")
+  const canReadConnectors = useCan("connectors:read")
+
+  const tenantAdminNav = [
+    { href: "/", icon: <ChartBar size={20} />, label: "Overview" },
+    ...(canReadUsers ? [{ href: "/users", icon: <Users size={20} />, label: "Users" }] : []),
+    ...(canReadUsers ? [{ href: "/departments", icon: <TreeStructure size={20} />, label: "Departments" }] : []),
+    { href: "/agents", icon: <Robot size={20} />, label: "Agents" },
+    ...(canReadConnectors ? [{ href: "/rbac", icon: <ShieldCheck size={20} />, label: "RBAC" }] : []),
+    ...(canReadConnectors ? [{ href: "/channels", icon: <ChatCircle size={20} />, label: "Channels" }] : []),
+    ...(canReadConnectors ? [{ href: "/connectors", icon: <Plugs size={20} />, label: "Connectors" }] : []),
+    ...(canReadConnectors ? [{ href: "/audit", icon: <ClockCounterClockwise size={20} />, label: "Audit Log" }] : []),
+  ]
+
   const navItems = isPlatformAdmin ? platformAdminNav : tenantAdminNav
 
   return (

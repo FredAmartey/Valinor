@@ -22,6 +22,11 @@ vi.mock("next/navigation", () => ({
   usePathname: vi.fn().mockReturnValue("/"),
 }))
 
+// Mock permission provider — grant all permissions by default
+vi.mock("@/components/providers/permission-provider", () => ({
+  useCan: vi.fn().mockReturnValue(true),
+}))
+
 describe("Sidebar", () => {
   beforeEach(() => {
     cleanup()
