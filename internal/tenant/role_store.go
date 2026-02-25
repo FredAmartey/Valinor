@@ -128,6 +128,22 @@ func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.R
 	return defs, rows.Err()
 }
 
+// RoleLoaderAdapter adapts RoleStore to the rbac.RoleLoader interface.
+type RoleLoaderAdapter struct {
+	store *RoleStore
+	pool  *pgxpool.Pool
+}
+
+// NewRoleLoaderAdapter creates a RoleLoader backed by the roles table.
+func NewRoleLoaderAdapter(store *RoleStore, pool *pgxpool.Pool) *RoleLoaderAdapter {
+	return &RoleLoaderAdapter{store: store, pool: pool}
+}
+
+// LoadRoles implements rbac.RoleLoader.
+func (a *RoleLoaderAdapter) LoadRoles(ctx context.Context) ([]rbac.RoleDef, error) {
+	return a.store.LoadRoles(ctx, a.pool)
+}
+
 // AssignToUser assigns a role to a user with a scope (org or department).
 func (s *RoleStore) AssignToUser(ctx context.Context, q database.Querier, userID, roleID, scopeType, scopeID string) error {
 	_, err := q.Exec(ctx,

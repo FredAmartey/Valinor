@@ -135,26 +135,33 @@ func run() error {
 	}
 
 	// RBAC
-	rbacEngine := rbac.NewEvaluator(nil)
-
-	// Register default system roles
-	rbacEngine.RegisterRole("org_admin", []string{"*"})
-	rbacEngine.RegisterRole("dept_head", []string{
-		"agents:read", "agents:write", "agents:message",
-		"users:read", "users:write",
-		"departments:read",
-		"connectors:read", "connectors:write",
-		"channels:links:read", "channels:links:write", "channels:messages:write",
-		"channels:outbox:read", "channels:outbox:write",
-		"channels:providers:read", "channels:providers:write",
-	})
-	rbacEngine.RegisterRole("standard_user", []string{
-		"agents:read", "agents:message",
-		"channels:messages:write",
-	})
-	rbacEngine.RegisterRole("read_only", []string{
-		"agents:read",
-	})
+	roleLoader := tenant.NewRoleLoaderAdapter(tenant.NewRoleStore(), pool)
+	rbacEngine := rbac.NewEvaluator(nil, rbac.WithRoleLoader(roleLoader))
+	if pool != nil {
+		if err := rbacEngine.ReloadRoles(ctx); err != nil {
+			return fmt.Errorf("loading roles from database: %w", err)
+		}
+		slog.Info("RBAC roles loaded from database")
+	} else {
+		// Fallback for no-DB mode: register defaults in-memory
+		rbacEngine.RegisterRole("org_admin", []string{"*"})
+		rbacEngine.RegisterRole("dept_head", []string{
+			"agents:read", "agents:write", "agents:message",
+			"users:read", "users:write",
+			"departments:read",
+			"connectors:read", "connectors:write",
+			"channels:links:read", "channels:links:write", "channels:messages:write",
+			"channels:outbox:read", "channels:outbox:write",
+			"channels:providers:read", "channels:providers:write",
+		})
+		rbacEngine.RegisterRole("standard_user", []string{
+			"agents:read", "agents:message",
+			"channels:messages:write",
+		})
+		rbacEngine.RegisterRole("read_only", []string{
+			"agents:read",
+		})
+	}
 
 	// Audit
 	var auditLogger audit.Logger = audit.NopLogger{}
