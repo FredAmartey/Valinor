@@ -34,7 +34,11 @@ export async function api<T>(
     ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
-      ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+      ...(session?.accessToken
+        ? { Authorization: `Bearer ${session.accessToken}` }
+        : process.env.VALINOR_DEV_TOKEN
+          ? { Authorization: `Bearer ${process.env.VALINOR_DEV_TOKEN}` }
+          : {}),
       ...fetchOptions.headers,
     },
   })
