@@ -327,22 +327,29 @@ func (m *Manager) healthCheckLoop(ctx context.Context) {
 	}
 }
 
-// HealthCheckOnce checks all running VMs and handles unhealthy ones.
+// HealthCheckOnce checks running VMs and retries replacement for unhealthy records.
 func (m *Manager) HealthCheckOnce(ctx context.Context) {
-	instances, err := m.store.ListByStatus(ctx, m.pool, StatusRunning)
+	runningInstances, err := m.store.ListByStatus(ctx, m.pool, StatusRunning)
 	if err != nil {
 		slog.Error("listing running instances failed", "error", err)
 		return
 	}
+	unhealthyInstances, err := m.store.ListByStatus(ctx, m.pool, StatusUnhealthy)
+	if err != nil {
+		slog.Error("listing unhealthy instances failed", "error", err)
+		// Continue running-instance checks even if unhealthy retry candidates
+		// cannot be listed on this cycle.
+		unhealthyInstances = nil
+	}
 
-	if len(instances) == 0 {
+	if len(runningInstances) == 0 && len(unhealthyInstances) == 0 {
 		return
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(10) // concurrency cap
 
-	for _, inst := range instances {
+	for _, inst := range runningInstances {
 		inst := inst
 		g.Go(func() error {
 			if inst.VMID == nil {
@@ -376,15 +383,26 @@ func (m *Manager) HealthCheckOnce(ctx context.Context) {
 			return nil
 		})
 	}
+	for _, inst := range unhealthyInstances {
+		inst := inst
+		g.Go(func() error {
+			slog.Warn("retrying replacement for unhealthy VM record", "id", inst.ID)
+			m.replaceUnhealthy(ctx, &inst)
+			return nil
+		})
+	}
 
 	_ = g.Wait()
 }
 
 func (m *Manager) replaceUnhealthy(ctx context.Context, inst *AgentInstance) {
-	// Mark unhealthy
-	if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusUnhealthy); err != nil {
-		slog.Error("marking unhealthy failed", "id", inst.ID, "error", err)
-		return
+	// Mark unhealthy on first-time replacement path.
+	if inst.Status != StatusUnhealthy {
+		if err := m.store.UpdateStatus(ctx, m.pool, inst.ID, StatusUnhealthy); err != nil {
+			slog.Error("marking unhealthy failed", "id", inst.ID, "error", err)
+			return
+		}
+		inst.Status = StatusUnhealthy
 	}
 
 	// Destroy old VM
