@@ -1,4 +1,5 @@
 import NextAuth from "next-auth"
+import Credentials from "next-auth/providers/credentials"
 import type { NextAuthConfig } from "next-auth"
 
 // Extend the built-in types
@@ -12,6 +13,17 @@ declare module "next-auth" {
       tenantId: string | null
       isPlatformAdmin: boolean
     }
+  }
+
+  interface User {
+    id: string
+    email: string
+    name: string
+    tenantId: string | null
+    isPlatformAdmin: boolean
+    accessToken: string
+    refreshToken: string
+    expiresIn: number
   }
 }
 
@@ -30,37 +42,48 @@ const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
 
 export const authConfig: NextAuthConfig = {
   providers: [
-    {
-      id: "valinor",
-      name: "Valinor",
-      type: "oidc",
-      issuer: VALINOR_API_URL,
-      clientId: process.env.AUTH_VALINOR_CLIENT_ID ?? "dashboard",
-      clientSecret: process.env.AUTH_VALINOR_CLIENT_SECRET ?? "",
-      authorization: { url: `${VALINOR_API_URL}/auth/login`, params: { scope: "openid profile email" } },
-      token: { url: `${VALINOR_API_URL}/auth/callback` },
-      userinfo: { url: `${VALINOR_API_URL}/api/v1/users/me` },
-      profile(profile) {
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email) return null
+
+        const res = await fetch(`${VALINOR_API_URL}/auth/dev/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: credentials.email }),
+        })
+
+        if (!res.ok) {
+          console.error(`Dev login failed: ${res.status} ${res.statusText}`)
+          return null
+        }
+
+        const data = await res.json()
         return {
-          id: profile.sub ?? profile.id,
-          email: profile.email,
-          name: profile.display_name ?? profile.name ?? profile.email,
-          tenantId: profile.tenant_id ?? null,
-          isPlatformAdmin: profile.is_platform_admin ?? false,
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.display_name ?? data.user.email,
+          tenantId: data.user.tenant_id ?? null,
+          isPlatformAdmin: data.user.is_platform_admin ?? false,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          expiresIn: data.expires_in ?? 86400,
         }
       },
-    },
+    }),
   ],
   callbacks: {
-    async jwt({ token, account, profile }) {
-      // Initial sign-in: persist tokens from the OIDC flow
-      if (account) {
-        token.accessToken = account.access_token ?? ""
-        token.refreshToken = account.refresh_token ?? ""
-        token.expiresAt = account.expires_at ?? 0
-        token.userId = String((profile as Record<string, unknown>)?.id ?? "")
-        token.tenantId = ((profile as Record<string, unknown>)?.tenant_id as string) ?? null
-        token.isPlatformAdmin = Boolean((profile as Record<string, unknown>)?.is_platform_admin)
+    async jwt({ token, user }) {
+      // Initial sign-in: persist tokens from authorize response
+      if (user) {
+        token.accessToken = user.accessToken
+        token.refreshToken = user.refreshToken
+        token.expiresAt = Math.floor(Date.now() / 1000) + (user.expiresIn ?? 86400)
+        token.userId = user.id ?? ""
+        token.tenantId = user.tenantId ?? null
+        token.isPlatformAdmin = user.isPlatformAdmin ?? false
         return token
       }
 
@@ -80,10 +103,10 @@ export const authConfig: NextAuthConfig = {
         const data = await res.json()
         token.accessToken = data.access_token
         token.refreshToken = data.refresh_token ?? token.refreshToken
-        token.expiresAt = data.expires_at ?? Math.floor(Date.now() / 1000) + 3600
+        token.expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
         return token
-      } catch {
-        // Refresh failed — force re-login
+      } catch (err) {
+        console.error("Token refresh failed:", err)
         return { ...token, error: "RefreshTokenError" }
       }
     },
@@ -97,6 +120,9 @@ export const authConfig: NextAuthConfig = {
   },
   pages: {
     signIn: "/login",
+  },
+  session: {
+    strategy: "jwt",
   },
 }
 

@@ -86,6 +86,10 @@ func New(addr string, deps Dependencies) *Server {
 	if deps.AuthHandler != nil {
 		deps.AuthHandler.RegisterRoutes(topMux)
 	}
+	// Dev-only login route (no auth required)
+	if deps.DevMode && deps.AuthHandler != nil {
+		deps.AuthHandler.RegisterDevRoutes(topMux)
+	}
 	if deps.ChannelHandler != nil {
 		topMux.Handle("POST /api/v1/tenants/{tenantID}/channels/{provider}/webhook",
 			http.HandlerFunc(deps.ChannelHandler.HandleWebhook),
