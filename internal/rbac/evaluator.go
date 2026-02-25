@@ -21,18 +21,68 @@ type ResourcePolicy struct {
 	ResourceID   string
 }
 
-// Evaluator is the in-memory RBAC policy evaluation engine.
-type Evaluator struct {
-	store Store // can be nil for unit testing
-	roles map[string][]string
-	mu    sync.RWMutex
+// RoleDef is a role name with its permission strings, used by RoleLoader.
+type RoleDef struct {
+	Name        string
+	Permissions []string
 }
 
-func NewEvaluator(store Store) *Evaluator {
-	return &Evaluator{
+// RoleLoader loads role definitions from a backing store.
+type RoleLoader interface {
+	LoadRoles(ctx context.Context) ([]RoleDef, error)
+}
+
+// EvaluatorOption configures the Evaluator.
+type EvaluatorOption func(*Evaluator)
+
+// WithRoleLoader sets a RoleLoader for DB-backed role loading.
+func WithRoleLoader(loader RoleLoader) EvaluatorOption {
+	return func(e *Evaluator) {
+		e.loader = loader
+	}
+}
+
+// Evaluator is the in-memory RBAC policy evaluation engine.
+type Evaluator struct {
+	store  Store // can be nil for unit testing
+	loader RoleLoader
+	roles  map[string][]string
+	mu     sync.RWMutex
+}
+
+func NewEvaluator(store Store, opts ...EvaluatorOption) *Evaluator {
+	e := &Evaluator{
 		store: store,
 		roles: make(map[string][]string),
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
+}
+
+// ReloadRoles loads roles from the RoleLoader and replaces the in-memory map.
+// If loading fails, the existing map is preserved.
+func (e *Evaluator) ReloadRoles(ctx context.Context) error {
+	if e.loader == nil {
+		return fmt.Errorf("no role loader configured")
+	}
+
+	defs, err := e.loader.LoadRoles(ctx)
+	if err != nil {
+		return fmt.Errorf("loading roles: %w", err)
+	}
+
+	newRoles := make(map[string][]string, len(defs))
+	for _, d := range defs {
+		newRoles[d.Name] = d.Permissions
+	}
+
+	e.mu.Lock()
+	e.roles = newRoles
+	e.mu.Unlock()
+
+	return nil
 }
 
 // RegisterRole adds a role with its permissions to the in-memory cache.
