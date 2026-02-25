@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { apiClient } from "@/lib/api-client"
 import { userKeys } from "./users"
-import type { Role, UserRole, AssignRoleRequest } from "@/lib/types"
+import type { Role, UserRole, AssignRoleRequest, UpdateRoleRequest } from "@/lib/types"
 
 export const roleKeys = {
   all: ["roles"] as const,
@@ -73,6 +73,50 @@ export function useAssignRoleMutation(userId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: roleKeys.userRoles(userId) })
       queryClient.invalidateQueries({ queryKey: userKeys.detail(userId) })
+    },
+  })
+}
+
+export async function updateRole(
+  accessToken: string,
+  roleId: string,
+  data: UpdateRoleRequest,
+): Promise<Role> {
+  return apiClient<Role>(`/api/v1/roles/${roleId}`, accessToken, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteRole(
+  accessToken: string,
+  roleId: string,
+): Promise<void> {
+  return apiClient<void>(`/api/v1/roles/${roleId}`, accessToken, {
+    method: "DELETE",
+  })
+}
+
+export function useUpdateRoleMutation() {
+  const { data: session } = useSession()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ roleId, data }: { roleId: string; data: UpdateRoleRequest }) =>
+      updateRole(session!.accessToken, roleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: roleKeys.list() })
+    },
+  })
+}
+
+export function useDeleteRoleMutation() {
+  const { data: session } = useSession()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (roleId: string) =>
+      deleteRole(session!.accessToken, roleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: roleKeys.list() })
     },
   })
 }
