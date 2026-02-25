@@ -52,6 +52,97 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/token/refresh", h.HandleRefresh)
 }
 
+// RegisterDevRoutes registers dev-only auth routes.
+// Call this only when devmode is enabled.
+func (h *Handler) RegisterDevRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /auth/dev/login", h.HandleDevLogin)
+}
+
+// HandleDevLogin authenticates by email in dev mode.
+// Looks up the user, issues real access + refresh tokens.
+func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	if req.Email == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "email is required",
+		})
+		return
+	}
+
+	if h.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "user store not configured",
+		})
+		return
+	}
+
+	// Find user by email
+	userID, err := h.store.FindUserIDByEmail(r.Context(), req.Email)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"error": "user not found",
+			})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "user lookup failed",
+		})
+		return
+	}
+
+	// Load full identity with roles
+	identity, err := h.store.GetIdentityWithRoles(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "identity loading failed",
+		})
+		return
+	}
+
+	// Issue access token
+	accessToken, err := h.tokenSvc.CreateAccessToken(identity)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "token creation failed",
+		})
+		return
+	}
+
+	// Issue refresh token
+	refreshToken, err := h.tokenSvc.CreateRefreshToken(identity)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "token creation failed",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"token_type":    "Bearer",
+		"user": map[string]interface{}{
+			"id":                identity.UserID,
+			"email":             identity.Email,
+			"display_name":      identity.DisplayName,
+			"tenant_id":         identity.TenantID,
+			"is_platform_admin": identity.IsPlatformAdmin,
+		},
+	})
+}
+
 // HandleLogin initiates the OIDC login flow.
 func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if h.oidc == nil {

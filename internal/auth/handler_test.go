@@ -263,6 +263,97 @@ func TestHandler_Callback_PlatformAdminNoTenant(t *testing.T) {
 	assert.True(t, parsed.IsPlatformAdmin)
 }
 
+func TestHandleDevLogin_ValidEmail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create a test tenant and user
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Dev Tenant", "dev-tenant",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO users (tenant_id, email, display_name)
+		 VALUES ($1, 'dev@example.com', 'Dev User')`,
+		tenantID,
+	)
+	require.NoError(t, err)
+
+	store := auth.NewStore(pool)
+	tokenSvc := newTestTokenService()
+	handler := auth.NewHandler(auth.HandlerConfig{
+		TokenSvc: tokenSvc,
+		Store:    store,
+	})
+
+	body := `{"email": "dev@example.com"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/dev/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleDevLogin(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp["access_token"])
+	assert.NotEmpty(t, resp["refresh_token"])
+	assert.Equal(t, "Bearer", resp["token_type"])
+	assert.NotNil(t, resp["user"])
+}
+
+func TestHandleDevLogin_UnknownEmail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := auth.NewStore(pool)
+	tokenSvc := newTestTokenService()
+	handler := auth.NewHandler(auth.HandlerConfig{
+		TokenSvc: tokenSvc,
+		Store:    store,
+	})
+
+	body := `{"email": "nobody@example.com"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/dev/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleDevLogin(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandleDevLogin_EmptyEmail(t *testing.T) {
+	tokenSvc := newTestTokenService()
+	handler := auth.NewHandler(auth.HandlerConfig{
+		TokenSvc: tokenSvc,
+	})
+
+	body := `{"email": ""}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/dev/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleDevLogin(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestHandler_RefreshToken_OversizedBody(t *testing.T) {
 	tokenSvc := newTestTokenService()
 	stateStore := newTestStateStore()
