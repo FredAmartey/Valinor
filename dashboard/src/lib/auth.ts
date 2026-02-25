@@ -75,6 +75,12 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
   callbacks: {
+    authorized({ auth, request }) {
+      const isLoggedIn = !!auth?.user
+      const isOnLogin = request.nextUrl.pathname.startsWith("/login")
+      if (isOnLogin) return true
+      return isLoggedIn
+    },
     async jwt({ token, user }) {
       // Initial sign-in: persist tokens from authorize response
       if (user) {
