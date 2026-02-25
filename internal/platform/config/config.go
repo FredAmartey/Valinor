@@ -20,6 +20,7 @@ type Config struct {
 	Sentinel     SentinelConfig     `koanf:"sentinel"`
 	Audit        AuditConfig        `koanf:"audit"`
 	Channels     ChannelsConfig     `koanf:"channels"`
+	CORS         CORSConfig         `koanf:"cors"`
 }
 
 type AuthConfig struct {
@@ -46,6 +47,10 @@ type ServerConfig struct {
 	Host       string `koanf:"host"`
 	Port       int    `koanf:"port"`
 	BaseDomain string `koanf:"base_domain"`
+}
+
+type CORSConfig struct {
+	AllowedOrigins []string `koanf:"allowed_origins"`
 }
 
 type DatabaseConfig struct {

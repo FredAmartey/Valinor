@@ -317,9 +317,10 @@ func run() error {
 		ConnectorHandler:  connectorHandler,
 		ChannelHandler:    channelHandler,
 		RBACAuditLogger:   &rbacAuditAdapter{l: auditLogger},
-		DevMode:           cfg.Auth.DevMode,
-		DevIdentity:       devIdentity,
-		Logger:            logger,
+		DevMode:            cfg.Auth.DevMode,
+		DevIdentity:        devIdentity,
+		Logger:             logger,
+		CORSAllowedOrigins: cfg.CORS.AllowedOrigins,
 	})
 
 	// Graceful shutdown on SIGINT/SIGTERM

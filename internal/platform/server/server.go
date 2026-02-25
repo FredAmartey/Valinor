@@ -38,9 +38,10 @@ type Dependencies struct {
 	ConnectorHandler  *connectors.Handler
 	ChannelHandler    *channels.Handler
 	RBACAuditLogger   rbac.AuditLogger
-	DevMode           bool
-	DevIdentity       *auth.Identity
-	Logger            *slog.Logger
+	DevMode            bool
+	DevIdentity        *auth.Identity
+	Logger             *slog.Logger
+	CORSAllowedOrigins []string
 }
 
 type Server struct {
@@ -316,6 +317,9 @@ func New(addr string, deps Dependencies) *Server {
 		handler = middleware.Logging(deps.Logger)(handler)
 	}
 	handler = middleware.RequestID(handler)
+	if len(deps.CORSAllowedOrigins) > 0 {
+		handler = middleware.CORS(deps.CORSAllowedOrigins)(handler)
+	}
 
 	s.handler = handler
 	s.httpServer.Handler = handler
