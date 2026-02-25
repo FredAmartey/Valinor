@@ -51,6 +51,14 @@ func (h *RoleHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject wildcard in permissions for custom roles
+	for _, p := range req.Permissions {
+		if p == "*" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrWildcardDenied.Error()})
+			return
+		}
+	}
+
 	var role *Role
 	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
 		var createErr error
