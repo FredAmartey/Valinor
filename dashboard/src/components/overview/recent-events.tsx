@@ -4,17 +4,8 @@ import { useSession } from "next-auth/react"
 import { useQuery } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
 import { Skeleton } from "@/components/ui/skeleton"
+import { formatTimeAgo } from "@/lib/format"
 import type { AuditEvent } from "@/lib/types"
-
-function formatTimeAgo(dateStr: string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
-}
 
 export function RecentEvents() {
   const { data: session } = useSession()

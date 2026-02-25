@@ -39,17 +39,19 @@ export interface Department {
 // Agent types — matches Go internal/orchestrator/handler.go responses
 export interface AgentInstance {
   id: string
-  tenant_id: string
+  tenant_id: string | null
+  user_id: string | null
   department_id: string | null
-  user_id: string
-  vm_id: string
+  vm_id: string | null
   connection_id: string
-  status: "provisioning" | "running" | "unhealthy" | "stopped" | "replacing"
-  config: Record<string, unknown>
-  vsock_cid: number
-  tool_allowlist: string[]
+  status: "warm" | "provisioning" | "running" | "unhealthy" | "destroying" | "destroyed"
+  config: string | Record<string, unknown>
+  vsock_cid: number | null
+  vm_driver: string
+  tool_allowlist: string | string[]
+  consecutive_failures: number
   created_at: string
-  last_health_check: string
+  last_health_check: string | null
 }
 
 // Audit types — matches Go internal/audit/handler.go responses
@@ -122,6 +124,18 @@ export interface AssignRoleRequest {
   role_id: string
   scope_type: "org" | "department"
   scope_id: string
+}
+
+// Agent request types — matches Go internal/orchestrator/handler.go
+export interface ProvisionAgentRequest {
+  user_id?: string
+  department_id?: string
+  config?: Record<string, unknown>
+}
+
+export interface ConfigureAgentRequest {
+  config: Record<string, unknown>
+  tool_allowlist: string[]
 }
 
 // API error shape
