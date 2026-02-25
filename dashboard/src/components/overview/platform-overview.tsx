@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react"
 import { useQuery } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
 import { tenantKeys } from "@/lib/queries/tenants"
-import { agentKeys } from "@/lib/queries/agents"
+import { agentKeys, fetchAgents } from "@/lib/queries/agents"
 import { StatCard } from "./stat-card"
 import { RecentEvents } from "./recent-events"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -27,19 +27,20 @@ export function PlatformOverview({ initialTenants, initialAgents }: PlatformOver
     refetchInterval: 30_000,
   })
 
-  const { data: agents, isLoading: agentsLoading } = useQuery({
+  const { data: agentData, isLoading: agentsLoading } = useQuery({
     queryKey: agentKeys.list(),
-    queryFn: () => apiClient<AgentInstance[]>("/api/v1/agents", session!.accessToken),
+    queryFn: () => fetchAgents(session!.accessToken),
     enabled: !!session?.accessToken,
-    initialData: initialAgents,
+    initialData: { agents: initialAgents },
     refetchInterval: 30_000,
   })
 
   const isLoading = tenantsLoading || agentsLoading
 
+  const agents = agentData?.agents ?? []
   const activeTenants = tenants?.filter((t) => t.status === "active").length ?? 0
-  const totalAgents = agents?.length ?? 0
-  const unhealthyAgents = agents?.filter((a) => a.status === "unhealthy").length ?? 0
+  const totalAgents = agents.length
+  const unhealthyAgents = agents.filter((a) => a.status === "unhealthy").length
 
   return (
     <div className="space-y-8">

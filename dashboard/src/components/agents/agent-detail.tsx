@@ -7,23 +7,9 @@ import { AgentStatusBadge } from "./agent-status-badge"
 import { AgentConfigEditor } from "./agent-config-editor"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { formatDate } from "@/lib/format"
+import { formatDate, formatTimeAgo, truncateId } from "@/lib/format"
 import { Wrench, Trash, Gear } from "@phosphor-icons/react"
 import Link from "next/link"
-
-function truncateId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 12)}...` : id
-}
-
-function formatTimeAgo(dateStr: string | null): string {
-  if (!dateStr) return "Never"
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ago`
-}
 
 function parseJsonField(val: string | Record<string, unknown> | null): Record<string, unknown> {
   if (!val) return {}
@@ -81,7 +67,7 @@ export function AgentDetail({ id }: { id: string }) {
             <AgentStatusBadge status={agent.status} />
           </div>
           <div className="mt-2 flex items-center gap-4 text-sm text-zinc-500">
-            <span className="font-mono" title={agent.id}>{truncateId(agent.id)}</span>
+            <span className="font-mono" title={agent.id}>{truncateId(agent.id, 12)}</span>
             <span>Created {formatDate(agent.created_at, "long")}</span>
           </div>
         </div>
@@ -129,11 +115,11 @@ export function AgentDetail({ id }: { id: string }) {
         </div>
         <div>
           <span className="text-zinc-500">Consecutive Failures</span>
-          <p className="font-mono text-zinc-900">{String((agent as unknown as Record<string, unknown>).consecutive_failures ?? 0)}</p>
+          <p className="font-mono text-zinc-900">{agent.consecutive_failures ?? 0}</p>
         </div>
         <div>
           <span className="text-zinc-500">VM Driver</span>
-          <p className="text-zinc-900">{agent.vm_id ? "firecracker" : "mock"}</p>
+          <p className="text-zinc-900">{agent.vm_driver || "unknown"}</p>
         </div>
         {agent.vsock_cid && (
           <div>

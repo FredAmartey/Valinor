@@ -56,13 +56,13 @@ export async function configureAgent(
 export function useAgentsQuery(statusFilter?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: [...agentKeys.list(), statusFilter ?? "all"],
-    queryFn: async () => {
-      const res = await fetchAgents(session!.accessToken)
+    queryKey: agentKeys.list(),
+    queryFn: () => fetchAgents(session!.accessToken),
+    select: (data) => {
       if (statusFilter && statusFilter !== "all") {
-        return { agents: res.agents.filter((a) => a.status === statusFilter) }
+        return { agents: data.agents.filter((a) => a.status === statusFilter) }
       }
-      return res
+      return data
     },
     enabled: !!session?.accessToken,
     refetchInterval: 10_000,

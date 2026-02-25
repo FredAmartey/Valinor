@@ -1,21 +1,7 @@
 import Link from "next/link"
 import { AgentStatusDot } from "./agent-status-badge"
-import { formatDate } from "@/lib/format"
+import { formatDate, formatTimeAgo, truncateId } from "@/lib/format"
 import type { AgentInstance } from "@/lib/types"
-
-function truncateId(id: string): string {
-  return id.length > 8 ? `${id.slice(0, 8)}...` : id
-}
-
-function formatTimeAgo(dateStr: string | null): string {
-  if (!dateStr) return "Never"
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ago`
-}
 
 export function AgentCard({ agent }: { agent: AgentInstance }) {
   return (
@@ -48,7 +34,7 @@ export function AgentCard({ agent }: { agent: AgentInstance }) {
         )}
         <div className="flex justify-between">
           <span>VM Driver</span>
-          <span className="text-zinc-700">{agent.vm_id ? "firecracker" : "mock"}</span>
+          <span className="text-zinc-700">{agent.vm_driver || "unknown"}</span>
         </div>
         <div className="flex justify-between">
           <span>Last Health</span>
