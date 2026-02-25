@@ -124,6 +124,18 @@ export interface AssignRoleRequest {
   scope_id: string
 }
 
+// Agent request types — matches Go internal/orchestrator/handler.go
+export interface ProvisionAgentRequest {
+  user_id?: string
+  department_id?: string
+  config?: Record<string, unknown>
+}
+
+export interface ConfigureAgentRequest {
+  config: Record<string, unknown>
+  tool_allowlist: string[]
+}
+
 // API error shape
 export interface ApiErrorResponse {
   error: string
