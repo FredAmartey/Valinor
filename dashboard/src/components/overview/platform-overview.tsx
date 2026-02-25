@@ -8,7 +8,7 @@ import { agentKeys } from "@/lib/queries/agents"
 import { StatCard } from "./stat-card"
 import { RecentEvents } from "./recent-events"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Buildings, Robot, Users, Warning } from "@phosphor-icons/react"
+import { Buildings, Robot, Warning } from "@phosphor-icons/react"
 import type { Tenant, AgentInstance } from "@/lib/types"
 
 interface PlatformOverviewProps {
