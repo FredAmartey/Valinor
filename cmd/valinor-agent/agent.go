@@ -112,8 +112,6 @@ func (a *Agent) handleConnection(ctx context.Context, raw net.Conn) {
 			a.handleConfigUpdate(ctx, conn, frame)
 		case proxy.TypeMessage:
 			go a.handleMessage(ctx, conn, frame)
-		case proxy.TypeContextUpdate:
-			a.handleContextUpdate(ctx, conn, frame)
 		case proxy.TypePing:
 			pong := proxy.Frame{
 				Type:    proxy.TypePong,
@@ -169,20 +167,6 @@ func (a *Agent) handleConfigUpdate(ctx context.Context, conn *proxy.AgentConn, f
 
 func (a *Agent) handleMessage(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
 	a.forwardToOpenClaw(ctx, conn, frame)
-}
-
-func (a *Agent) handleContextUpdate(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
-	// TODO: Forward context to OpenClaw memory
-	slog.Info("context update received")
-
-	ack := proxy.Frame{
-		Type:    proxy.TypeConfigAck,
-		ID:      frame.ID,
-		Payload: json.RawMessage(`{"applied":true}`),
-	}
-	if err := conn.Send(ctx, ack); err != nil {
-		slog.Error("context ack failed", "error", err)
-	}
 }
 
 func (a *Agent) heartbeatLoop(ctx context.Context, conn *proxy.AgentConn) {
