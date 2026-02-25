@@ -28,8 +28,10 @@ vi.mock("@/components/providers/permission-provider", () => ({
 }))
 
 describe("Sidebar", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanup()
+    const { useCan } = await import("@/components/providers/permission-provider")
+    vi.mocked(useCan).mockReturnValue(true)
   })
 
   it("renders Overview link for all users", async () => {
@@ -69,5 +71,61 @@ describe("Sidebar", () => {
 
     // Tenants link should NOT be present for tenant admins
     expect(screen.queryByText("Tenants")).toBeNull()
+  })
+
+  it("hides users and departments nav when lacking users:read", async () => {
+    const { useSession } = await import("next-auth/react")
+    vi.mocked(useSession).mockReturnValue({
+      data: {
+        user: {
+          id: "user-3",
+          name: "Tenant Admin",
+          email: "tenant2@test.com",
+          isPlatformAdmin: false,
+          tenantId: "t-1",
+        },
+      },
+      status: "authenticated",
+    } as ReturnType<typeof useSession>)
+
+    const { useCan } = await import("@/components/providers/permission-provider")
+    vi.mocked(useCan).mockImplementation((permission) => permission !== "users:read")
+
+    const { Sidebar } = await import("./sidebar")
+    render(<Sidebar />)
+
+    expect(screen.queryByText("Users")).toBeNull()
+    expect(screen.queryByText("Departments")).toBeNull()
+    // Agents should still be visible
+    expect(screen.getByText("Agents")).toBeDefined()
+  })
+
+  it("hides RBAC, channels, connectors, and audit log when lacking connectors:read", async () => {
+    const { useSession } = await import("next-auth/react")
+    vi.mocked(useSession).mockReturnValue({
+      data: {
+        user: {
+          id: "user-4",
+          name: "Tenant Admin",
+          email: "tenant3@test.com",
+          isPlatformAdmin: false,
+          tenantId: "t-1",
+        },
+      },
+      status: "authenticated",
+    } as ReturnType<typeof useSession>)
+
+    const { useCan } = await import("@/components/providers/permission-provider")
+    vi.mocked(useCan).mockImplementation((permission) => permission !== "connectors:read")
+
+    const { Sidebar } = await import("./sidebar")
+    render(<Sidebar />)
+
+    expect(screen.queryByText("RBAC")).toBeNull()
+    expect(screen.queryByText("Channels")).toBeNull()
+    expect(screen.queryByText("Connectors")).toBeNull()
+    expect(screen.queryByText("Audit Log")).toBeNull()
+    // Agents should still be visible
+    expect(screen.getByText("Agents")).toBeDefined()
   })
 })
