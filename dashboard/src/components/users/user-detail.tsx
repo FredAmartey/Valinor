@@ -40,7 +40,7 @@ export function UserDetail({ id, tenantId }: UserDetailProps) {
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
             {user.display_name || user.email}
           </h1>
-          <UserStatusBadge status={user.status as "active" | "suspended"} />
+          <UserStatusBadge status={user.status} />
         </div>
         <div className="mt-2 flex items-center gap-4 text-sm text-zinc-500">
           <span>{user.email}</span>
@@ -50,6 +50,8 @@ export function UserDetail({ id, tenantId }: UserDetailProps) {
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
+          {/* TODO: No Go endpoint returns user's department memberships.
+              Add GET /api/v1/users/{id}/departments and wire it here. */}
           <UserDepartmentsSection userId={id} memberDepartmentIds={[]} />
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-5">

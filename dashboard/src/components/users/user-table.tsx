@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useDeferredValue } from "react"
 import Link from "next/link"
 import { useUsersQuery } from "@/lib/queries/users"
 import { UserStatusBadge } from "./user-status-badge"
@@ -12,11 +12,12 @@ import { formatDate } from "@/lib/format"
 export function UserTable() {
   const { data: users, isLoading, isError } = useUsersQuery()
   const [search, setSearch] = useState("")
+  const deferredSearch = useDeferredValue(search)
 
   const filtered = users?.filter(
     (u) =>
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      u.display_name.toLowerCase().includes(search.toLowerCase()),
+      u.email.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+      (u.display_name ?? "").toLowerCase().includes(deferredSearch.toLowerCase()),
   )
 
   if (isLoading) {
@@ -83,7 +84,7 @@ export function UserTable() {
                 {user.display_name || user.email.split("@")[0]}
               </span>
               <span className="text-zinc-500">{user.email}</span>
-              <UserStatusBadge status={user.status as "active" | "suspended"} />
+              <UserStatusBadge status={user.status} />
               <span className="text-zinc-500">{formatDate(user.created_at)}</span>
             </Link>
           ))}

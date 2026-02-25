@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useDeferredValue } from "react"
 import Link from "next/link"
 import { useDepartmentsQuery } from "@/lib/queries/departments"
 import { Input } from "@/components/ui/input"
@@ -25,10 +25,14 @@ export function buildHierarchy(departments: Department[]): HierarchyItem[] {
   }
 
   const result: HierarchyItem[] = []
+  const visited = new Set<string>()
+
   function walk(parentId: string | null, depth: number) {
     const children = childrenMap.get(parentId) ?? []
     for (const child of children) {
-      result.push({ department: child, depth })
+      if (visited.has(child.id)) continue
+      visited.add(child.id)
+      result.push({ department: child, depth: Math.min(depth, 4) })
       walk(child.id, depth + 1)
     }
   }
@@ -39,6 +43,7 @@ export function buildHierarchy(departments: Department[]): HierarchyItem[] {
 export function DepartmentTable() {
   const { data: departments, isLoading, isError } = useDepartmentsQuery()
   const [search, setSearch] = useState("")
+  const deferredSearch = useDeferredValue(search)
 
   if (isLoading) {
     return (
@@ -75,8 +80,8 @@ export function DepartmentTable() {
   }
 
   const hierarchy = buildHierarchy(departments)
-  const filtered = search
-    ? hierarchy.filter((h) => h.department.name.toLowerCase().includes(search.toLowerCase()))
+  const filtered = deferredSearch
+    ? hierarchy.filter((h) => h.department.name.toLowerCase().includes(deferredSearch.toLowerCase()))
     : hierarchy
 
   const parentNames = new Map(departments.map((d) => [d.id, d.name]))
