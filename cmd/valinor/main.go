@@ -111,29 +111,6 @@ func run() error {
 		tenantHandler = tenant.NewHandler(tenantStore)
 	}
 
-	// Department, user, and role management (tenant-scoped)
-	var deptHandler *tenant.DepartmentHandler
-	var userHandler *tenant.UserHandler
-	var roleHandler *tenant.RoleHandler
-	if pool != nil {
-		deptStore := tenant.NewDepartmentStore()
-		userMgmtStore := tenant.NewUserStore()
-		roleStore := tenant.NewRoleStore()
-		deptHandler = tenant.NewDepartmentHandler(pool, deptStore)
-		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
-		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
-	}
-	connectorHandler := buildConnectorHandler(pool)
-	channelHandler, err := buildChannelHandler(pool, cfg.Channels)
-	if err != nil {
-		return fmt.Errorf("building channel handler: %w", err)
-	}
-	channelRetentionWorker := buildChannelRetentionWorker(pool, cfg.Channels)
-	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
-	if err != nil {
-		return fmt.Errorf("building channel outbox worker: %w", err)
-	}
-
 	// RBAC
 	roleLoader := tenant.NewRoleLoaderAdapter(tenant.NewRoleStore(), pool)
 	rbacEngine := rbac.NewEvaluator(nil, rbac.WithRoleLoader(roleLoader))
@@ -161,6 +138,29 @@ func run() error {
 		rbacEngine.RegisterRole("read_only", []string{
 			"agents:read",
 		})
+	}
+
+	// Department, user, and role management (tenant-scoped)
+	var deptHandler *tenant.DepartmentHandler
+	var userHandler *tenant.UserHandler
+	var roleHandler *tenant.RoleHandler
+	if pool != nil {
+		deptStore := tenant.NewDepartmentStore()
+		userMgmtStore := tenant.NewUserStore()
+		roleStore := tenant.NewRoleStore()
+		deptHandler = tenant.NewDepartmentHandler(pool, deptStore)
+		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
+		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore, rbacEngine)
+	}
+	connectorHandler := buildConnectorHandler(pool)
+	channelHandler, err := buildChannelHandler(pool, cfg.Channels)
+	if err != nil {
+		return fmt.Errorf("building channel handler: %w", err)
+	}
+	channelRetentionWorker := buildChannelRetentionWorker(pool, cfg.Channels)
+	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
+	if err != nil {
+		return fmt.Errorf("building channel outbox worker: %w", err)
 	}
 
 	// Audit

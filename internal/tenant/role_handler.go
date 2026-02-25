@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,17 +13,23 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
+// RBACReloader is called after role mutations to refresh the evaluator.
+type RBACReloader interface {
+	ReloadRoles(ctx context.Context) error
+}
+
 // RoleHandler handles role HTTP endpoints within a tenant.
 type RoleHandler struct {
 	pool      *pgxpool.Pool
 	store     *RoleStore
 	userStore *UserStore
 	deptStore *DepartmentStore
+	evaluator RBACReloader
 }
 
 // NewRoleHandler creates a new role handler.
-func NewRoleHandler(pool *pgxpool.Pool, store *RoleStore, userStore *UserStore, deptStore *DepartmentStore) *RoleHandler {
-	return &RoleHandler{pool: pool, store: store, userStore: userStore, deptStore: deptStore}
+func NewRoleHandler(pool *pgxpool.Pool, store *RoleStore, userStore *UserStore, deptStore *DepartmentStore, evaluator RBACReloader) *RoleHandler {
+	return &RoleHandler{pool: pool, store: store, userStore: userStore, deptStore: deptStore, evaluator: evaluator}
 }
 
 // HandleCreate creates a new role within the authenticated tenant.
@@ -61,6 +68,12 @@ func (h *RoleHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role creation failed"})
 		return
+	}
+
+	if h.evaluator != nil {
+		if err := h.evaluator.ReloadRoles(r.Context()); err != nil {
+			slog.Error("failed to reload RBAC roles after create", "error", err)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, role)
@@ -152,6 +165,12 @@ func (h *RoleHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.evaluator != nil {
+		if err := h.evaluator.ReloadRoles(r.Context()); err != nil {
+			slog.Error("failed to reload RBAC roles after update", "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, role)
 }
 
@@ -187,6 +206,12 @@ func (h *RoleHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role deletion failed"})
 		return
+	}
+
+	if h.evaluator != nil {
+		if err := h.evaluator.ReloadRoles(r.Context()); err != nil {
+			slog.Error("failed to reload RBAC roles after delete", "error", err)
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
