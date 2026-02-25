@@ -9,7 +9,6 @@ import {
 import { useDepartmentsQuery } from "@/lib/queries/departments"
 import { Skeleton } from "@/components/ui/skeleton"
 import { X, Plus } from "@phosphor-icons/react"
-import type { Department } from "@/lib/types"
 
 interface UserDepartmentsSectionProps {
   userId: string

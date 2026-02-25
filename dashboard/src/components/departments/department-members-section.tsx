@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import { useUsersQuery } from "@/lib/queries/users"
 import { UserStatusBadge } from "@/components/users/user-status-badge"
@@ -10,6 +9,8 @@ interface DepartmentMembersSectionProps {
   departmentId: string
 }
 
+// departmentId will be used when the API supports filtering users by department
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function DepartmentMembersSection({ departmentId }: DepartmentMembersSectionProps) {
   const { data: allUsers, isLoading } = useUsersQuery()
 
