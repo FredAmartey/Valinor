@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/valinor-ai/valinor/internal/rbac"
 )
 
 // RoleStore handles role database operations within a tenant.
@@ -96,6 +98,34 @@ func (s *RoleStore) List(ctx context.Context, q database.Querier) ([]Role, error
 		roles = append(roles, r)
 	}
 	return roles, rows.Err()
+}
+
+// LoadRoles loads all role definitions across all tenants.
+// Used by the RBAC evaluator at startup and after mutations.
+// This queries the pool directly (no RLS context) because the evaluator
+// needs a global view of all role names and their permissions.
+func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.RoleDef, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT name, permissions FROM roles ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("loading roles: %w", err)
+	}
+	defer rows.Close()
+
+	var defs []rbac.RoleDef
+	for rows.Next() {
+		var name string
+		var permBytes []byte
+		if err := rows.Scan(&name, &permBytes); err != nil {
+			return nil, fmt.Errorf("scanning role: %w", err)
+		}
+		var perms []string
+		if err := json.Unmarshal(permBytes, &perms); err != nil {
+			return nil, fmt.Errorf("unmarshaling permissions for %s: %w", name, err)
+		}
+		defs = append(defs, rbac.RoleDef{Name: name, Permissions: perms})
+	}
+	return defs, rows.Err()
 }
 
 // AssignToUser assigns a role to a user with a scope (org or department).
