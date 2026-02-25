@@ -1,17 +1,10 @@
 "use client"
 
 import { useTenantQuery } from "@/lib/queries/tenants"
+import { formatDate } from "@/lib/format"
 import { TenantStatusBadge } from "./tenant-status-badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Users, TreeStructure, Robot, Plugs } from "@phosphor-icons/react"
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })
-}
 
 export function TenantDetail({ id }: { id: string }) {
   const { data: tenant, isLoading, isError } = useTenantQuery(id)
@@ -50,7 +43,7 @@ export function TenantDetail({ id }: { id: string }) {
         </div>
         <div className="mt-2 flex items-center gap-4 text-sm text-zinc-500">
           <span className="font-mono">{tenant.slug}</span>
-          <span>Created {formatDate(tenant.created_at)}</span>
+          <span>Created {formatDate(tenant.created_at, "long")}</span>
         </div>
       </div>
 

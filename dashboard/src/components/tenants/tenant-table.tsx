@@ -3,18 +3,11 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useTenantsQuery } from "@/lib/queries/tenants"
+import { formatDate } from "@/lib/format"
 import { TenantStatusBadge } from "./tenant-status-badge"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MagnifyingGlass } from "@phosphor-icons/react"
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
 
 export function TenantTable() {
   const { data: tenants, isLoading, isError } = useTenantsQuery()

@@ -58,6 +58,64 @@ func TestCORS_DisallowedOrigin(t *testing.T) {
 	}
 }
 
+func TestCORS_DisallowedOriginOptions(t *testing.T) {
+	nextCalled := false
+	handler := middleware.CORS([]string{"http://localhost:3000"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/tenants", nil)
+	req.Header.Set("Origin", "http://evil.com")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if !nextCalled {
+		t.Error("expected next handler to be called for disallowed-origin OPTIONS")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Origin header, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Methods header, got %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("expected Vary = %q, got %q", "Origin", got)
+	}
+}
+
+func TestCORS_NoOriginHeader(t *testing.T) {
+	nextCalled := false
+	handler := middleware.CORS([]string{"http://localhost:3000"})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
+	// No Origin header set
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if !nextCalled {
+		t.Error("expected next handler to be called when no Origin header is present")
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Origin header, got %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Credentials header, got %q", got)
+	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("expected Vary = %q, got %q", "Origin", got)
+	}
+}
+
 func TestCORS_PreflightReturns204(t *testing.T) {
 	handler := middleware.CORS([]string{"http://localhost:3000"})(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

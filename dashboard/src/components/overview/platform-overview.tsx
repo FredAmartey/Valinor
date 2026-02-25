@@ -3,11 +3,17 @@
 import { useSession } from "next-auth/react"
 import { useQuery } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
+import { tenantKeys } from "@/lib/queries/tenants"
 import { StatCard } from "./stat-card"
 import { RecentEvents } from "./recent-events"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Buildings, Robot, Users, Warning } from "@phosphor-icons/react"
 import type { Tenant, AgentInstance } from "@/lib/types"
+
+const agentKeys = {
+  all: ["agents"] as const,
+  list: () => [...agentKeys.all, "list"] as const,
+}
 
 interface PlatformOverviewProps {
   initialTenants: Tenant[]
@@ -18,7 +24,7 @@ export function PlatformOverview({ initialTenants, initialAgents }: PlatformOver
   const { data: session } = useSession()
 
   const { data: tenants, isLoading: tenantsLoading } = useQuery({
-    queryKey: ["tenants", "list"],
+    queryKey: tenantKeys.list(),
     queryFn: () => apiClient<Tenant[]>("/api/v1/tenants", session!.accessToken),
     enabled: !!session?.accessToken,
     initialData: initialTenants,
@@ -26,7 +32,7 @@ export function PlatformOverview({ initialTenants, initialAgents }: PlatformOver
   })
 
   const { data: agents, isLoading: agentsLoading } = useQuery({
-    queryKey: ["agents", "list"],
+    queryKey: agentKeys.list(),
     queryFn: () => apiClient<AgentInstance[]>("/api/v1/agents", session!.accessToken),
     enabled: !!session?.accessToken,
     initialData: initialAgents,
