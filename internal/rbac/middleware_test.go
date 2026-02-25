@@ -19,7 +19,7 @@ func setIdentity(r *http.Request, identity *auth.Identity) *http.Request {
 
 func TestRBACMiddleware_Allowed(t *testing.T) {
 	eval := rbac.NewEvaluator(nil)
-	eval.RegisterRole("standard_user", []string{"agents:read"})
+	eval.RegisterRole("tenant-456", "standard_user", []string{"agents:read"})
 
 	handler := rbac.RequirePermission(eval, "agents:read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -40,7 +40,7 @@ func TestRBACMiddleware_Allowed(t *testing.T) {
 
 func TestRBACMiddleware_Denied(t *testing.T) {
 	eval := rbac.NewEvaluator(nil)
-	eval.RegisterRole("standard_user", []string{"agents:read"})
+	eval.RegisterRole("tenant-456", "standard_user", []string{"agents:read"})
 
 	handler := rbac.RequirePermission(eval, "users:manage")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("should not reach handler")

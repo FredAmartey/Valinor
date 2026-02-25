@@ -11,6 +11,7 @@ vi.mock("@/lib/queries/roles", () => ({
     ],
     isLoading: false,
   }),
+  useCreateRoleMutation: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
   useUpdateRoleMutation: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
   useDeleteRoleMutation: () => ({ mutate: vi.fn(), isPending: false, isError: false }),
   roleKeys: { list: () => ["roles", "list"] },

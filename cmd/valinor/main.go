@@ -120,9 +120,10 @@ func run() error {
 		}
 		slog.Info("RBAC roles loaded from database")
 	} else {
-		// Fallback for no-DB mode: register defaults in-memory
-		rbacEngine.RegisterRole("org_admin", []string{"*"})
-		rbacEngine.RegisterRole("dept_head", []string{
+		// Fallback for no-DB mode: register defaults in-memory with dev tenant
+		const devTenant = "00000000-0000-0000-0000-000000000000"
+		rbacEngine.RegisterRole(devTenant, "org_admin", []string{"*"})
+		rbacEngine.RegisterRole(devTenant, "dept_head", []string{
 			"agents:read", "agents:write", "agents:message",
 			"users:read", "users:write",
 			"departments:read",
@@ -131,11 +132,11 @@ func run() error {
 			"channels:outbox:read", "channels:outbox:write",
 			"channels:providers:read", "channels:providers:write",
 		})
-		rbacEngine.RegisterRole("standard_user", []string{
+		rbacEngine.RegisterRole(devTenant, "standard_user", []string{
 			"agents:read", "agents:message",
 			"channels:messages:write",
 		})
-		rbacEngine.RegisterRole("read_only", []string{
+		rbacEngine.RegisterRole(devTenant, "read_only", []string{
 			"agents:read",
 		})
 	}

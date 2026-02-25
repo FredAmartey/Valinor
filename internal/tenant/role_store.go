@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/rbac"
@@ -41,7 +42,8 @@ func (s *RoleStore) Create(ctx context.Context, q database.Querier, name string,
 		name, permJSON,
 	).Scan(&role.ID, &role.TenantID, &role.Name, &permBytes, &role.IsSystem, &role.CreatedAt)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, fmt.Errorf("%w: %s", ErrRoleDuplicate, name)
 		}
 		return nil, fmt.Errorf("creating role: %w", err)
@@ -100,17 +102,15 @@ func (s *RoleStore) List(ctx context.Context, q database.Querier) ([]Role, error
 	return roles, rows.Err()
 }
 
-// LoadRoles loads deduplicated role definitions across all tenants.
+// LoadRoles loads all role definitions across all tenants.
 // Used by the RBAC evaluator at startup and after mutations.
 // This queries the pool directly (no RLS context) because the evaluator
-// needs a global view of all role names and their permissions.
-// DISTINCT ON (name) with is_system DESC ensures system roles take priority
-// over custom roles with the same name across different tenants.
+// needs a global view of all tenants' roles keyed by (tenant_id, name).
 func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.RoleDef, error) {
 	rows, err := pool.Query(ctx,
-		`SELECT DISTINCT ON (name) name, permissions
+		`SELECT tenant_id, name, permissions
 		 FROM roles
-		 ORDER BY name, is_system DESC`)
+		 ORDER BY tenant_id, name`)
 	if err != nil {
 		return nil, fmt.Errorf("loading roles: %w", err)
 	}
@@ -118,37 +118,25 @@ func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.R
 
 	var defs []rbac.RoleDef
 	for rows.Next() {
-		var name string
+		var tenantID, name string
 		var permBytes []byte
-		if err := rows.Scan(&name, &permBytes); err != nil {
+		if err := rows.Scan(&tenantID, &name, &permBytes); err != nil {
 			return nil, fmt.Errorf("scanning role: %w", err)
 		}
 		var perms []string
 		if err := json.Unmarshal(permBytes, &perms); err != nil {
 			return nil, fmt.Errorf("unmarshaling permissions for %s: %w", name, err)
 		}
-		defs = append(defs, rbac.RoleDef{Name: name, Permissions: perms})
+		defs = append(defs, rbac.RoleDef{TenantID: tenantID, Name: name, Permissions: perms})
 	}
 	return defs, rows.Err()
 }
 
 // Update modifies a custom role's name and permissions. Returns ErrRoleIsSystem for system roles.
+// The is_system check and update are combined in a single statement to avoid TOCTOU races.
 func (s *RoleStore) Update(ctx context.Context, q database.Querier, id string, name string, permissions []string) (*Role, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, ErrRoleNameEmpty
-	}
-
-	// Check is_system before update
-	var isSystem bool
-	err := q.QueryRow(ctx, `SELECT is_system FROM roles WHERE id = $1`, id).Scan(&isSystem)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrRoleNotFound
-		}
-		return nil, fmt.Errorf("checking role: %w", err)
-	}
-	if isSystem {
-		return nil, ErrRoleIsSystem
 	}
 
 	permJSON, err := json.Marshal(permissions)
@@ -159,12 +147,25 @@ func (s *RoleStore) Update(ctx context.Context, q database.Querier, id string, n
 	var role Role
 	var permBytes []byte
 	err = q.QueryRow(ctx,
-		`UPDATE roles SET name = $1, permissions = $2 WHERE id = $3
+		`UPDATE roles SET name = $1, permissions = $2
+		 WHERE id = $3 AND NOT is_system
 		 RETURNING id, tenant_id, name, permissions, is_system, created_at`,
 		name, permJSON, id,
 	).Scan(&role.ID, &role.TenantID, &role.Name, &permBytes, &role.IsSystem, &role.CreatedAt)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint") {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Distinguish "not found" from "is system role"
+			var isSystem bool
+			if checkErr := q.QueryRow(ctx, `SELECT is_system FROM roles WHERE id = $1`, id).Scan(&isSystem); checkErr != nil {
+				return nil, ErrRoleNotFound
+			}
+			if isSystem {
+				return nil, ErrRoleIsSystem
+			}
+			return nil, ErrRoleNotFound
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, fmt.Errorf("%w: %s", ErrRoleDuplicate, name)
 		}
 		return nil, fmt.Errorf("updating role: %w", err)
@@ -177,30 +178,29 @@ func (s *RoleStore) Update(ctx context.Context, q database.Querier, id string, n
 
 // Delete removes a custom role. Returns ErrRoleIsSystem for system roles,
 // ErrRoleHasUsers if the role is assigned to any users.
+// The delete and checks are combined to avoid TOCTOU races.
 func (s *RoleStore) Delete(ctx context.Context, q database.Querier, id string) error {
-	var isSystem bool
-	err := q.QueryRow(ctx, `SELECT is_system FROM roles WHERE id = $1`, id).Scan(&isSystem)
+	var deleted bool
+	err := q.QueryRow(ctx,
+		`DELETE FROM roles
+		 WHERE id = $1
+		   AND NOT is_system
+		   AND NOT EXISTS (SELECT 1 FROM user_roles WHERE role_id = $1)
+		 RETURNING true`,
+		id,
+	).Scan(&deleted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrRoleNotFound
+			// Distinguish: not found vs system role vs has users
+			var isSystem bool
+			if checkErr := q.QueryRow(ctx, `SELECT is_system FROM roles WHERE id = $1`, id).Scan(&isSystem); checkErr != nil {
+				return ErrRoleNotFound
+			}
+			if isSystem {
+				return ErrRoleIsSystem
+			}
+			return ErrRoleHasUsers
 		}
-		return fmt.Errorf("checking role: %w", err)
-	}
-	if isSystem {
-		return ErrRoleIsSystem
-	}
-
-	var count int
-	err = q.QueryRow(ctx, `SELECT COUNT(*) FROM user_roles WHERE role_id = $1`, id).Scan(&count)
-	if err != nil {
-		return fmt.Errorf("counting assignments: %w", err)
-	}
-	if count > 0 {
-		return ErrRoleHasUsers
-	}
-
-	_, err = q.Exec(ctx, `DELETE FROM roles WHERE id = $1`, id)
-	if err != nil {
 		return fmt.Errorf("deleting role: %w", err)
 	}
 	return nil
@@ -260,9 +260,6 @@ func (s *RoleStore) ListForUser(ctx context.Context, q database.Querier, userID 
 		userID,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("listing user roles: %w", err)
 	}
 	defer rows.Close()

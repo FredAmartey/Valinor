@@ -125,10 +125,10 @@ func TestRoleStore(t *testing.T) {
 		require.NoError(t, loadErr)
 		require.GreaterOrEqual(t, len(roles), 2)
 
-		// Find our roles
+		// Find our roles and verify they carry the correct tenant ID
 		found := map[string]bool{}
 		for _, r := range roles {
-			if r.Name == "admin" || r.Name == "viewer" {
+			if r.TenantID == tenLR.ID && (r.Name == "admin" || r.Name == "viewer") {
 				found[r.Name] = true
 			}
 		}

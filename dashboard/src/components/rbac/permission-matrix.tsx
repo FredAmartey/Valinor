@@ -9,6 +9,7 @@ export const PERMISSION_GRID = [
   { resource: "Channels: Messages", permissions: ["channels:messages:write"] },
   { resource: "Channels: Outbox", permissions: ["channels:outbox:read", "channels:outbox:write"] },
   { resource: "Channels: Providers", permissions: ["channels:providers:read", "channels:providers:write"] },
+  { resource: "Audit", permissions: ["audit:read"] },
 ] as const
 
 const ALL_ACTIONS = ["read", "write", "message", "manage"] as const

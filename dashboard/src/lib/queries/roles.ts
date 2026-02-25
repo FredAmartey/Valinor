@@ -97,6 +97,21 @@ export async function deleteRole(
   })
 }
 
+export function useCreateRoleMutation() {
+  const { data: session } = useSession()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; permissions: string[] }) =>
+      apiClient<Role>("/api/v1/roles", session!.accessToken, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: roleKeys.list() })
+    },
+  })
+}
+
 export function useUpdateRoleMutation() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()

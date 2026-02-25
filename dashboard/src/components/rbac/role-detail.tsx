@@ -24,7 +24,8 @@ export function RoleDetail({ role, onDeleted }: RoleDetailProps) {
   useEffect(() => {
     setPermissions(role.permissions)
     setShowDeleteConfirm(false)
-  }, [role.id, role.permissions])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on role change, not on every permissions reference
+  }, [role.id])
 
   function handleSave() {
     updateMutation.mutate(

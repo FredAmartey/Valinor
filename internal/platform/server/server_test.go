@@ -73,15 +73,22 @@ func TestServer_StartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+const testTenant = "test-tenant"
+
 func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	tokenSvc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
 	rbacEngine := rbac.NewEvaluator(nil)
-	rbacEngine.RegisterRole("standard_user", []string{"agents:read", "agents:message"})
-	rbacEngine.RegisterRole("read_only", []string{"agents:read"})
-	rbacEngine.RegisterRole("connectors_user", []string{"connectors:read", "connectors:write"})
-	rbacEngine.RegisterRole("channels_user", []string{"channels:links:read", "channels:links:write"})
-	rbacEngine.RegisterRole("channels_provider_user", []string{"channels:providers:read", "channels:providers:write"})
-	rbacEngine.RegisterRole("channels_outbox_user", []string{"channels:outbox:read", "channels:outbox:write"})
+	// Register roles for both a named test tenant and the empty tenant.
+	// Tests that use identities without TenantID rely on the empty-tenant
+	// registrations so RBAC passes and the handler's own tenant check is reached.
+	for _, tid := range []string{testTenant, ""} {
+		rbacEngine.RegisterRole(tid, "standard_user", []string{"agents:read", "agents:message"})
+		rbacEngine.RegisterRole(tid, "read_only", []string{"agents:read"})
+		rbacEngine.RegisterRole(tid, "connectors_user", []string{"connectors:read", "connectors:write"})
+		rbacEngine.RegisterRole(tid, "channels_user", []string{"channels:links:read", "channels:links:write"})
+		rbacEngine.RegisterRole(tid, "channels_provider_user", []string{"channels:providers:read", "channels:providers:write"})
+		rbacEngine.RegisterRole(tid, "channels_outbox_user", []string{"channels:outbox:read", "channels:outbox:write"})
+	}
 
 	// Wire a minimal agent handler (nil pool — will fail on DB calls but routes exist)
 	driver := orchestrator.NewMockDriver()
@@ -104,9 +111,6 @@ func TestServer_Agents_WithPermission(t *testing.T) {
 	deps, tokenSvc := newTestDeps()
 	srv := server.New(":0", deps)
 
-	// Use an identity without a TenantID so the handler returns 400
-	// before hitting the DB (which is nil in this test).
-	// This verifies: route exists, auth passes, RBAC passes, handler is reached.
 	identity := &auth.Identity{
 		UserID: "user-1",
 		Roles:  []string{"standard_user"},
@@ -126,7 +130,7 @@ func TestServer_Agents_WithPermission(t *testing.T) {
 func TestServer_Agents_WithoutPermission(t *testing.T) {
 	deps, tokenSvc := newTestDeps()
 	// Register a role with no agents:read permission
-	deps.RBAC.RegisterRole("no_agents", []string{"users:read"})
+	deps.RBAC.RegisterRole("tenant-1", "no_agents", []string{"users:read"})
 	srv := server.New(":0", deps)
 
 	identity := &auth.Identity{

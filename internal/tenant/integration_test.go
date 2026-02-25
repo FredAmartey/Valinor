@@ -36,7 +36,7 @@ func TestEndToEnd_TenantOrgSetup(t *testing.T) {
 	// Wire up server with RBAC
 	tokenSvc := auth.NewTokenService(testSigningKey, "test", 24, 168) //nolint:gosec // test-only key
 	rbacEngine := rbac.NewEvaluator(nil)
-	rbacEngine.RegisterRole("org_admin", []string{"*"})
+	rbacEngine.RegisterRole("will-be-set-per-request", "org_admin", []string{"*"})
 
 	srv := server.New(":0", server.Dependencies{
 		Pool:              ownerPool,
@@ -69,6 +69,9 @@ func TestEndToEnd_TenantOrgSetup(t *testing.T) {
 	var tenantResp tenant.Tenant
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tenantResp))
 	tenantID := tenantResp.ID
+
+	// Register org_admin for the newly created tenant so RBAC passes
+	rbacEngine.RegisterRole(tenantID, "org_admin", []string{"*"})
 
 	// For remaining requests, we need a token with the real tenant ID
 	devIdentity := &auth.Identity{

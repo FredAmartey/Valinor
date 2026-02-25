@@ -1,10 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { useSession } from "next-auth/react"
-import { useQueryClient } from "@tanstack/react-query"
-import { roleKeys } from "@/lib/queries/roles"
-import { apiClient } from "@/lib/api-client"
+import { useCreateRoleMutation } from "@/lib/queries/roles"
 import { PermissionMatrix } from "./permission-matrix"
 import type { Role } from "@/lib/types"
 
@@ -15,12 +12,10 @@ interface CreateRoleDialogProps {
 }
 
 export function CreateRoleDialog({ open, onClose, onCreated }: CreateRoleDialogProps) {
-  const { data: session } = useSession()
-  const queryClient = useQueryClient()
+  const createMutation = useCreateRoleMutation()
   const [name, setName] = useState("")
   const [permissions, setPermissions] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -52,28 +47,26 @@ export function CreateRoleDialog({ open, onClose, onCreated }: CreateRoleDialogP
 
   if (!open) return null
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
       setError("Role name is required")
       return
     }
     setError(null)
-    setSubmitting(true)
-    try {
-      const role = await apiClient<Role>("/api/v1/roles", session!.accessToken, {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim(), permissions }),
-      })
-      queryClient.invalidateQueries({ queryKey: roleKeys.list() })
-      setName("")
-      setPermissions([])
-      onCreated(role)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setSubmitting(false)
-    }
+    createMutation.mutate(
+      { name: name.trim(), permissions },
+      {
+        onSuccess: (role) => {
+          setName("")
+          setPermissions([])
+          onCreated(role)
+        },
+        onError: (err) => {
+          setError((err as Error).message)
+        },
+      },
+    )
   }
 
   function handleBackdropClick(e: React.MouseEvent) {
@@ -125,10 +118,10 @@ export function CreateRoleDialog({ open, onClose, onCreated }: CreateRoleDialogP
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={createMutation.isPending}
               className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
             >
-              {submitting ? "Creating\u2026" : "Create role"}
+              {createMutation.isPending ? "Creating\u2026" : "Create role"}
             </button>
           </div>
         </form>
