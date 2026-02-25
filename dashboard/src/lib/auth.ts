@@ -23,6 +23,7 @@ declare module "next-auth" {
     isPlatformAdmin: boolean
     accessToken: string
     refreshToken: string
+    expiresIn: number
   }
 }
 
@@ -54,7 +55,10 @@ export const authConfig: NextAuthConfig = {
           body: JSON.stringify({ email: credentials.email }),
         })
 
-        if (!res.ok) return null
+        if (!res.ok) {
+          console.error(`Dev login failed: ${res.status} ${res.statusText}`)
+          return null
+        }
 
         const data = await res.json()
         return {
@@ -65,6 +69,7 @@ export const authConfig: NextAuthConfig = {
           isPlatformAdmin: data.user.is_platform_admin ?? false,
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
+          expiresIn: data.expires_in ?? 86400,
         }
       },
     }),
@@ -75,7 +80,7 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.accessToken = user.accessToken
         token.refreshToken = user.refreshToken
-        token.expiresAt = Math.floor(Date.now() / 1000) + 24 * 60 * 60 // 24h
+        token.expiresAt = Math.floor(Date.now() / 1000) + (user.expiresIn ?? 86400)
         token.userId = user.id ?? ""
         token.tenantId = user.tenantId ?? null
         token.isPlatformAdmin = user.isPlatformAdmin ?? false
@@ -98,7 +103,7 @@ export const authConfig: NextAuthConfig = {
         const data = await res.json()
         token.accessToken = data.access_token
         token.refreshToken = data.refresh_token ?? token.refreshToken
-        token.expiresAt = Math.floor(Date.now() / 1000) + 24 * 60 * 60
+        token.expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
         return token
       } catch (err) {
         console.error("Token refresh failed:", err)

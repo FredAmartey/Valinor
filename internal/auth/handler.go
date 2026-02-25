@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 )
 
@@ -58,6 +59,22 @@ func (h *Handler) RegisterDevRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/dev/login", h.HandleDevLogin)
 }
 
+type devLoginResponse struct {
+	AccessToken  string           `json:"access_token"`
+	RefreshToken string           `json:"refresh_token"`
+	TokenType    string           `json:"token_type"`
+	ExpiresIn    int              `json:"expires_in"`
+	User         devLoginUserInfo `json:"user"`
+}
+
+type devLoginUserInfo struct {
+	ID              string `json:"id"`
+	Email           string `json:"email"`
+	DisplayName     string `json:"display_name"`
+	TenantID        string `json:"tenant_id"`
+	IsPlatformAdmin bool   `json:"is_platform_admin"`
+}
+
 // HandleDevLogin authenticates by email in dev mode.
 // Looks up the user, issues real access + refresh tokens.
 func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
@@ -91,11 +108,13 @@ func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.store.FindUserIDByEmail(r.Context(), req.Email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
+			slog.Warn("dev login: user not found", "email", req.Email)
 			writeJSON(w, http.StatusNotFound, map[string]string{
 				"error": "user not found",
 			})
 			return
 		}
+		slog.Error("dev login failed", "error", err, "email", req.Email)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "user lookup failed",
 		})
@@ -105,6 +124,7 @@ func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 	// Load full identity with roles
 	identity, err := h.store.GetIdentityWithRoles(r.Context(), userID)
 	if err != nil {
+		slog.Error("dev login failed", "error", err, "email", req.Email)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "identity loading failed",
 		})
@@ -114,31 +134,38 @@ func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 	// Issue access token
 	accessToken, err := h.tokenSvc.CreateAccessToken(identity)
 	if err != nil {
+		slog.Error("dev login failed", "error", err, "email", req.Email)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "token creation failed",
 		})
 		return
 	}
 
-	// Issue refresh token
+	// Dev mode: issue stateless refresh token without family tracking.
+	// This is intentional — HandleRefresh handles legacy tokens via the
+	// upgrade path (see upgradeLegacyToken). Family rotation is not
+	// critical in dev mode where tokens cannot be compromised.
 	refreshToken, err := h.tokenSvc.CreateRefreshToken(identity)
 	if err != nil {
+		slog.Error("dev login failed", "error", err, "email", req.Email)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "token creation failed",
 		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
-		"token_type":    "Bearer",
-		"user": map[string]interface{}{
-			"id":                identity.UserID,
-			"email":             identity.Email,
-			"display_name":      identity.DisplayName,
-			"tenant_id":         identity.TenantID,
-			"is_platform_admin": identity.IsPlatformAdmin,
+	slog.Info("dev login successful", "email", req.Email, "user_id", userID)
+	writeJSON(w, http.StatusOK, devLoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    h.tokenSvc.AccessTokenExpirySeconds(),
+		User: devLoginUserInfo{
+			ID:              identity.UserID,
+			Email:           identity.Email,
+			DisplayName:     identity.DisplayName,
+			TenantID:        identity.TenantID,
+			IsPlatformAdmin: identity.IsPlatformAdmin,
 		},
 	})
 }

@@ -39,6 +39,11 @@ func NewTokenService(signingKey, issuer string, expiryHours, refreshExpiryHours 
 	}
 }
 
+// AccessTokenExpirySeconds returns the access token lifetime in seconds.
+func (s *TokenService) AccessTokenExpirySeconds() int {
+	return s.expiryHours * 3600
+}
+
 func (s *TokenService) CreateAccessToken(identity *Identity) (string, error) {
 	return s.createToken(identity, "access", s.expiryHours)
 }
