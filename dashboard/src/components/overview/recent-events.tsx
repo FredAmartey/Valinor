@@ -21,9 +21,10 @@ export function RecentEvents() {
   const { data: events, isLoading, isError } = useQuery({
     queryKey: ["audit", "recent"],
     queryFn: () =>
-      apiClient<AuditEvent[]>("/api/v1/audit/events", session!.accessToken, {
+      apiClient<{ count: number; events: AuditEvent[] }>("/api/v1/audit/events", session!.accessToken, {
         params: { limit: "10" },
       }),
+    select: (data) => data.events,
     enabled: !!session?.accessToken,
     refetchInterval: 30_000,
   })

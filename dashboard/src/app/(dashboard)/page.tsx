@@ -8,7 +8,7 @@ export default async function OverviewPage() {
       console.error("Failed to fetch tenants for overview SSR:", err)
       return [] as Tenant[]
     }),
-    api<AgentInstance[]>("/api/v1/agents").catch((err) => {
+    api<{ agents: AgentInstance[] }>("/api/v1/agents").then((r) => r.agents).catch((err) => {
       console.error("Failed to fetch agents for overview SSR:", err)
       return [] as AgentInstance[]
     }),
