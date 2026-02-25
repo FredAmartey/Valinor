@@ -47,7 +47,8 @@ function decodeJwtRoles(token: string): string[] {
     const json = Buffer.from(payload, "base64url").toString("utf8")
     const claims = JSON.parse(json) as { roles?: string[] }
     return Array.isArray(claims.roles) ? claims.roles : []
-  } catch {
+  } catch (err) {
+    console.error("decodeJwtRoles: failed to decode JWT roles", err)
     return []
   }
 }
@@ -124,6 +125,8 @@ export const authConfig: NextAuthConfig = {
         })
         if (!res.ok) throw new Error("refresh failed")
         const data = await res.json()
+        // Roles are not re-decoded from the refreshed token — they are set once at
+        // initial sign-in and persist for the lifetime of the session.
         token.accessToken = data.access_token
         token.refreshToken = data.refresh_token ?? token.refreshToken
         token.expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
