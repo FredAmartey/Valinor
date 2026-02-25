@@ -1,6 +1,7 @@
 # Phase 9 Slice 5 — RBAC Configuration Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Claude:** REQUIRED SKILLS for Tasks 8–14 (dashboard/UI work): Invoke `vercel-react-best-practices`, `design-taste-frontend`, and `next-best-practices` before writing frontend code. See `docs/runbooks/agent-delivery-workflow.md` for the full delivery process.
 
 **Goal:** DB-backed RBAC evaluator with custom role CRUD and a permission checkbox matrix dashboard page.
 
