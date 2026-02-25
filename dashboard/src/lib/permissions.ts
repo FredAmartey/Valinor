@@ -1,5 +1,8 @@
 // Mirrors cmd/valinor/main.go rbacEngine.RegisterRole() calls.
-// Keep in sync with the backend when roles change.
+// IMPORTANT: Keep in sync with the backend when roles or permissions change.
+// There is no automated enforcement — a backend-only permission addition will
+// cause the UI to incorrectly hide controls. A future improvement would be to
+// include resolved permissions in the JWT or fetch them from the API.
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   org_admin: ["*"],
   dept_head: [

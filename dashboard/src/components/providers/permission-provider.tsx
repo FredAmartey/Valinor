@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext } from "react"
+import { createContext, useContext, useMemo } from "react"
 import { hasPermission } from "@/lib/permissions"
 
 interface PermissionContextValue {
@@ -22,12 +22,13 @@ export function PermissionProvider({
   roles,
   children,
 }: PermissionProviderProps) {
-  function can(permission: string): boolean {
-    return hasPermission(isPlatformAdmin, roles, permission)
-  }
+  const value = useMemo(
+    () => ({ can: (p: string) => hasPermission(isPlatformAdmin, roles, p) }),
+    [isPlatformAdmin, roles],
+  )
 
   return (
-    <PermissionContext.Provider value={{ can }}>
+    <PermissionContext.Provider value={value}>
       {children}
     </PermissionContext.Provider>
   )

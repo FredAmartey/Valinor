@@ -36,6 +36,9 @@ export function Sidebar() {
         ]
       : []),
     { href: "/agents", icon: <Robot size={20} />, label: "Agents" },
+    // TODO: RBAC and Audit Log are gated by connectors:read because the backend
+    // does not yet have rbac:read or audit:read permissions. When those are added
+    // to cmd/valinor/main.go, split this into separate useCan checks.
     ...(canReadConnectors
       ? [
           { href: "/rbac", icon: <ShieldCheck size={20} />, label: "RBAC" },
