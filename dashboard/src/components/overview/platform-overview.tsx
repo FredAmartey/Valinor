@@ -4,16 +4,12 @@ import { useSession } from "next-auth/react"
 import { useQuery } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
 import { tenantKeys } from "@/lib/queries/tenants"
+import { agentKeys } from "@/lib/queries/agents"
 import { StatCard } from "./stat-card"
 import { RecentEvents } from "./recent-events"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Buildings, Robot, Users, Warning } from "@phosphor-icons/react"
 import type { Tenant, AgentInstance } from "@/lib/types"
-
-const agentKeys = {
-  all: ["agents"] as const,
-  list: () => [...agentKeys.all, "list"] as const,
-}
 
 interface PlatformOverviewProps {
   initialTenants: Tenant[]
