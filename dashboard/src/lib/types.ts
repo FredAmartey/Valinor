@@ -90,6 +90,40 @@ export interface ChannelLink {
   created_at: string
 }
 
+// Role types — matches Go internal/tenant/role_handler.go responses
+export interface Role {
+  id: string
+  tenant_id: string
+  name: string
+  permissions: string[]
+  is_system: boolean
+  created_at: string
+}
+
+export interface UserRole {
+  user_id: string
+  role_id: string
+  role_name: string
+  scope_type: "org" | "department"
+  scope_id: string
+}
+
+export interface CreateUserRequest {
+  email: string
+  display_name?: string
+}
+
+export interface CreateDepartmentRequest {
+  name: string
+  parent_id?: string
+}
+
+export interface AssignRoleRequest {
+  role_id: string
+  scope_type: "org" | "department"
+  scope_id: string
+}
+
 // API error shape
 export interface ApiErrorResponse {
   error: string
