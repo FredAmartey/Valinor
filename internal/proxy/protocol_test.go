@@ -66,7 +66,6 @@ func TestFrameTypeConstants(t *testing.T) {
 	types := []string{
 		proxy.TypeConfigUpdate,
 		proxy.TypeMessage,
-		proxy.TypeContextUpdate,
 		proxy.TypePing,
 		proxy.TypeHeartbeat,
 		proxy.TypeChunk,

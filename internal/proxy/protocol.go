@@ -9,10 +9,9 @@ import (
 
 // Frame type constants — Control Plane → Agent
 const (
-	TypeConfigUpdate  = "config_update"
-	TypeMessage       = "message"
-	TypeContextUpdate = "context_update"
-	TypePing          = "ping"
+	TypeConfigUpdate = "config_update"
+	TypeMessage      = "message"
+	TypePing         = "ping"
 )
 
 // Frame type constants — Agent → Control Plane

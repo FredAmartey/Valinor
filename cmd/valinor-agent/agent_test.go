@@ -139,3 +139,51 @@ func TestAgent_ConfigUpdate_ToolPoliciesAndCanary(t *testing.T) {
 	assert.Equal(t, []string{"CANARY-abc123"}, agent.canaryTokens)
 	agent.mu.RUnlock()
 }
+
+func TestAgent_ContextUpdateFrameIsIgnored(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	agent := &Agent{
+		cfg: AgentConfig{OpenClawURL: "http://localhost:8081"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	// Skip initial heartbeat.
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	legacyContextUpdate := proxy.Frame{
+		Type:    "context_update",
+		ID:      "ctx-legacy",
+		Payload: json.RawMessage(`{"context":"scout notes"}`),
+	}
+	err = cp.Send(ctx, legacyContextUpdate)
+	require.NoError(t, err)
+
+	// Legacy frame should not produce an ack frame.
+	noReplyCtx, noReplyCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer noReplyCancel()
+	_, err = cp.Recv(noReplyCtx)
+	require.Error(t, err)
+
+	// Connection should remain healthy after ignoring unknown frame type.
+	err = cp.Send(ctx, proxy.Frame{
+		Type:    proxy.TypePing,
+		ID:      "ping-after-context",
+		Payload: json.RawMessage(`{}`),
+	})
+	require.NoError(t, err)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypePong, reply.Type)
+	assert.Equal(t, "ping-after-context", reply.ID)
+}
