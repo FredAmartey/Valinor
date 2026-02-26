@@ -100,7 +100,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("Agents")).toBeDefined()
   })
 
-  it("hides RBAC, channels, connectors, and audit log when lacking connectors:read", async () => {
+  it("hides RBAC, channels, connectors when lacking connectors:read", async () => {
     const { useSession } = await import("next-auth/react")
     vi.mocked(useSession).mockReturnValue({
       data: {
@@ -124,8 +124,36 @@ describe("Sidebar", () => {
     expect(screen.queryByText("RBAC")).toBeNull()
     expect(screen.queryByText("Channels")).toBeNull()
     expect(screen.queryByText("Connectors")).toBeNull()
-    expect(screen.queryByText("Audit Log")).toBeNull()
+    // Audit Log is gated by audit:read, not connectors:read
+    expect(screen.getByText("Audit Log")).toBeDefined()
     // Agents should still be visible
     expect(screen.getByText("Agents")).toBeDefined()
+  })
+
+  it("hides Audit Log when lacking audit:read", async () => {
+    const { useSession } = await import("next-auth/react")
+    vi.mocked(useSession).mockReturnValue({
+      data: {
+        user: {
+          id: "user-5",
+          name: "Tenant Admin",
+          email: "tenant4@test.com",
+          isPlatformAdmin: false,
+          tenantId: "t-1",
+        },
+      },
+      status: "authenticated",
+    } as ReturnType<typeof useSession>)
+
+    const { useCan } = await import("@/components/providers/permission-provider")
+    vi.mocked(useCan).mockImplementation((permission) => permission !== "audit:read")
+
+    const { Sidebar } = await import("./sidebar")
+    render(<Sidebar />)
+
+    expect(screen.queryByText("Audit Log")).toBeNull()
+    // Other items should still be visible
+    expect(screen.getByText("Agents")).toBeDefined()
+    expect(screen.getByText("Connectors")).toBeDefined()
   })
 })

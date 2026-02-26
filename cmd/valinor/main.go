@@ -144,6 +144,7 @@ func run() error {
 			"channels:links:read", "channels:links:write", "channels:messages:write",
 			"channels:outbox:read", "channels:outbox:write",
 			"channels:providers:read", "channels:providers:write",
+			"audit:read",
 		})
 		rbacEngine.RegisterRole(devTenant, "standard_user", []string{
 			"agents:read", "agents:message",

@@ -64,8 +64,22 @@ export interface AuditEvent {
   resource_id: string | null
   metadata: Record<string, unknown> | null
   source: string
-  correlation_id: string
   created_at: string
+}
+
+export interface AuditListResponse {
+  events: AuditEvent[]
+  count: number
+}
+
+export interface AuditFilters {
+  action?: string
+  resource_type?: string
+  user_id?: string
+  source?: string
+  after?: string
+  before?: string
+  limit?: string
 }
 
 // Connector types — matches Go internal/connectors/handler.go responses

@@ -14,6 +14,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     "channels:messages:write",
     "channels:outbox:read", "channels:outbox:write",
     "channels:providers:read", "channels:providers:write",
+    "audit:read",
   ],
   standard_user: [
     "agents:read", "agents:message",
