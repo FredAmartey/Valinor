@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { formatDate, formatTimeAgo, truncateId } from "@/lib/format"
 import { Wrench, Trash, Gear } from "@phosphor-icons/react"
 import Link from "next/link"
+import { useCan } from "@/components/providers/permission-provider"
 
 function parseJsonField(val: string | Record<string, unknown> | null): Record<string, unknown> {
   if (!val) return {}
@@ -29,6 +30,7 @@ export function AgentDetail({ id }: { id: string }) {
   const destroyMutation = useDestroyAgentMutation()
   const [editing, setEditing] = useState(false)
   const [confirmDestroy, setConfirmDestroy] = useState(false)
+  const canWrite = useCan("agents:write")
 
   if (isLoading) {
     return (
@@ -72,21 +74,33 @@ export function AgentDetail({ id }: { id: string }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setEditing(!editing)}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors active:scale-[0.98]"
+          <span
+            title={!canWrite ? "You don't have permission to do this." : undefined}
+            className={!canWrite ? "cursor-not-allowed" : undefined}
           >
-            <Gear size={14} />
-            Configure
-          </button>
-          {!confirmDestroy ? (
             <button
-              onClick={() => setConfirmDestroy(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors active:scale-[0.98]"
+              onClick={() => setEditing(!editing)}
+              disabled={!canWrite}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
             >
-              <Trash size={14} />
-              Destroy
+              <Gear size={14} />
+              Configure
             </button>
+          </span>
+          {!confirmDestroy ? (
+            <span
+              title={!canWrite ? "You don't have permission to do this." : undefined}
+              className={!canWrite ? "cursor-not-allowed" : undefined}
+            >
+              <button
+                onClick={() => setConfirmDestroy(true)}
+                disabled={!canWrite}
+                className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+              >
+                <Trash size={14} />
+                Destroy
+              </button>
+            </span>
           ) : (
             <div className="flex items-center gap-2">
               <button

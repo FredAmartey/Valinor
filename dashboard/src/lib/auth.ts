@@ -12,6 +12,7 @@ declare module "next-auth" {
       name: string
       tenantId: string | null
       isPlatformAdmin: boolean
+      roles: string[]
     }
   }
 
@@ -24,6 +25,7 @@ declare module "next-auth" {
     accessToken: string
     refreshToken: string
     expiresIn: number
+    roles: string[]
   }
 }
 
@@ -35,6 +37,19 @@ declare module "@auth/core/jwt" {
     userId: string
     tenantId: string | null
     isPlatformAdmin: boolean
+    roles: string[]
+  }
+}
+
+function decodeJwtRoles(token: string): string[] {
+  try {
+    const payload = token.split(".")[1]
+    const json = Buffer.from(payload, "base64url").toString("utf8")
+    const claims = JSON.parse(json) as { roles?: string[] }
+    return Array.isArray(claims.roles) ? claims.roles : []
+  } catch (err) {
+    console.error("decodeJwtRoles: failed to decode JWT roles", err)
+    return []
   }
 }
 
@@ -61,6 +76,7 @@ export const authConfig: NextAuthConfig = {
         }
 
         const data = await res.json()
+        const roles = decodeJwtRoles(data.access_token)
         return {
           id: data.user.id,
           email: data.user.email,
@@ -70,6 +86,7 @@ export const authConfig: NextAuthConfig = {
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
           expiresIn: data.expires_in ?? 86400,
+          roles,
         }
       },
     }),
@@ -90,6 +107,7 @@ export const authConfig: NextAuthConfig = {
         token.userId = user.id ?? ""
         token.tenantId = user.tenantId ?? null
         token.isPlatformAdmin = user.isPlatformAdmin ?? false
+        token.roles = user.roles ?? []
         return token
       }
 
@@ -107,6 +125,8 @@ export const authConfig: NextAuthConfig = {
         })
         if (!res.ok) throw new Error("refresh failed")
         const data = await res.json()
+        // Roles are not re-decoded from the refreshed token — they are set once at
+        // initial sign-in and persist for the lifetime of the session.
         token.accessToken = data.access_token
         token.refreshToken = data.refresh_token ?? token.refreshToken
         token.expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
@@ -121,6 +141,7 @@ export const authConfig: NextAuthConfig = {
       session.user.id = token.userId
       session.user.tenantId = token.tenantId
       session.user.isPlatformAdmin = token.isPlatformAdmin
+      session.user.roles = token.roles
       return session
     },
   },
