@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -22,16 +23,14 @@ func NewTenantResolver(pool *pgxpool.Pool, baseDomain string) *TenantResolver {
 	return &TenantResolver{pool: pool, baseDomain: baseDomain}
 }
 
-// ResolveFromRequest extracts the tenant slug from the request's Host header
-// and looks up the corresponding tenant ID.
-func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Request) (string, error) {
-	slug, err := tr.extractSlug(r.Host)
-	if err != nil {
-		return "", err
+// ResolveBySlug looks up the tenant ID for a given slug.
+func (tr *TenantResolver) ResolveBySlug(ctx context.Context, slug string) (string, error) {
+	if slug == "" {
+		return "", fmt.Errorf("%w: empty slug", ErrTenantNotFound)
 	}
 
 	var tenantID string
-	err = tr.pool.QueryRow(ctx,
+	err := tr.pool.QueryRow(ctx,
 		"SELECT id FROM tenants WHERE slug = $1",
 		slug,
 	).Scan(&tenantID)
@@ -43,6 +42,38 @@ func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Reques
 	}
 
 	return tenantID, nil
+}
+
+// ResolveFromRequest extracts the tenant slug from the request's Host header
+// and looks up the corresponding tenant ID.
+func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Request) (string, error) {
+	slug, err := tr.extractSlug(r.Host)
+	if err != nil {
+		return "", err
+	}
+	return tr.ResolveBySlug(ctx, slug)
+}
+
+// ResolveFromOrigin extracts the tenant slug from an Origin header URL
+// (e.g. "https://gondolin.valinor.example.com") and looks up the tenant ID.
+func (tr *TenantResolver) ResolveFromOrigin(ctx context.Context, origin string) (string, error) {
+	slug, err := tr.extractSlugFromOrigin(origin)
+	if err != nil {
+		return "", err
+	}
+	return tr.ResolveBySlug(ctx, slug)
+}
+
+// extractSlugFromOrigin parses the subdomain from an Origin URL string.
+func (tr *TenantResolver) extractSlugFromOrigin(origin string) (string, error) {
+	if origin == "" {
+		return "", fmt.Errorf("%w: empty origin", ErrTenantNotFound)
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("%w: invalid origin %q", ErrTenantNotFound, origin)
+	}
+	return tr.extractSlug(u.Host)
 }
 
 // extractSlug parses the subdomain from a host string.

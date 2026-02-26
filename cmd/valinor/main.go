@@ -104,6 +104,17 @@ func run() error {
 		// OIDC provider wired when configured
 	})
 
+	// Wire OIDC token exchange when configured.
+	if cfg.Auth.OIDC.Enabled && cfg.Auth.OIDC.JWKSUrl != "" {
+		authHandler.SetIDTokenValidator(auth.NewIDTokenValidator(auth.IDTokenValidatorConfig{
+			JWKSUrl:  cfg.Auth.OIDC.JWKSUrl,
+			Issuer:   cfg.Auth.OIDC.IssuerURL,
+			Audience: cfg.Auth.OIDC.ClientID,
+			CacheTTL: 1 * time.Hour,
+		}))
+		slog.Info("OIDC token exchange enabled", "issuer", cfg.Auth.OIDC.IssuerURL)
+	}
+
 	// Audit
 	var auditLogger audit.Logger = audit.NopLogger{}
 	if pool != nil {

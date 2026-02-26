@@ -30,10 +30,12 @@ type AuthConfig struct {
 }
 
 type OIDCConfig struct {
+	Enabled      bool   `koanf:"enabled"`
 	IssuerURL    string `koanf:"issuerurl"`
 	ClientID     string `koanf:"clientid"`
 	ClientSecret string `koanf:"clientsecret"`
 	RedirectURL  string `koanf:"redirecturl"`
+	JWKSUrl      string `koanf:"jwksurl"`
 }
 
 type JWTConfig struct {
