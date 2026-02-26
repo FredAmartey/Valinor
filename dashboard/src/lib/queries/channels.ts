@@ -11,11 +11,13 @@ import type {
   UpsertProviderCredentialRequest,
 } from "@/lib/types"
 
+export type ProviderName = "slack" | "whatsapp" | "telegram"
+
 export const channelKeys = {
   all: ["channels"] as const,
   links: () => [...channelKeys.all, "links"] as const,
   outbox: (status?: string) => [...channelKeys.all, "outbox", status ?? "all"] as const,
-  provider: (name: string) => [...channelKeys.all, "provider", name] as const,
+  provider: (name: ProviderName) => [...channelKeys.all, "provider", name] as const,
 }
 
 // --- Fetch functions ---
@@ -37,7 +39,7 @@ export async function fetchOutbox(
 
 export async function fetchProviderCredential(
   accessToken: string,
-  provider: string,
+  provider: ProviderName,
 ): Promise<ProviderCredentialResponse> {
   return apiClient<ProviderCredentialResponse>(
     `/api/v1/channels/providers/${provider}/credentials`,
@@ -72,7 +74,7 @@ export async function requeueOutboxJob(accessToken: string, id: string): Promise
 
 export async function upsertProviderCredential(
   accessToken: string,
-  provider: string,
+  provider: ProviderName,
   data: UpsertProviderCredentialRequest,
 ): Promise<ProviderCredentialResponse> {
   return apiClient<ProviderCredentialResponse>(
@@ -84,7 +86,7 @@ export async function upsertProviderCredential(
 
 export async function deleteProviderCredential(
   accessToken: string,
-  provider: string,
+  provider: ProviderName,
 ): Promise<void> {
   return apiClient<void>(
     `/api/v1/channels/providers/${provider}/credentials`,
@@ -116,7 +118,7 @@ export function useOutboxQuery(status?: string) {
   })
 }
 
-export function useProviderCredentialQuery(provider: string) {
+export function useProviderCredentialQuery(provider: ProviderName) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: channelKeys.provider(provider),
@@ -162,7 +164,7 @@ export function useRequeueOutboxMutation() {
   })
 }
 
-export function useUpsertProviderCredentialMutation(provider: string) {
+export function useUpsertProviderCredentialMutation(provider: ProviderName) {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
@@ -174,7 +176,7 @@ export function useUpsertProviderCredentialMutation(provider: string) {
   })
 }
 
-export function useDeleteProviderCredentialMutation(provider: string) {
+export function useDeleteProviderCredentialMutation(provider: ProviderName) {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({

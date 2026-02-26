@@ -35,6 +35,21 @@ describe("channel query functions", () => {
     )
   })
 
+  it("fetchOutbox omits status param when 'all'", async () => {
+    const { apiClient } = await import("@/lib/api-client")
+    const mockedClient = vi.mocked(apiClient)
+    mockedClient.mockResolvedValueOnce([])
+
+    const { fetchOutbox } = await import("./channels")
+    await fetchOutbox("test-token", "all")
+
+    expect(mockedClient).toHaveBeenCalledWith(
+      "/api/v1/channels/outbox",
+      "test-token",
+      { params: { limit: "100" } },
+    )
+  })
+
   it("fetchProviderCredential calls correct endpoint", async () => {
     const { apiClient } = await import("@/lib/api-client")
     const mockedClient = vi.mocked(apiClient)

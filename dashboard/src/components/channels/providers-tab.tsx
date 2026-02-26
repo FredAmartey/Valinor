@@ -76,17 +76,17 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ]
 
-export function ProvidersTab() {
+export function ProvidersTab({ canWrite }: { canWrite: boolean }) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
       {PROVIDERS.map((provider) => (
-        <ProviderCard key={provider.name} config={provider} />
+        <ProviderCard key={provider.name} config={provider} canWrite={canWrite} />
       ))}
     </div>
   )
 }
 
-function ProviderCard({ config }: { config: ProviderConfig }) {
+function ProviderCard({ config, canWrite }: { config: ProviderConfig; canWrite: boolean }) {
   const { data, isLoading, isError, error } = useProviderCredentialQuery(config.name)
   const [editing, setEditing] = useState(false)
 
@@ -134,12 +134,14 @@ function ProviderCard({ config }: { config: ProviderConfig }) {
           <span className="text-sm font-medium text-zinc-900">{config.label}</span>
         </div>
         <p className="mt-2 text-sm text-zinc-500">Not configured</p>
-        <button
-          onClick={() => setEditing(true)}
-          className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors active:scale-[0.98]"
-        >
-          Set up
-        </button>
+        {canWrite && (
+          <button
+            onClick={() => setEditing(true)}
+            className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors active:scale-[0.98]"
+          >
+            Set up
+          </button>
+        )}
       </div>
     )
   }
@@ -148,6 +150,7 @@ function ProviderCard({ config }: { config: ProviderConfig }) {
     <ConfiguredProviderCard
       config={config}
       credential={data!}
+      canWrite={canWrite}
       onEdit={() => setEditing(true)}
     />
   )
@@ -156,10 +159,12 @@ function ProviderCard({ config }: { config: ProviderConfig }) {
 function ConfiguredProviderCard({
   config,
   credential,
+  canWrite,
   onEdit,
 }: {
   config: ProviderConfig
   credential: ProviderCredentialResponse
+  canWrite: boolean
   onEdit: () => void
 }) {
   const deleteMutation = useDeleteProviderCredentialMutation(config.name)
@@ -176,23 +181,25 @@ function ConfiguredProviderCard({
           {config.icon}
           <span className="text-sm font-medium text-zinc-900">{config.label}</span>
         </div>
-        <div className="flex gap-1">
-          <button
-            onClick={onEdit}
-            className="rounded p-1.5 text-zinc-400 hover:text-zinc-700 transition-colors"
-            title="Edit credentials"
-          >
-            <PencilSimple size={16} />
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-            className="rounded p-1.5 text-zinc-400 hover:text-rose-600 transition-colors disabled:opacity-50"
-            title="Delete credentials"
-          >
-            <Trash size={16} />
-          </button>
-        </div>
+        {canWrite && (
+          <div className="flex gap-1">
+            <button
+              onClick={onEdit}
+              className="rounded p-1.5 text-zinc-400 hover:text-zinc-700 transition-colors"
+              title="Edit credentials"
+            >
+              <PencilSimple size={16} />
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="rounded p-1.5 text-zinc-400 hover:text-rose-600 transition-colors disabled:opacity-50"
+              title="Delete credentials"
+            >
+              <Trash size={16} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Secret status indicators */}

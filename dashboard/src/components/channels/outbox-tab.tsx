@@ -4,12 +4,8 @@ import { useState } from "react"
 import { useOutboxQuery, useRequeueOutboxMutation } from "@/lib/queries/channels"
 import { formatTimeAgo, truncateId } from "@/lib/format"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  ArrowCounterClockwise,
-  SlackLogo,
-  WhatsappLogo,
-  TelegramLogo,
-} from "@phosphor-icons/react"
+import { ArrowCounterClockwise } from "@phosphor-icons/react"
+import { PlatformIcon } from "./platform-icon"
 import type { ChannelOutbox } from "@/lib/types"
 
 const STATUS_TABS = ["all", "pending", "sending", "sent", "dead"] as const
@@ -22,20 +18,7 @@ const STATUS_PILL: Record<string, string> = {
   dead: "bg-rose-50 text-rose-700",
 }
 
-function ProviderBadge({ provider }: { provider: string }) {
-  switch (provider) {
-    case "slack":
-      return <SlackLogo size={14} weight="fill" className="text-[#4A154B]" />
-    case "whatsapp":
-      return <WhatsappLogo size={14} weight="fill" className="text-[#25D366]" />
-    case "telegram":
-      return <TelegramLogo size={14} weight="fill" className="text-[#2AABEE]" />
-    default:
-      return null
-  }
-}
-
-export function OutboxTab() {
+export function OutboxTab({ canWrite }: { canWrite: boolean }) {
   const [statusTab, setStatusTab] = useState<string>("all")
   const [providerFilter, setProviderFilter] = useState("all")
   const { data: jobs, isLoading, isError, refetch } = useOutboxQuery(statusTab)
@@ -92,10 +75,12 @@ export function OutboxTab() {
     <div className="space-y-4">
       {/* Status tabs + provider filter */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-lg border border-zinc-200 p-1">
+        <div role="tablist" aria-label="Outbox status" className="flex gap-1 rounded-lg border border-zinc-200 p-1">
           {STATUS_TABS.map((s) => (
             <button
               key={s}
+              role="tab"
+              aria-selected={statusTab === s}
               onClick={() => setStatusTab(s)}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 statusTab === s
@@ -108,6 +93,7 @@ export function OutboxTab() {
           ))}
         </div>
         <select
+          aria-label="Filter by provider"
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
           value={providerFilter}
           onChange={(e) => setProviderFilter(e.target.value)}
@@ -148,7 +134,7 @@ export function OutboxTab() {
               className="grid grid-cols-[80px_1fr_90px_70px_100px_1fr_60px] gap-4 px-4 py-3 text-sm hover:bg-zinc-50 transition-colors"
             >
               <span role="cell" className="flex items-center gap-1.5 self-center">
-                <ProviderBadge provider={job.provider} />
+                <PlatformIcon platform={job.provider} size={14} />
                 <span className="capitalize text-zinc-700">{job.provider}</span>
               </span>
               <span role="cell" className="self-center truncate font-mono text-xs text-zinc-600" title={job.recipient_id}>
@@ -159,7 +145,7 @@ export function OutboxTab() {
                   {job.status}
                 </span>
               </span>
-              <span role="cell" className="self-center font-mono text-xs text-zinc-500">
+              <span role="cell" className="self-center font-mono text-xs text-zinc-500" aria-label={`${job.attempt_count} of ${job.max_attempts} attempts`}>
                 {job.attempt_count}/{job.max_attempts}
               </span>
               <span role="cell" className="self-center text-xs text-zinc-500">
@@ -175,7 +161,7 @@ export function OutboxTab() {
                 {job.last_error ?? "\u2014"}
               </span>
               <span role="cell" className="flex justify-end self-center">
-                {job.status === "dead" && (
+                {canWrite && job.status === "dead" && (
                   <button
                     onClick={() => handleRequeue(job)}
                     disabled={requeueMutation.isPending}

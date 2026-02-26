@@ -2,17 +2,12 @@
 
 import { useState } from "react"
 import { useChannelLinksQuery, useCreateChannelLinkMutation, useDeleteChannelLinkMutation } from "@/lib/queries/channels"
-import { formatDate, truncateId } from "@/lib/format"
+import { formatTimeAgo, formatDate, truncateId } from "@/lib/format"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  SlackLogo,
-  WhatsappLogo,
-  TelegramLogo,
-  Plus,
-  Trash,
-  ArrowCounterClockwise,
-} from "@phosphor-icons/react"
+import { Plus, Trash, ArrowCounterClockwise } from "@phosphor-icons/react"
+import { PlatformIcon } from "./platform-icon"
 import type { ChannelLink, CreateChannelLinkRequest } from "@/lib/types"
+import { ApiError } from "@/lib/api-error"
 
 const PLATFORMS = ["all", "slack", "whatsapp", "telegram"] as const
 const STATES = ["all", "verified", "pending_verification", "revoked"] as const
@@ -23,20 +18,7 @@ const STATE_PILL: Record<string, string> = {
   revoked: "bg-zinc-100 text-zinc-500",
 }
 
-function PlatformIcon({ platform, size = 16 }: { platform: string; size?: number }) {
-  switch (platform) {
-    case "slack":
-      return <SlackLogo size={size} weight="fill" className="text-[#4A154B]" />
-    case "whatsapp":
-      return <WhatsappLogo size={size} weight="fill" className="text-[#25D366]" />
-    case "telegram":
-      return <TelegramLogo size={size} weight="fill" className="text-[#2AABEE]" />
-    default:
-      return null
-  }
-}
-
-export function LinksTab() {
+export function LinksTab({ canWrite }: { canWrite: boolean }) {
   const [platformFilter, setPlatformFilter] = useState("all")
   const [stateFilter, setStateFilter] = useState("all")
   const [showCreate, setShowCreate] = useState(false)
@@ -96,6 +78,7 @@ export function LinksTab() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <select
+          aria-label="Filter by platform"
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
           value={platformFilter}
           onChange={(e) => setPlatformFilter(e.target.value)}
@@ -107,31 +90,32 @@ export function LinksTab() {
           ))}
         </select>
         <select
+          aria-label="Filter by state"
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
         >
           {STATES.map((s) => (
             <option key={s} value={s}>
-              {s === "all" ? "All states" : s.replace("_", " ")}
+              {s === "all" ? "All states" : s.replaceAll("_", " ")}
             </option>
           ))}
         </select>
         <div className="flex-1" />
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 transition-colors active:scale-[0.98]"
-        >
-          <Plus size={14} weight="bold" />
-          Create link
-        </button>
+        {canWrite && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 transition-colors active:scale-[0.98]"
+          >
+            <Plus size={14} weight="bold" />
+            Create link
+          </button>
+        )}
       </div>
 
       {/* Create dialog */}
       {showCreate && (
-        <CreateLinkForm
-          onClose={() => setShowCreate(false)}
-        />
+        <CreateLinkForm onClose={() => setShowCreate(false)} />
       )}
 
       {/* Table */}
@@ -170,14 +154,14 @@ export function LinksTab() {
               </span>
               <span role="cell" className="self-center">
                 <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATE_PILL[link.status] ?? "bg-zinc-100 text-zinc-500"}`}>
-                  {link.status.replace("_", " ")}
+                  {link.status.replaceAll("_", " ")}
                 </span>
               </span>
               <span role="cell" className="text-zinc-500 self-center" title={formatDate(link.created_at, "long")}>
-                {formatDate(link.created_at, "short")}
+                {formatTimeAgo(link.created_at)}
               </span>
               <span role="cell" className="flex justify-end self-center">
-                {link.status !== "revoked" && (
+                {canWrite && link.status !== "revoked" && (
                   <button
                     onClick={() => handleRevoke(link)}
                     disabled={deleteMutation.isPending}
@@ -210,6 +194,10 @@ function CreateLinkForm({ onClose }: { onClose: () => void }) {
       onSuccess: () => onClose(),
     })
   }
+
+  const errorMessage = mutation.isError
+    ? (mutation.error instanceof ApiError ? mutation.error.body?.error : null) ?? "Failed to create link. Check your input and try again."
+    : null
 
   return (
     <form
@@ -271,10 +259,8 @@ function CreateLinkForm({ onClose }: { onClose: () => void }) {
           {mutation.isPending ? "Creating..." : "Create"}
         </button>
       </div>
-      {mutation.isError && (
-        <p className="text-sm text-rose-600">
-          Failed to create link. Check your input and try again.
-        </p>
+      {errorMessage && (
+        <p className="text-sm text-rose-600">{errorMessage}</p>
       )}
     </form>
   )

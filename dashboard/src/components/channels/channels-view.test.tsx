@@ -94,13 +94,13 @@ describe("ChannelsView", () => {
 
   it("renders links tab by default", async () => {
     const { ChannelsView } = await import("./channels-view")
-    render(<ChannelsView />)
+    render(<ChannelsView permissions={{ canWriteLinks: true, canReadProviders: true, canWriteProviders: true, canReadOutbox: true, canWriteOutbox: true }} />)
     expect(screen.getByText("No channel links")).toBeDefined()
   })
 
   it("switches to providers tab", async () => {
     const { ChannelsView } = await import("./channels-view")
-    render(<ChannelsView />)
+    render(<ChannelsView permissions={{ canWriteLinks: true, canReadProviders: true, canWriteProviders: true, canReadOutbox: true, canWriteOutbox: true }} />)
     fireEvent.click(screen.getByText("Providers"))
     expect(screen.getByText("Slack")).toBeDefined()
     expect(screen.getByText("WhatsApp")).toBeDefined()
@@ -109,7 +109,7 @@ describe("ChannelsView", () => {
 
   it("switches to outbox tab", async () => {
     const { ChannelsView } = await import("./channels-view")
-    render(<ChannelsView />)
+    render(<ChannelsView permissions={{ canWriteLinks: true, canReadProviders: true, canWriteProviders: true, canReadOutbox: true, canWriteOutbox: true }} />)
     fireEvent.click(screen.getByText("Outbox"))
     expect(screen.getByText("No outbox jobs")).toBeDefined()
   })
@@ -121,7 +121,7 @@ describe("LinksTab", () => {
   it("shows loading skeleton", async () => {
     mockUseChannelLinksQuery.mockReturnValue({ data: undefined, isLoading: true, isError: false })
     const { LinksTab } = await import("./links-tab")
-    const { container } = render(<LinksTab />)
+    const { container } = render(<LinksTab canWrite={true} />)
     expect(container.querySelectorAll("[class*='skeleton'], [class*='animate']").length).toBeGreaterThan(0)
   })
 
@@ -129,7 +129,7 @@ describe("LinksTab", () => {
     const refetch = vi.fn()
     mockUseChannelLinksQuery.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch })
     const { LinksTab } = await import("./links-tab")
-    render(<LinksTab />)
+    render(<LinksTab canWrite={true} />)
     expect(screen.getByText("Failed to load channel links.")).toBeDefined()
     fireEvent.click(screen.getByText("Retry"))
     expect(refetch).toHaveBeenCalled()
@@ -138,7 +138,7 @@ describe("LinksTab", () => {
   it("shows empty state", async () => {
     mockUseChannelLinksQuery.mockReturnValue({ data: [], isLoading: false, isError: false })
     const { LinksTab } = await import("./links-tab")
-    render(<LinksTab />)
+    render(<LinksTab canWrite={true} />)
     expect(screen.getByText("No channel links")).toBeDefined()
   })
 
@@ -152,7 +152,7 @@ describe("LinksTab", () => {
       isError: false,
     })
     const { LinksTab } = await import("./links-tab")
-    render(<LinksTab />)
+    render(<LinksTab canWrite={true} />)
     // "verified" appears in both filter dropdown and pill — find the pill by its class
     const verifiedPill = screen.getAllByText("verified").find((el) => el.className.includes("rounded-full"))!
     expect(verifiedPill).toBeDefined()
@@ -174,7 +174,7 @@ describe("ProvidersTab", () => {
       error: new MockApiError(404),
     })
     const { ProvidersTab } = await import("./providers-tab")
-    render(<ProvidersTab />)
+    render(<ProvidersTab canWrite={true} />)
     expect(screen.getByText("Slack")).toBeDefined()
     expect(screen.getByText("WhatsApp")).toBeDefined()
     expect(screen.getByText("Telegram")).toBeDefined()
@@ -202,7 +202,7 @@ describe("ProvidersTab", () => {
       return { data: null, isLoading: false, isError: true, error: new MockApiError(404) }
     })
     const { ProvidersTab } = await import("./providers-tab")
-    render(<ProvidersTab />)
+    render(<ProvidersTab canWrite={true} />)
     expect(screen.getByText("Bot Token")).toBeDefined()
     expect(screen.getByText("Signing Secret")).toBeDefined()
   })
@@ -214,14 +214,14 @@ describe("OutboxTab", () => {
   it("shows loading skeleton", async () => {
     mockUseOutboxQuery.mockReturnValue({ data: undefined, isLoading: true, isError: false })
     const { OutboxTab } = await import("./outbox-tab")
-    const { container } = render(<OutboxTab />)
+    const { container } = render(<OutboxTab canWrite={true} />)
     expect(container.querySelectorAll("[class*='skeleton'], [class*='animate']").length).toBeGreaterThan(0)
   })
 
   it("shows empty state", async () => {
     mockUseOutboxQuery.mockReturnValue({ data: [], isLoading: false, isError: false })
     const { OutboxTab } = await import("./outbox-tab")
-    render(<OutboxTab />)
+    render(<OutboxTab canWrite={true} />)
     expect(screen.getByText("No outbox jobs")).toBeDefined()
   })
 
@@ -235,7 +235,7 @@ describe("OutboxTab", () => {
       isError: false,
     })
     const { OutboxTab } = await import("./outbox-tab")
-    render(<OutboxTab />)
+    render(<OutboxTab canWrite={true} />)
     expect(screen.getByText("sent")).toBeDefined()
     expect(screen.getByText("dead")).toBeDefined()
     const requeueButtons = screen.getAllByTitle("Requeue job")
