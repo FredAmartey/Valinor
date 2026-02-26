@@ -104,11 +104,24 @@ func run() error {
 		// OIDC provider wired when configured
 	})
 
+	// Audit
+	var auditLogger audit.Logger = audit.NopLogger{}
+	if pool != nil {
+		auditStore := audit.NewStore()
+		auditLogger = audit.NewAsyncLogger(pool, auditStore, audit.LoggerConfig{
+			BufferSize:    cfg.Audit.BufferSize,
+			BatchSize:     cfg.Audit.BatchSize,
+			FlushInterval: time.Duration(cfg.Audit.FlushInterval) * time.Millisecond,
+		})
+		defer auditLogger.Close()
+		slog.Info("audit logger started")
+	}
+
 	// Tenant provisioning
 	var tenantHandler *tenant.Handler
 	if pool != nil {
 		tenantStore := tenant.NewStore(pool)
-		tenantHandler = tenant.NewHandler(tenantStore)
+		tenantHandler = tenant.NewHandler(tenantStore, auditLogger)
 	}
 
 	// RBAC
@@ -149,9 +162,9 @@ func run() error {
 		deptStore := tenant.NewDepartmentStore()
 		userMgmtStore := tenant.NewUserStore()
 		roleStore := tenant.NewRoleStore()
-		deptHandler = tenant.NewDepartmentHandler(pool, deptStore)
-		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
-		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore, rbacEngine)
+		deptHandler = tenant.NewDepartmentHandler(pool, deptStore, auditLogger)
+		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore, auditLogger)
+		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore, rbacEngine, auditLogger)
 	}
 	connectorHandler := buildConnectorHandler(pool)
 	channelHandler, err := buildChannelHandler(pool, cfg.Channels)
@@ -162,19 +175,6 @@ func run() error {
 	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
 	if err != nil {
 		return fmt.Errorf("building channel outbox worker: %w", err)
-	}
-
-	// Audit
-	var auditLogger audit.Logger = audit.NopLogger{}
-	if pool != nil {
-		auditStore := audit.NewStore()
-		auditLogger = audit.NewAsyncLogger(pool, auditStore, audit.LoggerConfig{
-			BufferSize:    cfg.Audit.BufferSize,
-			BatchSize:     cfg.Audit.BatchSize,
-			FlushInterval: time.Duration(cfg.Audit.FlushInterval) * time.Millisecond,
-		})
-		defer auditLogger.Close()
-		slog.Info("audit logger started")
 	}
 
 	// Audit query handler
@@ -235,7 +235,7 @@ func run() error {
 			timeout: time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 		}
 
-		agentHandler = orchestrator.NewHandler(orchManager, pusher)
+		agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger)
 
 		userContextStore = proxy.NewDBUserContextStore(pool)
 		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{
