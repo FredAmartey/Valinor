@@ -56,7 +56,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 export function getActionLabel(action: string): ActionLabel {
-  return ACTION_LABELS[action] ?? { label: action, category: "channel" }
+  return ACTION_LABELS[action] ?? { label: action, category: "unknown" }
 }
 
 export function getCategoryColor(category: string): string {
