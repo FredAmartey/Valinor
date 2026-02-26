@@ -21,14 +21,25 @@ type AgentConfig struct {
 	AllowRemoteOpenClaw bool
 }
 
+// AgentConnector represents an MCP connector available for tool execution.
+type AgentConnector struct {
+	Name     string          `json:"name"`
+	Type     string          `json:"type"`
+	Endpoint string          `json:"endpoint"`
+	Auth     json.RawMessage `json:"auth"`
+	Tools    []string        `json:"tools"`
+}
+
 // Agent is the in-guest valinor-agent that bridges the control plane to OpenClaw.
 type Agent struct {
 	cfg           AgentConfig
 	httpClient    *http.Client
+	mcp           *mcpClient
 	toolAllowlist []string
 	toolPolicies  map[string]ToolPolicy
 	canaryTokens  []string
-	mu            sync.RWMutex // protects toolAllowlist, toolPolicies, canaryTokens, config
+	connectors    []AgentConnector
+	mu            sync.RWMutex // protects toolAllowlist, toolPolicies, canaryTokens, connectors, config
 	config        map[string]any
 }
 
@@ -37,6 +48,7 @@ func NewAgent(cfg AgentConfig) *Agent {
 	return &Agent{
 		cfg:        cfg,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		mcp:        newMCPClient(&http.Client{Timeout: 30 * time.Second}),
 	}
 }
 
@@ -134,6 +146,7 @@ func (a *Agent) handleConfigUpdate(ctx context.Context, conn *proxy.AgentConn, f
 		ToolAllowlist []string              `json:"tool_allowlist"`
 		ToolPolicies  map[string]ToolPolicy `json:"tool_policies"`
 		CanaryTokens  []string              `json:"canary_tokens"`
+		Connectors    []AgentConnector      `json:"connectors"`
 	}
 	if err := json.Unmarshal(frame.Payload, &payload); err != nil {
 		slog.Error("invalid config payload", "error", err)
@@ -151,9 +164,10 @@ func (a *Agent) handleConfigUpdate(ctx context.Context, conn *proxy.AgentConn, f
 	a.toolAllowlist = payload.ToolAllowlist
 	a.toolPolicies = payload.ToolPolicies
 	a.canaryTokens = payload.CanaryTokens
+	a.connectors = payload.Connectors
 	a.mu.Unlock()
 
-	slog.Info("config updated", "tools", len(payload.ToolAllowlist))
+	slog.Info("config updated", "tools", len(payload.ToolAllowlist), "connectors", len(payload.Connectors))
 
 	ack := proxy.Frame{
 		Type:    proxy.TypeConfigAck,
