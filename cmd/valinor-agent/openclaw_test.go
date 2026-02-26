@@ -408,6 +408,246 @@ func TestOpenClawProxy_AllowsRemoteEndpointWithOverride(t *testing.T) {
 	assert.Equal(t, proxy.TypeChunk, reply.Type)
 }
 
+func TestForwardToOpenClaw_ToolCallLoop(t *testing.T) {
+	// Track OpenClaw call count to return tool_calls on first call, text on second
+	var openClawCalls int
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openClawCalls++
+		w.Header().Set("Content-Type", "application/json")
+
+		if openClawCalls == 1 {
+			// First call: return a tool call
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{
+							"content": "",
+							"tool_calls": []map[string]any{
+								{
+									"id":   "call-1",
+									"type": "function",
+									"function": map[string]string{
+										"name":      "search_players",
+										"arguments": `{"query":"top scorer"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+
+		// Second call: verify tool result was included, return final text
+		var reqBody struct {
+			Messages []json.RawMessage `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+
+		// Should have: user msg, assistant msg with tool_calls, tool result
+		assert.GreaterOrEqual(t, len(reqBody.Messages), 3,
+			"expected at least 3 messages: user + assistant + tool result")
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": "Found 3 players"}},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	// Mock MCP server
+	mockMCP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonRPCRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		resp := jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: &toolCallResult{
+				Content: []contentBlock{{Type: "text", Text: `[{"name":"Haaland","goals":36}]`}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockMCP.Close()
+
+	agent := &Agent{
+		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		mcp:           newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		toolAllowlist: []string{"search_players"},
+		connectors: []AgentConnector{
+			{
+				Name:     "football-api",
+				Endpoint: mockMCP.URL,
+				Auth:     json.RawMessage(`{}`),
+				Tools:    []string{"search_players"},
+			},
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	// Skip initial heartbeat
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-tool-loop",
+		Payload: json.RawMessage(`{"role":"user","content":"who is the top scorer?"}`),
+	}
+	err = cp.Send(ctx, msg)
+	require.NoError(t, err)
+
+	// Collect frames — expect tool_executed audit frame then done chunk
+	var gotToolExecuted bool
+	var finalContent string
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+
+		switch reply.Type {
+		case proxy.TypeToolExecuted:
+			gotToolExecuted = true
+			var meta map[string]any
+			_ = json.Unmarshal(reply.Payload, &meta)
+			assert.Equal(t, "search_players", meta["tool_name"])
+			assert.Equal(t, "football-api", meta["connector_name"])
+			continue
+
+		case proxy.TypeChunk:
+			var chunk struct {
+				Content string `json:"content"`
+				Done    bool   `json:"done"`
+			}
+			require.NoError(t, json.Unmarshal(reply.Payload, &chunk))
+			if chunk.Done {
+				finalContent = chunk.Content
+				goto done
+			}
+			continue
+
+		default:
+			t.Fatalf("unexpected frame type: %s (payload: %s)", reply.Type, string(reply.Payload))
+		}
+	}
+done:
+	assert.True(t, gotToolExecuted, "expected tool_executed audit frame")
+	assert.Equal(t, "Found 3 players", finalContent)
+	assert.Equal(t, 2, openClawCalls, "expected exactly 2 OpenClaw calls (tool call + final)")
+}
+
+func TestForwardToOpenClaw_ToolCallLoop_ConnectorNotFound(t *testing.T) {
+	// OpenClaw returns a tool call for a tool that has no connector
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Always return a tool call — agent should feed error back and get text on next call
+		var reqBody struct {
+			Messages []json.RawMessage `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+
+		// If we have tool result messages, return final text
+		if len(reqBody.Messages) > 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{"message": map[string]string{"content": "No results available"}},
+				},
+			})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call-orphan",
+								"type": "function",
+								"function": map[string]string{
+									"name":      "unknown_tool",
+									"arguments": `{}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	agent := &Agent{
+		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		mcp:           newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		toolAllowlist: []string{"unknown_tool"},
+		connectors:    []AgentConnector{}, // empty — no connector for unknown_tool
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx) // skip heartbeat
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-no-connector",
+		Payload: json.RawMessage(`{"role":"user","content":"do something"}`),
+	}
+	err = cp.Send(ctx, msg)
+	require.NoError(t, err)
+
+	// Should get tool_failed then final chunk
+	var gotToolFailed bool
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+
+		switch reply.Type {
+		case proxy.TypeToolFailed:
+			gotToolFailed = true
+			continue
+		case proxy.TypeChunk:
+			var chunk struct {
+				Done bool `json:"done"`
+			}
+			_ = json.Unmarshal(reply.Payload, &chunk)
+			if chunk.Done {
+				goto done2
+			}
+			continue
+		default:
+			t.Fatalf("unexpected frame type: %s", reply.Type)
+		}
+	}
+done2:
+	assert.True(t, gotToolFailed, "expected tool_failed audit frame")
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
