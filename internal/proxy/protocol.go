@@ -16,11 +16,11 @@ const (
 
 // Frame type constants — Agent → Control Plane
 const (
-	TypeHeartbeat   = "heartbeat"
-	TypeChunk       = "chunk"
-	TypeConfigAck   = "config_ack"
-	TypeToolBlocked = "tool_blocked"
-	TypeSessionHalt = "session_halt"
+	TypeHeartbeat    = "heartbeat"
+	TypeChunk        = "chunk"
+	TypeConfigAck    = "config_ack"
+	TypeToolBlocked  = "tool_blocked"
+	TypeSessionHalt  = "session_halt"
 	TypePong         = "pong"
 	TypeError        = "error"
 	TypeToolExecuted = "tool_executed"
