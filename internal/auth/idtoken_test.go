@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"net/http"
@@ -56,7 +57,7 @@ func TestIDTokenValidator_ValidToken(t *testing.T) {
 		"iat":   time.Now().Unix(),
 	})
 
-	info, err := v.Validate(tok)
+	info, err := v.Validate(context.Background(), tok)
 	require.NoError(t, err)
 	assert.Equal(t, "https://clerk.example.com", info.Issuer)
 	assert.Equal(t, "user_abc", info.Subject)
@@ -74,7 +75,7 @@ func TestIDTokenValidator_ExpiredToken(t *testing.T) {
 		"exp": time.Now().Add(-1 * time.Hour).Unix(),
 	})
 
-	_, err := v.Validate(tok)
+	_, err := v.Validate(context.Background(), tok)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "expired")
 }
@@ -89,7 +90,7 @@ func TestIDTokenValidator_WrongIssuer(t *testing.T) {
 		"exp": time.Now().Add(1 * time.Hour).Unix(),
 	})
 
-	_, err := v.Validate(tok)
+	_, err := v.Validate(context.Background(), tok)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "issuer")
 }
@@ -104,7 +105,7 @@ func TestIDTokenValidator_WrongAudience(t *testing.T) {
 		"exp": time.Now().Add(1 * time.Hour).Unix(),
 	})
 
-	_, err := v.Validate(tok)
+	_, err := v.Validate(context.Background(), tok)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "audience")
 }

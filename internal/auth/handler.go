@@ -190,7 +190,8 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
 
 	var req struct {
-		IDToken string `json:"id_token"`
+		IDToken    string `json:"id_token"`
+		TenantSlug string `json:"tenant_slug,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IDToken == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
@@ -199,7 +200,7 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userInfo, err := h.idTokenValidator.Validate(req.IDToken)
+	userInfo, err := h.idTokenValidator.Validate(r.Context(), req.IDToken)
 	if err != nil {
 		slog.Warn("id_token validation failed", "error", err)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{
@@ -215,16 +216,26 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve tenant from Origin header subdomain.
+	// Resolve tenant: prefer explicit slug from body, fall back to Origin header.
 	var tenantID string
 	if h.tenantResolver != nil {
-		origin := r.Header.Get("Origin")
-		if origin != "" {
-			tid, resolveErr := h.tenantResolver.ResolveFromOrigin(r.Context(), origin)
+		if req.TenantSlug != "" {
+			tid, resolveErr := h.tenantResolver.ResolveBySlug(r.Context(), req.TenantSlug)
 			if resolveErr != nil {
-				slog.Warn("tenant resolution failed", "origin", origin, "error", resolveErr)
+				slog.Warn("tenant slug resolution failed", "slug", req.TenantSlug, "error", resolveErr)
 			} else {
 				tenantID = tid
+			}
+		}
+		if tenantID == "" {
+			origin := r.Header.Get("Origin")
+			if origin != "" {
+				tid, resolveErr := h.tenantResolver.ResolveFromOrigin(r.Context(), origin)
+				if resolveErr != nil {
+					slog.Warn("tenant resolution from origin failed", "origin", origin, "error", resolveErr)
+				} else {
+					tenantID = tid
+				}
 			}
 		}
 	}
@@ -268,13 +279,32 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := h.tokenSvc.CreateRefreshToken(fullIdentity)
-	if err != nil {
-		slog.Error("exchange: refresh token creation failed", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "token creation failed",
-		})
-		return
+	// Issue refresh token — with family tracking if store is available
+	var refreshToken string
+	if h.refreshStore != nil {
+		familyID, famErr := h.refreshStore.CreateFamilyAndReturnID(r.Context(), fullIdentity.TenantID, fullIdentity.UserID)
+		if famErr != nil {
+			slog.Error("exchange: failed to create token family", "error", famErr, "user_id", fullIdentity.UserID)
+			// fall through to stateless
+		} else {
+			fullIdentity.FamilyID = familyID
+			fullIdentity.Generation = 1
+			refreshToken, err = h.tokenSvc.CreateRefreshToken(fullIdentity)
+			if err == nil {
+				tokenHash := HashToken(refreshToken)
+				_ = h.refreshStore.SetInitialTokenHash(r.Context(), familyID, fullIdentity.TenantID, tokenHash)
+			}
+		}
+	}
+	if refreshToken == "" {
+		refreshToken, err = h.tokenSvc.CreateRefreshToken(fullIdentity)
+		if err != nil {
+			slog.Error("exchange: refresh token creation failed", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "token creation failed",
+			})
+			return
+		}
 	}
 
 	slog.Info("token exchange successful",
@@ -405,7 +435,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		tid, resolveErr := h.tenantResolver.ResolveFromRequest(r.Context(), r)
 		if resolveErr != nil {
 			// No tenant resolved — check if this is a platform admin on the base domain
-			if h.tryPlatformAdminCallback(w, userInfo) {
+			if h.tryPlatformAdminCallback(r.Context(), w, userInfo) {
 				return
 			}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot resolve tenant"})
@@ -414,7 +444,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		tenantID = tid
 	} else {
 		// No TenantResolver configured — check for platform admin via OIDC
-		if h.tryPlatformAdminCallback(w, userInfo) {
+		if h.tryPlatformAdminCallback(r.Context(), w, userInfo) {
 			return
 		}
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "tenant resolution not configured"})
@@ -496,12 +526,12 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 // tryPlatformAdminCallback checks if the OIDC user is a platform admin and,
 // if so, issues tokens without tenant scope. Returns true if it handled the response.
-func (h *Handler) tryPlatformAdminCallback(w http.ResponseWriter, userInfo *OIDCUserInfo) bool {
+func (h *Handler) tryPlatformAdminCallback(ctx context.Context, w http.ResponseWriter, userInfo *OIDCUserInfo) bool {
 	if h.store == nil {
 		return false
 	}
 
-	adminIdentity, err := h.store.LookupPlatformAdminByOIDC(context.Background(), userInfo.Issuer, userInfo.Subject)
+	adminIdentity, err := h.store.LookupPlatformAdminByOIDC(ctx, userInfo.Issuer, userInfo.Subject)
 	if err != nil || adminIdentity == nil {
 		return false
 	}

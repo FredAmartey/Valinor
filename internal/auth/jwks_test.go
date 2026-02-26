@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,34 +42,35 @@ func TestJWKSClient_GetKey(t *testing.T) {
 	require.NoError(t, err)
 
 	kid := "test-key-1"
-	calls := 0
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
 	}))
 	defer srv.Close()
 
 	client := NewJWKSClient(srv.URL, 1*time.Hour)
+	ctx := context.Background()
 
 	t.Run("fetches key on first call", func(t *testing.T) {
-		key, err := client.GetKey(kid)
+		key, err := client.GetKey(ctx, kid)
 		require.NoError(t, err)
 		assert.NotNil(t, key)
-		assert.Equal(t, 1, calls)
+		assert.Equal(t, int32(1), calls.Load())
 	})
 
 	t.Run("returns cached key on second call", func(t *testing.T) {
-		key, err := client.GetKey(kid)
+		key, err := client.GetKey(ctx, kid)
 		require.NoError(t, err)
 		assert.NotNil(t, key)
-		assert.Equal(t, 1, calls, "should not re-fetch")
+		assert.Equal(t, int32(1), calls.Load(), "should not re-fetch")
 	})
 
 	t.Run("unknown kid triggers refresh", func(t *testing.T) {
-		_, err := client.GetKey("unknown-kid")
+		_, err := client.GetKey(ctx, "unknown-kid")
 		assert.Error(t, err)
-		assert.Equal(t, 2, calls, "should have re-fetched once")
+		assert.Equal(t, int32(2), calls.Load(), "should have re-fetched once")
 	})
 }
 
@@ -76,9 +79,9 @@ func TestJWKSClient_CacheExpiry(t *testing.T) {
 	require.NoError(t, err)
 
 	kid := "test-key-1"
-	calls := 0
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
 	}))
@@ -86,14 +89,15 @@ func TestJWKSClient_CacheExpiry(t *testing.T) {
 
 	// Very short TTL to test expiry
 	client := NewJWKSClient(srv.URL, 1*time.Millisecond)
+	ctx := context.Background()
 
-	_, err = client.GetKey(kid)
+	_, err = client.GetKey(ctx, kid)
 	require.NoError(t, err)
-	assert.Equal(t, 1, calls)
+	assert.Equal(t, int32(1), calls.Load())
 
 	time.Sleep(5 * time.Millisecond)
 
-	_, err = client.GetKey(kid)
+	_, err = client.GetKey(ctx, kid)
 	require.NoError(t, err)
-	assert.Equal(t, 2, calls, "should re-fetch after TTL expiry")
+	assert.Equal(t, int32(2), calls.Load(), "should re-fetch after TTL expiry")
 }

@@ -23,16 +23,14 @@ func NewTenantResolver(pool *pgxpool.Pool, baseDomain string) *TenantResolver {
 	return &TenantResolver{pool: pool, baseDomain: baseDomain}
 }
 
-// ResolveFromRequest extracts the tenant slug from the request's Host header
-// and looks up the corresponding tenant ID.
-func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Request) (string, error) {
-	slug, err := tr.extractSlug(r.Host)
-	if err != nil {
-		return "", err
+// ResolveBySlug looks up the tenant ID for a given slug.
+func (tr *TenantResolver) ResolveBySlug(ctx context.Context, slug string) (string, error) {
+	if slug == "" {
+		return "", fmt.Errorf("%w: empty slug", ErrTenantNotFound)
 	}
 
 	var tenantID string
-	err = tr.pool.QueryRow(ctx,
+	err := tr.pool.QueryRow(ctx,
 		"SELECT id FROM tenants WHERE slug = $1",
 		slug,
 	).Scan(&tenantID)
@@ -46,6 +44,16 @@ func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Reques
 	return tenantID, nil
 }
 
+// ResolveFromRequest extracts the tenant slug from the request's Host header
+// and looks up the corresponding tenant ID.
+func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Request) (string, error) {
+	slug, err := tr.extractSlug(r.Host)
+	if err != nil {
+		return "", err
+	}
+	return tr.ResolveBySlug(ctx, slug)
+}
+
 // ResolveFromOrigin extracts the tenant slug from an Origin header URL
 // (e.g. "https://gondolin.valinor.example.com") and looks up the tenant ID.
 func (tr *TenantResolver) ResolveFromOrigin(ctx context.Context, origin string) (string, error) {
@@ -53,20 +61,7 @@ func (tr *TenantResolver) ResolveFromOrigin(ctx context.Context, origin string) 
 	if err != nil {
 		return "", err
 	}
-
-	var tenantID string
-	err = tr.pool.QueryRow(ctx,
-		"SELECT id FROM tenants WHERE slug = $1",
-		slug,
-	).Scan(&tenantID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("%w: slug %q", ErrTenantNotFound, slug)
-		}
-		return "", fmt.Errorf("querying tenant: %w", err)
-	}
-
-	return tenantID, nil
+	return tr.ResolveBySlug(ctx, slug)
 }
 
 // extractSlugFromOrigin parses the subdomain from an Origin URL string.

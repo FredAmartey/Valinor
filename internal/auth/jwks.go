@@ -34,7 +34,7 @@ func NewJWKSClient(url string, ttl time.Duration) *JWKSClient {
 // GetKey returns the RSA public key for the given key ID.
 // It fetches from the JWKS endpoint on first call, caches for TTL,
 // and re-fetches if the kid is unknown (handles key rotation).
-func (c *JWKSClient) GetKey(kid string) (*rsa.PublicKey, error) {
+func (c *JWKSClient) GetKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	c.mu.RLock()
 	if key, ok := c.keys[kid]; ok && time.Since(c.fetchedAt) < c.ttl {
 		c.mu.RUnlock()
@@ -42,7 +42,7 @@ func (c *JWKSClient) GetKey(kid string) (*rsa.PublicKey, error) {
 	}
 	c.mu.RUnlock()
 
-	if err := c.refresh(); err != nil {
+	if err := c.refresh(ctx); err != nil {
 		return nil, fmt.Errorf("fetching JWKS: %w", err)
 	}
 
@@ -55,8 +55,8 @@ func (c *JWKSClient) GetKey(kid string) (*rsa.PublicKey, error) {
 	return key, nil
 }
 
-func (c *JWKSClient) refresh() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (c *JWKSClient) refresh(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)

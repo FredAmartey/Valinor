@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -37,7 +38,7 @@ func NewIDTokenValidator(cfg IDTokenValidatorConfig) *IDTokenValidator {
 
 // Validate parses and validates an external id_token.
 // Returns the user info extracted from the verified claims.
-func (v *IDTokenValidator) Validate(tokenString string) (*OIDCUserInfo, error) {
+func (v *IDTokenValidator) Validate(ctx context.Context, tokenString string) (*OIDCUserInfo, error) {
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
@@ -46,7 +47,7 @@ func (v *IDTokenValidator) Validate(tokenString string) (*OIDCUserInfo, error) {
 		if !ok {
 			return nil, fmt.Errorf("missing kid in token header")
 		}
-		return v.jwks.GetKey(kid)
+		return v.jwks.GetKey(ctx, kid)
 	},
 		jwt.WithIssuer(v.issuer),
 		jwt.WithAudience(v.audience),

@@ -56,7 +56,9 @@ function decodeJwtRoles(token: string): string[] {
 const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
 
 // Exchange an external OIDC id_token for Valinor platform tokens.
-async function exchangeIDToken(idToken: string): Promise<{
+// tenantSlug is passed explicitly because server-side fetches lack a browser
+// Origin header, so the backend cannot resolve the tenant from the request alone.
+async function exchangeIDToken(idToken: string, tenantSlug?: string): Promise<{
   access_token: string
   refresh_token: string
   expires_in: number
@@ -65,7 +67,10 @@ async function exchangeIDToken(idToken: string): Promise<{
   const res = await fetch(`${VALINOR_API_URL}/auth/exchange`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id_token: idToken }),
+    body: JSON.stringify({
+      id_token: idToken,
+      ...(tenantSlug && { tenant_slug: tenantSlug }),
+    }),
   })
   if (!res.ok) {
     console.error(`Token exchange failed: ${res.status} ${res.statusText}`)
@@ -151,7 +156,8 @@ export const authConfig: NextAuthConfig = {
 
       // Initial sign-in from OIDC (Clerk) — exchange id_token for Valinor tokens
       if (account?.provider === "clerk" && account.id_token) {
-        const data = await exchangeIDToken(account.id_token)
+        const tenantSlug = process.env.NEXT_PUBLIC_TENANT_SLUG
+        const data = await exchangeIDToken(account.id_token, tenantSlug)
         if (!data) {
           throw new Error("Valinor token exchange failed")
         }

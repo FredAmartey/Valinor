@@ -57,3 +57,13 @@ Patterns and corrections captured during development. Review at session start.
 **Mistake:** On PR #60, I started fixing my own review findings immediately, pushed them, then Claude's external review came back with additional findings, requiring a second round of fixes. Two push cycles instead of one.
 
 **Rule:** After triggering external review + CI (step 6), do your own review in parallel but **hold all fixes** until both CI and external review results are in (step 7). Triage everything together (step 8), then fix once. One round of fixes, one push, one re-verification.
+
+---
+
+## 2026-02-26: Server-side fetches lack browser headers — pass context explicitly
+
+**Bug:** The dashboard's `exchangeIDToken` function calls `POST /auth/exchange` server-side in a NextAuth callback. The backend resolved the tenant from the `Origin` header, but server-side fetches (Node.js) don't send a browser `Origin`. Tenant resolution always failed for OIDC sign-ins.
+
+**Fix:** Accept an explicit `tenant_slug` field in the exchange request body. The backend tries `tenant_slug` first, then falls back to `Origin` header. The dashboard passes `NEXT_PUBLIC_TENANT_SLUG` env var.
+
+**Rule:** Never rely on browser-only headers (`Origin`, `Referer`, cookies) for server-to-server calls. When a frontend calls a backend on behalf of a user from a server-side context (SSR, middleware, callbacks), pass context like tenant identity explicitly in the request body or as a query parameter.
