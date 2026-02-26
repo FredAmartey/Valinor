@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -55,7 +56,14 @@ func (c *JWKSClient) GetKey(kid string) (*rsa.PublicKey, error) {
 }
 
 func (c *JWKSClient) refresh() error {
-	resp, err := http.Get(c.url)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request for %s: %w", c.url, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", c.url, err)
 	}

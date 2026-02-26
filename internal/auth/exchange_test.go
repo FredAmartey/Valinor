@@ -23,7 +23,7 @@ func setupExchangeTest(t *testing.T) (*Handler, *rsa.PrivateKey, string) {
 	kid := "test-kid"
 	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(buildJWKS(t, kid, &priv.PublicKey))
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
 	}))
 	t.Cleanup(jwksSrv.Close)
 

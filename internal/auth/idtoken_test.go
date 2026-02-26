@@ -21,7 +21,7 @@ func setupIDTokenValidator(t *testing.T) (*IDTokenValidator, *rsa.PrivateKey, st
 	kid := "test-kid"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(buildJWKS(t, kid, &priv.PublicKey))
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
 	}))
 	t.Cleanup(srv.Close)
 

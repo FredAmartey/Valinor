@@ -44,7 +44,7 @@ func TestJWKSClient_GetKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(buildJWKS(t, kid, &priv.PublicKey))
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
 	}))
 	defer srv.Close()
 
@@ -80,7 +80,7 @@ func TestJWKSClient_CacheExpiry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(buildJWKS(t, kid, &priv.PublicKey))
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
 	}))
 	defer srv.Close()
 
