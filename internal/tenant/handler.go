@@ -4,16 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/audit"
 )
 
 // Handler handles tenant HTTP endpoints.
 type Handler struct {
-	store *Store
+	store    *Store
+	auditLog audit.Logger
 }
 
 // NewHandler creates a new tenant handler.
-func NewHandler(store *Store) *Handler {
-	return &Handler{store: store}
+func NewHandler(store *Store, auditLog audit.Logger) *Handler {
+	return &Handler{store: store, auditLog: auditLog}
 }
 
 // RegisterRoutes registers tenant routes on the given mux.
@@ -54,6 +58,19 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "tenant creation failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(t.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionTenantCreated,
+			ResourceType: "tenant",
+			ResourceID:   &tenantUUID,
+			Metadata:     map[string]any{"name": t.Name, "slug": t.Slug},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusCreated, t)

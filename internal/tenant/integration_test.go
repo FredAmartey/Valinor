@@ -28,15 +28,15 @@ func TestEndToEnd_TenantOrgSetup(t *testing.T) {
 	userStore := tenant.NewUserStore()
 	roleStore := tenant.NewRoleStore()
 
-	tenantHandler := tenant.NewHandler(tenantStore)
-	deptHandler := tenant.NewDepartmentHandler(rlsPool, deptStore)
-	userHandler := tenant.NewUserHandler(rlsPool, userStore, deptStore)
-	roleHandler := tenant.NewRoleHandler(rlsPool, roleStore, userStore, deptStore)
+	tenantHandler := tenant.NewHandler(tenantStore, nil)
+	deptHandler := tenant.NewDepartmentHandler(rlsPool, deptStore, nil)
+	userHandler := tenant.NewUserHandler(rlsPool, userStore, deptStore, nil)
+	roleHandler := tenant.NewRoleHandler(rlsPool, roleStore, userStore, deptStore, nil, nil)
 
 	// Wire up server with RBAC
 	tokenSvc := auth.NewTokenService(testSigningKey, "test", 24, 168) //nolint:gosec // test-only key
 	rbacEngine := rbac.NewEvaluator(nil)
-	rbacEngine.RegisterRole("org_admin", []string{"*"})
+	rbacEngine.RegisterRole("will-be-set-per-request", "org_admin", []string{"*"})
 
 	srv := server.New(":0", server.Dependencies{
 		Pool:              ownerPool,
@@ -69,6 +69,9 @@ func TestEndToEnd_TenantOrgSetup(t *testing.T) {
 	var tenantResp tenant.Tenant
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tenantResp))
 	tenantID := tenantResp.ID
+
+	// Register org_admin for the newly created tenant so RBAC passes
+	rbacEngine.RegisterRole(tenantID, "org_admin", []string{"*"})
 
 	// For remaining requests, we need a token with the real tenant ID
 	devIdentity := &auth.Identity{

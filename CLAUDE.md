@@ -42,6 +42,11 @@ When I report a bug, do NOT start by trying to fix it. Instead:
 - Write rules for yourself that prevent the same mistake recurring
 - Review `docs/lessons.md` at session start
 
+## Dashboard / Frontend
+
+- Before writing any dashboard or frontend code, invoke these skills: `vercel-react-best-practices`, `design-taste-frontend`, `next-best-practices`
+- Follow the delivery process in `docs/runbooks/agent-delivery-workflow.md`
+
 ## Core Principles
 
 - **Simplicity first** — make every change as simple as possible, impact minimal code

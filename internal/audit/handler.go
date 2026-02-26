@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,7 +25,7 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 }
 
 // HandleListEvents returns audit events for the current tenant.
-// GET /api/v1/audit/events?limit=50&after=<timestamp>
+// GET /api/v1/audit/events?limit=50&action=...&resource_type=...&user_id=...&source=...&after=...&before=...
 func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 	tenantIDStr := middleware.GetTenantID(r.Context())
 	tenantID, err := uuid.Parse(tenantIDStr)
@@ -33,18 +34,51 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 50
+	params := ListEventsParams{
+		TenantID: tenantID,
+		Limit:    50,
+	}
+
+	// Parse limit
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, parseErr := strconv.Atoi(raw); parseErr == nil && n > 0 && n <= 200 {
-			limit = n
+			params.Limit = n
 		}
 	}
 
-	var after time.Time
-	if raw := r.URL.Query().Get("after"); raw != "" {
-		if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
-			after = t
+	// Parse optional filters
+	if v := r.URL.Query().Get("action"); v != "" {
+		params.Action = &v
+	}
+	if v := r.URL.Query().Get("resource_type"); v != "" {
+		params.ResourceType = &v
+	}
+	if v := r.URL.Query().Get("source"); v != "" {
+		params.Source = &v
+	}
+	if raw := r.URL.Query().Get("user_id"); raw != "" {
+		uid, parseErr := uuid.Parse(raw)
+		if parseErr != nil {
+			writeAuditJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user_id"})
+			return
 		}
+		params.UserID = &uid
+	}
+	if raw := r.URL.Query().Get("after"); raw != "" {
+		t, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			writeAuditJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after timestamp"})
+			return
+		}
+		params.After = &t
+	}
+	if raw := r.URL.Query().Get("before"); raw != "" {
+		t, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			writeAuditJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid before timestamp"})
+			return
+		}
+		params.Before = &t
 	}
 
 	if h.pool == nil {
@@ -54,13 +88,8 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 
 	var events []map[string]any
 	queryErr := database.WithTenantConnection(r.Context(), h.pool, tenantIDStr, func(ctx context.Context, q database.Querier) error {
-		sql := `SELECT id, tenant_id, user_id, action, resource_type, resource_id, metadata, source, created_at
-			FROM audit_events
-			WHERE tenant_id = $1 AND created_at > $2
-			ORDER BY created_at DESC
-			LIMIT $3`
-
-		rows, qErr := q.Query(ctx, sql, tenantID, after, limit)
+		sql, args := buildListQuery(params)
+		rows, qErr := q.Query(ctx, sql, args...)
 		if qErr != nil {
 			return qErr
 		}
@@ -77,6 +106,7 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 				createdAt  time.Time
 			)
 			if scanErr := rows.Scan(&id, &tid, &uid, &action, &resType, &resID, &metadata, &source, &createdAt); scanErr != nil {
+				slog.Warn("skipping audit event: scan error", "error", scanErr)
 				continue
 			}
 			events = append(events, map[string]any{

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
@@ -60,4 +62,70 @@ func buildBatchInsert(events []Event) (string, []any, error) {
 
 	sql := fmt.Sprintf("INSERT INTO audit_events %s VALUES %s", cols, strings.Join(placeholders, ", "))
 	return sql, args, nil
+}
+
+// ListEventsParams defines filters for querying audit events.
+type ListEventsParams struct {
+	TenantID     uuid.UUID
+	Action       *string
+	ResourceType *string
+	UserID       *uuid.UUID
+	Source       *string
+	After        *time.Time
+	Before       *time.Time
+	Limit        int
+}
+
+// buildListQuery constructs a parameterized SELECT for audit events.
+func buildListQuery(p ListEventsParams) (string, []any) {
+	var conditions []string
+	var args []any
+	argN := 1
+
+	conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argN))
+	args = append(args, p.TenantID)
+	argN++
+
+	if p.Action != nil {
+		conditions = append(conditions, fmt.Sprintf("action = $%d", argN))
+		args = append(args, *p.Action)
+		argN++
+	}
+	if p.ResourceType != nil {
+		conditions = append(conditions, fmt.Sprintf("resource_type = $%d", argN))
+		args = append(args, *p.ResourceType)
+		argN++
+	}
+	if p.UserID != nil {
+		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argN))
+		args = append(args, *p.UserID)
+		argN++
+	}
+	if p.Source != nil {
+		conditions = append(conditions, fmt.Sprintf("source = $%d", argN))
+		args = append(args, *p.Source)
+		argN++
+	}
+	if p.After != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at > $%d", argN))
+		args = append(args, *p.After)
+		argN++
+	}
+	if p.Before != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at < $%d", argN))
+		args = append(args, *p.Before)
+		argN++
+	}
+
+	sql := fmt.Sprintf(
+		`SELECT id, tenant_id, user_id, action, resource_type, resource_id, metadata, source, created_at
+		FROM audit_events
+		WHERE %s
+		ORDER BY created_at DESC
+		LIMIT $%d`,
+		strings.Join(conditions, " AND "), argN,
+	)
+	args = append(args, p.Limit)
+
+	return sql, args
 }

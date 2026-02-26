@@ -6,20 +6,23 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
 // DepartmentHandler handles department HTTP endpoints.
 type DepartmentHandler struct {
-	pool  *pgxpool.Pool
-	store *DepartmentStore
+	pool     *pgxpool.Pool
+	store    *DepartmentStore
+	auditLog audit.Logger
 }
 
 // NewDepartmentHandler creates a new department handler.
-func NewDepartmentHandler(pool *pgxpool.Pool, store *DepartmentStore) *DepartmentHandler {
-	return &DepartmentHandler{pool: pool, store: store}
+func NewDepartmentHandler(pool *pgxpool.Pool, store *DepartmentStore, auditLog audit.Logger) *DepartmentHandler {
+	return &DepartmentHandler{pool: pool, store: store, auditLog: auditLog}
 }
 
 // HandleCreate creates a new department within the authenticated tenant.
@@ -58,6 +61,20 @@ func (h *DepartmentHandler) HandleCreate(w http.ResponseWriter, r *http.Request)
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "department creation failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		deptUUID, _ := uuid.Parse(dept.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionDepartmentCreated,
+			ResourceType: "department",
+			ResourceID:   &deptUUID,
+			Metadata:     map[string]any{"name": dept.Name},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusCreated, dept)

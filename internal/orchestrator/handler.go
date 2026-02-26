@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -22,11 +23,12 @@ type ConfigPusher interface {
 type Handler struct {
 	manager      *Manager
 	configPusher ConfigPusher // optional, nil = no vsock push
+	auditLog     audit.Logger
 }
 
 // NewHandler creates a new orchestrator Handler.
-func NewHandler(manager *Manager, pusher ConfigPusher) *Handler {
-	return &Handler{manager: manager, configPusher: pusher}
+func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger) *Handler {
+	return &Handler{manager: manager, configPusher: pusher, auditLog: auditLog}
 }
 
 // HandleProvision creates a new agent for the caller's tenant.
@@ -97,6 +99,20 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		slog.Error("provision failed", "tenant", tenantID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "provisioning failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		instID, _ := uuid.Parse(inst.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionAgentProvisioned,
+			ResourceType: "agent",
+			ResourceID:   &instID,
+			Metadata:     map[string]any{"status": inst.Status},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusCreated, inst)
@@ -201,6 +217,19 @@ func (h *Handler) HandleDestroyAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(middleware.GetTenantID(r.Context()))
+		instID, _ := uuid.Parse(id)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionAgentDestroyed,
+			ResourceType: "agent",
+			ResourceID:   &instID,
+			Source:       "api",
+		})
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -277,6 +306,20 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist, nil, nil); pushErr != nil {
 			slog.Warn("config push to agent failed", "id", id, "error", pushErr)
 		}
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(middleware.GetTenantID(r.Context()))
+		instID, _ := uuid.Parse(id)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionAgentUpdated,
+			ResourceType: "agent",
+			ResourceID:   &instID,
+			Metadata:     map[string]any{"tool_allowlist_count": len(req.ToolAllowlist)},
+			Source:       "api",
+		})
 	}
 
 	// Return updated instance

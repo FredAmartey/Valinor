@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/auth"
 )
 
 // Event represents a single auditable action in the system.
@@ -32,6 +33,33 @@ const (
 )
 
 const (
+	// CRUD actions
+	ActionUserCreated     = "user.created"
+	ActionUserUpdated     = "user.updated"
+	ActionUserSuspended   = "user.suspended"
+	ActionUserReactivated = "user.reactivated"
+
+	ActionAgentProvisioned = "agent.provisioned"
+	ActionAgentUpdated     = "agent.updated"
+	ActionAgentDestroyed   = "agent.destroyed"
+
+	ActionTenantCreated   = "tenant.created"
+	ActionTenantUpdated   = "tenant.updated"
+	ActionTenantSuspended = "tenant.suspended"
+
+	ActionDepartmentCreated = "department.created"
+	ActionDepartmentUpdated = "department.updated"
+	ActionDepartmentDeleted = "department.deleted"
+
+	ActionRoleCreated = "role.created"
+	ActionRoleUpdated = "role.updated"
+	ActionRoleDeleted = "role.deleted"
+
+	ActionUserRoleAssigned = "user_role.assigned"
+	ActionUserRoleRevoked  = "user_role.revoked"
+)
+
+const (
 	MetadataCorrelationID   = "correlation_id"
 	MetadataDecision        = "decision"
 	MetadataIdempotencyKey  = "idempotency_key"
@@ -50,3 +78,18 @@ type NopLogger struct{}
 
 func (NopLogger) Log(context.Context, Event) {}
 func (NopLogger) Close() error               { return nil }
+
+// ActorIDFromContext extracts the authenticated user's UUID from the
+// request context, returning nil if no identity is present or the
+// user ID is not a valid UUID.
+func ActorIDFromContext(ctx context.Context) *uuid.UUID {
+	identity := auth.GetIdentity(ctx)
+	if identity == nil {
+		return nil
+	}
+	uid, err := uuid.Parse(identity.UserID)
+	if err != nil {
+		return nil
+	}
+	return &uid
+}

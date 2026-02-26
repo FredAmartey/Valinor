@@ -104,58 +104,6 @@ func run() error {
 		// OIDC provider wired when configured
 	})
 
-	// Tenant provisioning
-	var tenantHandler *tenant.Handler
-	if pool != nil {
-		tenantStore := tenant.NewStore(pool)
-		tenantHandler = tenant.NewHandler(tenantStore)
-	}
-
-	// Department, user, and role management (tenant-scoped)
-	var deptHandler *tenant.DepartmentHandler
-	var userHandler *tenant.UserHandler
-	var roleHandler *tenant.RoleHandler
-	if pool != nil {
-		deptStore := tenant.NewDepartmentStore()
-		userMgmtStore := tenant.NewUserStore()
-		roleStore := tenant.NewRoleStore()
-		deptHandler = tenant.NewDepartmentHandler(pool, deptStore)
-		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore)
-		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore)
-	}
-	connectorHandler := buildConnectorHandler(pool)
-	channelHandler, err := buildChannelHandler(pool, cfg.Channels)
-	if err != nil {
-		return fmt.Errorf("building channel handler: %w", err)
-	}
-	channelRetentionWorker := buildChannelRetentionWorker(pool, cfg.Channels)
-	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
-	if err != nil {
-		return fmt.Errorf("building channel outbox worker: %w", err)
-	}
-
-	// RBAC
-	rbacEngine := rbac.NewEvaluator(nil)
-
-	// Register default system roles
-	rbacEngine.RegisterRole("org_admin", []string{"*"})
-	rbacEngine.RegisterRole("dept_head", []string{
-		"agents:read", "agents:write", "agents:message",
-		"users:read", "users:write",
-		"departments:read",
-		"connectors:read", "connectors:write",
-		"channels:links:read", "channels:links:write", "channels:messages:write",
-		"channels:outbox:read", "channels:outbox:write",
-		"channels:providers:read", "channels:providers:write",
-	})
-	rbacEngine.RegisterRole("standard_user", []string{
-		"agents:read", "agents:message",
-		"channels:messages:write",
-	})
-	rbacEngine.RegisterRole("read_only", []string{
-		"agents:read",
-	})
-
 	// Audit
 	var auditLogger audit.Logger = audit.NopLogger{}
 	if pool != nil {
@@ -167,6 +115,66 @@ func run() error {
 		})
 		defer auditLogger.Close()
 		slog.Info("audit logger started")
+	}
+
+	// Tenant provisioning
+	var tenantHandler *tenant.Handler
+	if pool != nil {
+		tenantStore := tenant.NewStore(pool)
+		tenantHandler = tenant.NewHandler(tenantStore, auditLogger)
+	}
+
+	// RBAC
+	roleLoader := tenant.NewRoleLoaderAdapter(tenant.NewRoleStore(), pool)
+	rbacEngine := rbac.NewEvaluator(nil, rbac.WithRoleLoader(roleLoader))
+	if pool != nil {
+		if reloadErr := rbacEngine.ReloadRoles(ctx); reloadErr != nil {
+			return fmt.Errorf("loading roles from database: %w", reloadErr)
+		}
+		slog.Info("RBAC roles loaded from database")
+	} else {
+		// Fallback for no-DB mode: register defaults in-memory with dev tenant
+		const devTenant = "00000000-0000-0000-0000-000000000000"
+		rbacEngine.RegisterRole(devTenant, "org_admin", []string{"*"})
+		rbacEngine.RegisterRole(devTenant, "dept_head", []string{
+			"agents:read", "agents:write", "agents:message",
+			"users:read", "users:write",
+			"departments:read",
+			"connectors:read", "connectors:write",
+			"channels:links:read", "channels:links:write", "channels:messages:write",
+			"channels:outbox:read", "channels:outbox:write",
+			"channels:providers:read", "channels:providers:write",
+		})
+		rbacEngine.RegisterRole(devTenant, "standard_user", []string{
+			"agents:read", "agents:message",
+			"channels:messages:write",
+		})
+		rbacEngine.RegisterRole(devTenant, "read_only", []string{
+			"agents:read",
+		})
+	}
+
+	// Department, user, and role management (tenant-scoped)
+	var deptHandler *tenant.DepartmentHandler
+	var userHandler *tenant.UserHandler
+	var roleHandler *tenant.RoleHandler
+	if pool != nil {
+		deptStore := tenant.NewDepartmentStore()
+		userMgmtStore := tenant.NewUserStore()
+		roleStore := tenant.NewRoleStore()
+		deptHandler = tenant.NewDepartmentHandler(pool, deptStore, auditLogger)
+		userHandler = tenant.NewUserHandler(pool, userMgmtStore, deptStore, auditLogger)
+		roleHandler = tenant.NewRoleHandler(pool, roleStore, userMgmtStore, deptStore, rbacEngine, auditLogger)
+	}
+	connectorHandler := buildConnectorHandler(pool)
+	channelHandler, err := buildChannelHandler(pool, cfg.Channels)
+	if err != nil {
+		return fmt.Errorf("building channel handler: %w", err)
+	}
+	channelRetentionWorker := buildChannelRetentionWorker(pool, cfg.Channels)
+	channelOutboxWorker, err := buildChannelOutboxWorker(pool, cfg.Channels)
+	if err != nil {
+		return fmt.Errorf("building channel outbox worker: %w", err)
 	}
 
 	// Audit query handler
@@ -227,7 +235,7 @@ func run() error {
 			timeout: time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 		}
 
-		agentHandler = orchestrator.NewHandler(orchManager, pusher)
+		agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger)
 
 		userContextStore = proxy.NewDBUserContextStore(pool)
 		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{

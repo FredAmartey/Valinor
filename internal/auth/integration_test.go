@@ -70,7 +70,7 @@ func TestIntegration_AuthRBACFlow(t *testing.T) {
 
 	// RBAC setup
 	rbacEngine := rbac.NewEvaluator(nil)
-	rbacEngine.RegisterRole("standard_user", []string{"agents:read", "agents:message"})
+	rbacEngine.RegisterRole(tenantID, "standard_user", []string{"agents:read", "agents:message"})
 
 	// Test 1: Auth middleware accepts valid token
 	t.Run("valid token passes auth", func(t *testing.T) {
