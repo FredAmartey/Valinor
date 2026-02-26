@@ -21,8 +21,10 @@ const (
 	TypeConfigAck   = "config_ack"
 	TypeToolBlocked = "tool_blocked"
 	TypeSessionHalt = "session_halt"
-	TypePong        = "pong"
-	TypeError       = "error"
+	TypePong         = "pong"
+	TypeError        = "error"
+	TypeToolExecuted = "tool_executed"
+	TypeToolFailed   = "tool_failed"
 )
 
 // Frame is the envelope for all vsock wire messages.
