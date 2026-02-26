@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/auth"
 )
 
 // Event represents a single auditable action in the system.
@@ -77,3 +78,18 @@ type NopLogger struct{}
 
 func (NopLogger) Log(context.Context, Event) {}
 func (NopLogger) Close() error               { return nil }
+
+// ActorIDFromContext extracts the authenticated user's UUID from the
+// request context, returning nil if no identity is present or the
+// user ID is not a valid UUID.
+func ActorIDFromContext(ctx context.Context) *uuid.UUID {
+	identity := auth.GetIdentity(ctx)
+	if identity == nil {
+		return nil
+	}
+	uid, err := uuid.Parse(identity.UserID)
+	if err != nil {
+		return nil
+	}
+	return &uid
+}

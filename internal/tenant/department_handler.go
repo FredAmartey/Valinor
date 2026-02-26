@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -66,17 +65,10 @@ func (h *DepartmentHandler) HandleCreate(w http.ResponseWriter, r *http.Request)
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		deptUUID, _ := uuid.Parse(dept.ID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionDepartmentCreated,
 			ResourceType: "department",
 			ResourceID:   &deptUUID,

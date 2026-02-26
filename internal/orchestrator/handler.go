@@ -103,16 +103,10 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		instID, _ := uuid.Parse(inst.ID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionAgentProvisioned,
 			ResourceType: "agent",
 			ResourceID:   &instID,
@@ -225,16 +219,10 @@ func (h *Handler) HandleDestroyAgent(w http.ResponseWriter, r *http.Request) {
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(middleware.GetTenantID(r.Context()))
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		instID, _ := uuid.Parse(id)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionAgentDestroyed,
 			ResourceType: "agent",
 			ResourceID:   &instID,
@@ -322,16 +310,10 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(middleware.GetTenantID(r.Context()))
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		instID, _ := uuid.Parse(id)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionAgentUpdated,
 			ResourceType: "agent",
 			ResourceID:   &instID,

@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -64,14 +65,20 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 		params.UserID = &uid
 	}
 	if raw := r.URL.Query().Get("after"); raw != "" {
-		if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
-			params.After = &t
+		t, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			writeAuditJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after timestamp"})
+			return
 		}
+		params.After = &t
 	}
 	if raw := r.URL.Query().Get("before"); raw != "" {
-		if t, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
-			params.Before = &t
+		t, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			writeAuditJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid before timestamp"})
+			return
 		}
+		params.Before = &t
 	}
 
 	if h.pool == nil {
@@ -99,6 +106,7 @@ func (h *Handler) HandleListEvents(w http.ResponseWriter, r *http.Request) {
 				createdAt  time.Time
 			)
 			if scanErr := rows.Scan(&id, &tid, &uid, &action, &resType, &resID, &metadata, &source, &createdAt); scanErr != nil {
+				slog.Warn("skipping audit event: scan error", "error", scanErr)
 				continue
 			}
 			events = append(events, map[string]any{

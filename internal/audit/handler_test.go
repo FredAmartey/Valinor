@@ -115,6 +115,30 @@ func TestHandleListEvents_InvalidUserIDFilter(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestHandleListEvents_InvalidAfterFilter(t *testing.T) {
+	h := NewHandler(nil)
+	req := httptest.NewRequest("GET", "/api/v1/audit/events?after=not-a-date", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+	w := httptest.NewRecorder()
+
+	h.HandleListEvents(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid after timestamp")
+}
+
+func TestHandleListEvents_InvalidBeforeFilter(t *testing.T) {
+	h := NewHandler(nil)
+	req := httptest.NewRequest("GET", "/api/v1/audit/events?before=not-a-date", nil)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+	w := httptest.NewRecorder()
+
+	h.HandleListEvents(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid before timestamp")
+}
+
 func TestHandleListEvents_ComposedFilters(t *testing.T) {
 	h := NewHandler(nil)
 	req := httptest.NewRequest("GET",

@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -84,17 +83,10 @@ func (h *RoleHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		roleUUID, _ := uuid.Parse(role.ID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionRoleCreated,
 			ResourceType: "role",
 			ResourceID:   &roleUUID,
@@ -201,17 +193,10 @@ func (h *RoleHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		roleUUID, _ := uuid.Parse(role.ID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionRoleUpdated,
 			ResourceType: "role",
 			ResourceID:   &roleUUID,
@@ -267,16 +252,9 @@ func (h *RoleHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
 		roleUUID, _ := uuid.Parse(roleID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionRoleDeleted,
 			ResourceType: "role",
 			ResourceID:   &roleUUID,
@@ -364,16 +342,9 @@ func (h *RoleHandler) HandleAssignRole(w http.ResponseWriter, r *http.Request) {
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
 		userUUID, _ := uuid.Parse(userID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionUserRoleAssigned,
 			ResourceType: "user",
 			ResourceID:   &userUUID,
@@ -426,16 +397,9 @@ func (h *RoleHandler) HandleRemoveRole(w http.ResponseWriter, r *http.Request) {
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
 		userUUID, _ := uuid.Parse(userID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionUserRoleRevoked,
 			ResourceType: "user",
 			ResourceID:   &userUUID,

@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -67,17 +66,10 @@ func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		userUUID, _ := uuid.Parse(user.ID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionUserCreated,
 			ResourceType: "user",
 			ResourceID:   &userUUID,
@@ -201,17 +193,10 @@ func (h *UserHandler) HandleAddToDepartment(w http.ResponseWriter, r *http.Reque
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		userUUID, _ := uuid.Parse(userID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionUserUpdated,
 			ResourceType: "user",
 			ResourceID:   &userUUID,
@@ -248,17 +233,10 @@ func (h *UserHandler) HandleRemoveFromDepartment(w http.ResponseWriter, r *http.
 
 	if h.auditLog != nil {
 		tenantUUID, _ := uuid.Parse(tenantID)
-		identity := auth.GetIdentity(r.Context())
-		var actorID *uuid.UUID
-		if identity != nil {
-			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
-				actorID = &uid
-			}
-		}
 		userUUID, _ := uuid.Parse(userID)
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     tenantUUID,
-			UserID:       actorID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
 			Action:       audit.ActionUserUpdated,
 			ResourceType: "user",
 			ResourceID:   &userUUID,
