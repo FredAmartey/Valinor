@@ -4,16 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/valinor-ai/valinor/internal/audit"
 )
 
 // Handler handles tenant HTTP endpoints.
 type Handler struct {
-	store *Store
+	store    *Store
+	auditLog audit.Logger
 }
 
 // NewHandler creates a new tenant handler.
-func NewHandler(store *Store) *Handler {
-	return &Handler{store: store}
+func NewHandler(store *Store, auditLog audit.Logger) *Handler {
+	return &Handler{store: store, auditLog: auditLog}
 }
 
 // RegisterRoutes registers tenant routes on the given mux.

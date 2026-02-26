@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -16,11 +17,12 @@ type UserHandler struct {
 	pool      *pgxpool.Pool
 	store     *UserStore
 	deptStore *DepartmentStore
+	auditLog  audit.Logger
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(pool *pgxpool.Pool, store *UserStore, deptStore *DepartmentStore) *UserHandler {
-	return &UserHandler{pool: pool, store: store, deptStore: deptStore}
+func NewUserHandler(pool *pgxpool.Pool, store *UserStore, deptStore *DepartmentStore, auditLog audit.Logger) *UserHandler {
+	return &UserHandler{pool: pool, store: store, deptStore: deptStore, auditLog: auditLog}
 }
 
 // HandleCreate creates a new user within the authenticated tenant.

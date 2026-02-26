@@ -26,7 +26,7 @@ func TestUserHandler(t *testing.T) {
 	ten, err := tenantStore.Create(ctx, "User Handler Org", "user-handler-org")
 	require.NoError(t, err)
 
-	handler := tenant.NewUserHandler(rlsPool, tenant.NewUserStore(), tenant.NewDepartmentStore())
+	handler := tenant.NewUserHandler(rlsPool, tenant.NewUserStore(), tenant.NewDepartmentStore(), nil)
 
 	t.Run("Create", func(t *testing.T) {
 		body := `{"email": "alice@example.com", "display_name": "Alice"}`

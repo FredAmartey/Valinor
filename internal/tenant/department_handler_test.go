@@ -43,7 +43,7 @@ func TestDepartmentHandler(t *testing.T) {
 	ten, err := tenantStore.Create(ctx, "Handler Org", "handler-org")
 	require.NoError(t, err)
 
-	handler := tenant.NewDepartmentHandler(rlsPool, tenant.NewDepartmentStore())
+	handler := tenant.NewDepartmentHandler(rlsPool, tenant.NewDepartmentStore(), nil)
 
 	t.Run("Create", func(t *testing.T) {
 		body := `{"name": "Engineering"}`

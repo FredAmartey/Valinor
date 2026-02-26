@@ -31,7 +31,7 @@ func TestHandler_CreateTenant(t *testing.T) {
 	defer cleanup()
 
 	store := tenant.NewStore(pool)
-	handler := tenant.NewHandler(store)
+	handler := tenant.NewHandler(store, nil)
 
 	body := `{"name": "Chelsea FC", "slug": "chelsea-fc"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", strings.NewReader(body))
@@ -60,7 +60,7 @@ func TestHandler_CreateTenant_InvalidSlug(t *testing.T) {
 	defer cleanup()
 
 	store := tenant.NewStore(pool)
-	handler := tenant.NewHandler(store)
+	handler := tenant.NewHandler(store, nil)
 
 	body := `{"name": "Bad", "slug": "api"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", strings.NewReader(body))
@@ -82,7 +82,7 @@ func TestHandler_GetTenant(t *testing.T) {
 	defer cleanup()
 
 	store := tenant.NewStore(pool)
-	handler := tenant.NewHandler(store)
+	handler := tenant.NewHandler(store, nil)
 
 	created, err := store.Create(context.Background(), "Chelsea FC", "chelsea-fc")
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestHandler_ListTenants(t *testing.T) {
 	defer cleanup()
 
 	store := tenant.NewStore(pool)
-	handler := tenant.NewHandler(store)
+	handler := tenant.NewHandler(store, nil)
 
 	_, err := store.Create(context.Background(), "Tenant A", "tenant-a")
 	require.NoError(t, err)

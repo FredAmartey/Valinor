@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -25,11 +26,12 @@ type RoleHandler struct {
 	userStore *UserStore
 	deptStore *DepartmentStore
 	evaluator RBACReloader
+	auditLog  audit.Logger
 }
 
 // NewRoleHandler creates a new role handler.
-func NewRoleHandler(pool *pgxpool.Pool, store *RoleStore, userStore *UserStore, deptStore *DepartmentStore, evaluator RBACReloader) *RoleHandler {
-	return &RoleHandler{pool: pool, store: store, userStore: userStore, deptStore: deptStore, evaluator: evaluator}
+func NewRoleHandler(pool *pgxpool.Pool, store *RoleStore, userStore *UserStore, deptStore *DepartmentStore, evaluator RBACReloader, auditLog audit.Logger) *RoleHandler {
+	return &RoleHandler{pool: pool, store: store, userStore: userStore, deptStore: deptStore, evaluator: evaluator, auditLog: auditLog}
 }
 
 // HandleCreate creates a new role within the authenticated tenant.
