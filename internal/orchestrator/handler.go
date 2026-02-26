@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -22,11 +23,12 @@ type ConfigPusher interface {
 type Handler struct {
 	manager      *Manager
 	configPusher ConfigPusher // optional, nil = no vsock push
+	auditLog     audit.Logger
 }
 
 // NewHandler creates a new orchestrator Handler.
-func NewHandler(manager *Manager, pusher ConfigPusher) *Handler {
-	return &Handler{manager: manager, configPusher: pusher}
+func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger) *Handler {
+	return &Handler{manager: manager, configPusher: pusher, auditLog: auditLog}
 }
 
 // HandleProvision creates a new agent for the caller's tenant.
