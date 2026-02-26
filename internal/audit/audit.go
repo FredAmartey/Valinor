@@ -32,6 +32,33 @@ const (
 )
 
 const (
+	// CRUD actions
+	ActionUserCreated      = "user.created"
+	ActionUserUpdated      = "user.updated"
+	ActionUserSuspended    = "user.suspended"
+	ActionUserReactivated  = "user.reactivated"
+
+	ActionAgentProvisioned = "agent.provisioned"
+	ActionAgentUpdated     = "agent.updated"
+	ActionAgentDestroyed   = "agent.destroyed"
+
+	ActionTenantCreated    = "tenant.created"
+	ActionTenantUpdated    = "tenant.updated"
+	ActionTenantSuspended  = "tenant.suspended"
+
+	ActionDepartmentCreated = "department.created"
+	ActionDepartmentUpdated = "department.updated"
+	ActionDepartmentDeleted = "department.deleted"
+
+	ActionRoleCreated = "role.created"
+	ActionRoleUpdated = "role.updated"
+	ActionRoleDeleted = "role.deleted"
+
+	ActionUserRoleAssigned = "user_role.assigned"
+	ActionUserRoleRevoked  = "user_role.revoked"
+)
+
+const (
 	MetadataCorrelationID   = "correlation_id"
 	MetadataDecision        = "decision"
 	MetadataIdempotencyKey  = "idempotency_key"
