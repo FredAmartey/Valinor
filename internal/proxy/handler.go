@@ -299,29 +299,11 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 
 		case TypeToolExecuted:
-			if h.audit != nil {
-				var meta map[string]any
-				_ = json.Unmarshal(reply.Payload, &meta)
-				evt := auditFromRequest(r, "tool.executed", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
-				evt.Metadata = meta
-				evt.Source = "agent"
-				h.audit.Log(r.Context(), evt)
-			}
+			h.logToolAudit(r, "tool.executed", agentID, agentTenant, reply.Payload)
 			continue
 
 		case TypeToolFailed:
-			if h.audit != nil {
-				var meta map[string]any
-				_ = json.Unmarshal(reply.Payload, &meta)
-				evt := auditFromRequest(r, "tool.failed", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
-				evt.Metadata = meta
-				evt.Source = "agent"
-				h.audit.Log(r.Context(), evt)
-			}
+			h.logToolAudit(r, "tool.failed", agentID, agentTenant, reply.Payload)
 			continue
 		}
 	}
@@ -531,29 +513,11 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			return
 
 		case TypeToolExecuted:
-			if h.audit != nil {
-				var meta map[string]any
-				_ = json.Unmarshal(reply.Payload, &meta)
-				evt := auditFromRequest(r, "tool.executed", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
-				evt.Metadata = meta
-				evt.Source = "agent"
-				h.audit.Log(r.Context(), evt)
-			}
+			h.logToolAudit(r, "tool.executed", agentID, agentTenant, reply.Payload)
 			continue
 
 		case TypeToolFailed:
-			if h.audit != nil {
-				var meta map[string]any
-				_ = json.Unmarshal(reply.Payload, &meta)
-				evt := auditFromRequest(r, "tool.failed", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
-				evt.Metadata = meta
-				evt.Source = "agent"
-				h.audit.Log(r.Context(), evt)
-			}
+			h.logToolAudit(r, "tool.failed", agentID, agentTenant, reply.Payload)
 			continue
 		}
 	}
@@ -754,4 +718,19 @@ func writeProxyJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// logToolAudit emits an audit event for tool execution (success or failure).
+func (h *Handler) logToolAudit(r *http.Request, action, agentID, agentTenant string, payload json.RawMessage) {
+	if h.audit == nil {
+		return
+	}
+	var meta map[string]any
+	_ = json.Unmarshal(payload, &meta)
+	evt := auditFromRequest(r, action, "agent", agentTenant)
+	agentUUID, _ := uuid.Parse(agentID)
+	evt.ResourceID = &agentUUID
+	evt.Metadata = meta
+	evt.Source = "agent"
+	h.audit.Log(r.Context(), evt)
 }

@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -57,6 +60,15 @@ func newMCPClient(httpClient *http.Client) *mcpClient {
 
 // callTool executes a tools/call JSON-RPC request against a connector's endpoint.
 func (c *mcpClient) callTool(ctx context.Context, connector AgentConnector, toolName string, arguments string) (string, error) {
+	// Validate endpoint URL scheme
+	parsed, err := url.Parse(connector.Endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid connector endpoint URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("connector endpoint must use http or https scheme, got %q", parsed.Scheme)
+	}
+
 	params, err := json.Marshal(toolCallParams{
 		Name:      toolName,
 		Arguments: json.RawMessage(arguments),
@@ -87,8 +99,11 @@ func (c *mcpClient) callTool(ctx context.Context, connector AgentConnector, tool
 	var authConfig struct {
 		APIKey string `json:"api_key"`
 	}
-	if len(connector.Auth) > 0 {
-		_ = json.Unmarshal(connector.Auth, &authConfig)
+	if len(connector.Auth) > 0 && !bytes.Equal(connector.Auth, []byte("{}")) {
+		if unmarshalErr := json.Unmarshal(connector.Auth, &authConfig); unmarshalErr != nil {
+			slog.Warn("failed to parse connector auth config", "connector", connector.Name, "error", unmarshalErr)
+			return "", fmt.Errorf("parsing connector auth config: %w", unmarshalErr)
+		}
 	}
 	if authConfig.APIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+authConfig.APIKey)
@@ -105,6 +120,10 @@ func (c *mcpClient) callTool(ctx context.Context, connector AgentConnector, tool
 		return "", fmt.Errorf("reading MCP response: %w", err)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("MCP server returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	var rpcResp jsonRPCResponse
 	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
 		return "", fmt.Errorf("parsing MCP JSON-RPC response: %w", err)
@@ -119,13 +138,13 @@ func (c *mcpClient) callTool(ctx context.Context, connector AgentConnector, tool
 	}
 
 	// Extract text from content blocks
-	var result string
+	var sb strings.Builder
 	for _, block := range rpcResp.Result.Content {
 		if block.Type == "text" {
-			result += block.Text
+			sb.WriteString(block.Text)
 		}
 	}
-	return result, nil
+	return sb.String(), nil
 }
 
 // resolveConnector finds which connector owns a given tool name.

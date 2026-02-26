@@ -33,7 +33,7 @@ func TestMCPClient_CallTool(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -58,7 +58,7 @@ func TestMCPClient_CallTool_Error(t *testing.T) {
 			Error:   &jsonRPCError{Code: -32601, Message: "method not found"},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -73,6 +73,40 @@ func TestMCPClient_CallTool_Error(t *testing.T) {
 	_, err := client.callTool(context.Background(), connector, "bad_tool", `{}`)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "method not found")
+}
+
+func TestMCPClient_CallTool_HTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("internal server error"))
+	}))
+	defer server.Close()
+
+	client := newMCPClient(&http.Client{})
+	connector := AgentConnector{
+		Name:     "test-api",
+		Endpoint: server.URL,
+		Auth:     json.RawMessage(`{}`),
+		Tools:    []string{"test_tool"},
+	}
+
+	_, err := client.callTool(context.Background(), connector, "test_tool", `{}`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP 500")
+}
+
+func TestMCPClient_CallTool_InvalidScheme(t *testing.T) {
+	client := newMCPClient(&http.Client{})
+	connector := AgentConnector{
+		Name:     "test-api",
+		Endpoint: "ftp://example.com/mcp",
+		Auth:     json.RawMessage(`{}`),
+		Tools:    []string{"test_tool"},
+	}
+
+	_, err := client.callTool(context.Background(), connector, "test_tool", `{}`)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "http or https")
 }
 
 func TestResolveConnector(t *testing.T) {

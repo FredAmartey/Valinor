@@ -45,10 +45,11 @@ type Agent struct {
 
 // NewAgent creates a new Agent.
 func NewAgent(cfg AgentConfig) *Agent {
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	return &Agent{
 		cfg:        cfg,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		mcp:        newMCPClient(&http.Client{Timeout: 30 * time.Second}),
+		httpClient: httpClient,
+		mcp:        newMCPClient(httpClient),
 	}
 }
 

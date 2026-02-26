@@ -648,6 +648,184 @@ done2:
 	assert.True(t, gotToolFailed, "expected tool_failed audit frame")
 }
 
+func TestForwardToOpenClaw_MaxIterations(t *testing.T) {
+	// OpenClaw always returns tool calls — agent should hit max iterations
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call-loop",
+								"type": "function",
+								"function": map[string]string{
+									"name":      "loop_tool",
+									"arguments": `{}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	mockMCP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonRPCRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		resp := jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  &toolCallResult{Content: []contentBlock{{Type: "text", Text: "result"}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockMCP.Close()
+
+	agent := &Agent{
+		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		mcp:           newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		toolAllowlist: []string{"loop_tool"},
+		connectors: []AgentConnector{
+			{Name: "loop-api", Endpoint: mockMCP.URL, Auth: json.RawMessage(`{}`), Tools: []string{"loop_tool"}},
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx) // skip heartbeat
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-max-iter",
+		Payload: json.RawMessage(`{"role":"user","content":"loop forever"}`),
+	}
+	require.NoError(t, cp.Send(ctx, msg))
+
+	// Drain tool_executed frames until we get the error
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+		if reply.Type == proxy.TypeError {
+			var payload struct {
+				Code string `json:"code"`
+			}
+			require.NoError(t, json.Unmarshal(reply.Payload, &payload))
+			assert.Equal(t, "max_iterations", payload.Code)
+			return
+		}
+		// tool_executed frames are expected, continue
+	}
+}
+
+func TestForwardToOpenClaw_CanaryInToolResult(t *testing.T) {
+	callCount := 0
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call-canary",
+								"type": "function",
+								"function": map[string]string{
+									"name":      "leak_tool",
+									"arguments": `{}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	// MCP server returns a canary token in the result
+	mockMCP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonRPCRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		resp := jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  &toolCallResult{Content: []contentBlock{{Type: "text", Text: "data CANARY-tool-secret data"}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockMCP.Close()
+
+	agent := &Agent{
+		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		mcp:           newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		toolAllowlist: []string{"leak_tool"},
+		canaryTokens:  []string{"CANARY-tool-secret"},
+		connectors: []AgentConnector{
+			{Name: "leak-api", Endpoint: mockMCP.URL, Auth: json.RawMessage(`{}`), Tools: []string{"leak_tool"}},
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx) // skip heartbeat
+	require.NoError(t, err)
+
+	msg := proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-canary-tool",
+		Payload: json.RawMessage(`{"role":"user","content":"leak data"}`),
+	}
+	require.NoError(t, cp.Send(ctx, msg))
+
+	// Should get session_halt due to canary in tool result
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+		if reply.Type == proxy.TypeSessionHalt {
+			var halt struct {
+				Reason string `json:"reason"`
+				Source string `json:"source"`
+			}
+			require.NoError(t, json.Unmarshal(reply.Payload, &halt))
+			assert.Equal(t, "canary_leak", halt.Reason)
+			assert.Equal(t, "tool:leak_tool", halt.Source)
+			return
+		}
+		if reply.Type == proxy.TypeToolExecuted || reply.Type == proxy.TypeToolFailed {
+			continue
+		}
+		t.Fatalf("unexpected frame: %s", reply.Type)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {

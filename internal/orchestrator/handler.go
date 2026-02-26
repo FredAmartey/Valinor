@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/connectors"
@@ -33,11 +32,11 @@ type Handler struct {
 	configPusher   ConfigPusher // optional, nil = no vsock push
 	auditLog       audit.Logger
 	connectorStore ConnectorLister
-	pool           *pgxpool.Pool
+	pool           *database.Pool
 }
 
 // NewHandler creates a new orchestrator Handler.
-func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger, connectorLister ConnectorLister, pool *pgxpool.Pool) *Handler {
+func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger, connectorLister ConnectorLister, pool *database.Pool) *Handler {
 	return &Handler{manager: manager, configPusher: pusher, auditLog: auditLog, connectorStore: connectorLister, pool: pool}
 }
 
@@ -315,23 +314,30 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 	var agentConnectors []map[string]any
 	if h.connectorStore != nil && h.pool != nil {
 		tenantID := middleware.GetTenantID(r.Context())
-		_ = database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		if connErr := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
 			configs, listErr := h.connectorStore.ListForAgent(ctx, q)
 			if listErr != nil {
 				slog.Warn("failed to load connectors for agent", "error", listErr)
 				return nil
 			}
 			for _, c := range configs {
+				// Parse tools from json.RawMessage to []string for type-safe agent deserialization
+				var tools []string
+				if len(c.Tools) > 0 {
+					_ = json.Unmarshal(c.Tools, &tools)
+				}
 				agentConnectors = append(agentConnectors, map[string]any{
 					"name":     c.Name,
 					"type":     c.Type,
 					"endpoint": c.Endpoint,
 					"auth":     c.Auth,
-					"tools":    c.Tools,
+					"tools":    tools,
 				})
 			}
 			return nil
-		})
+		}); connErr != nil {
+			slog.Warn("failed to load tenant connectors", "error", connErr)
+		}
 	}
 
 	// Best-effort push to running agent via vsock

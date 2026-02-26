@@ -81,6 +81,10 @@ func (a *Agent) callOpenClaw(ctx context.Context, messages []any) (*openClawResp
 
 // forwardToOpenClaw sends a message to OpenClaw and loops through tool calls until a final text response.
 func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
+	// Total timeout for the entire tool execution loop
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
 	if err := validateOpenClawURL(a.cfg.OpenClawURL, a.cfg.AllowRemoteOpenClaw); err != nil {
 		a.sendError(ctx, conn, frame.ID, "invalid_config", err.Error())
 		return
@@ -100,6 +104,8 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		return
 	}
 
+	// messages uses []any because OpenAI chat format requires heterogeneous shapes
+	// (user=map[string]string, assistant=map with tool_calls, tool=map with tool_call_id)
 	var messages []any
 	for _, item := range msg.Messages {
 		role := strings.TrimSpace(item.Role)
@@ -298,7 +304,9 @@ func (a *Agent) emitToolAudit(ctx context.Context, conn *proxy.AgentConn, reqID,
 		ID:      reqID,
 		Payload: payload,
 	}
-	_ = conn.Send(ctx, auditFrame)
+	if err := conn.Send(ctx, auditFrame); err != nil {
+		slog.Warn("failed to send tool audit frame", "type", frameType, "tool", toolName, "error", err)
+	}
 }
 
 func (a *Agent) sendError(ctx context.Context, conn *proxy.AgentConn, reqID, code, message string) {
