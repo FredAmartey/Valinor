@@ -41,6 +41,12 @@ These are the exact skills that define this workflow process:
 9. Triage external findings: `receiving-code-review`
 10. Final branch wrap-up: `finishing-a-development-branch`
 
+Frontend quality skills (mandatory for dashboard/UI work):
+
+- `vercel-react-best-practices`
+- `design-taste-frontend`
+- `next-best-practices`
+
 Optional scale skills used as needed:
 
 - `dispatching-parallel-agents`

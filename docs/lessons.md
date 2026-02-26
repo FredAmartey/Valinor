@@ -33,3 +33,19 @@ Patterns and corrections captured during development. Review at session start.
 **Context:** `is_platform_admin` on the users table is the simplest model that supports tenant provisioning. If platform-level operations grow beyond tenant CRUD (e.g. billing, analytics, support), consider graduating to `platform_role TEXT` or a dedicated `platform_roles` table.
 
 **Rule:** Always run commands from the worktree directory when using git worktrees, not the main repo. The `go test` runner operates on the current working directory's module.
+
+---
+
+## 2026-02-26: Follow the operating loop literally — trigger external review + watch CI at step 6
+
+**Mistake:** When PR #59 opened, I ran my own code review first and only triggered external review after fixing findings. CI lint failed on a `gofmt` issue that sat unnoticed for ~20 minutes.
+
+**Rule:** The moment a PR opens, immediately (1) trigger `@claude` external review on the PR and (2) check CI status. Do your own review in parallel. Steps 6-10 of the operating loop exist to catch issues from multiple sources simultaneously.
+
+---
+
+## 2026-02-26: gofmt alignment only works within contiguous const blocks
+
+**Mistake:** Manually aligned `=` signs across blank-line-separated const groups. `gofmt` only aligns within contiguous blocks, so it reformatted them and CI failed.
+
+**Rule:** Don't manually align constants across groups separated by blank lines. Run `gofmt -d` locally before pushing.
