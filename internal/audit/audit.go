@@ -34,18 +34,18 @@ const (
 
 const (
 	// CRUD actions
-	ActionUserCreated      = "user.created"
-	ActionUserUpdated      = "user.updated"
-	ActionUserSuspended    = "user.suspended"
-	ActionUserReactivated  = "user.reactivated"
+	ActionUserCreated     = "user.created"
+	ActionUserUpdated     = "user.updated"
+	ActionUserSuspended   = "user.suspended"
+	ActionUserReactivated = "user.reactivated"
 
 	ActionAgentProvisioned = "agent.provisioned"
 	ActionAgentUpdated     = "agent.updated"
 	ActionAgentDestroyed   = "agent.destroyed"
 
-	ActionTenantCreated    = "tenant.created"
-	ActionTenantUpdated    = "tenant.updated"
-	ActionTenantSuspended  = "tenant.suspended"
+	ActionTenantCreated   = "tenant.created"
+	ActionTenantUpdated   = "tenant.updated"
+	ActionTenantSuspended = "tenant.suspended"
 
 	ActionDepartmentCreated = "department.created"
 	ActionDepartmentUpdated = "department.updated"
