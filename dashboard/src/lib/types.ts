@@ -106,6 +106,50 @@ export interface ChannelLink {
   created_at: string
 }
 
+export interface ChannelOutbox {
+  id: string
+  tenant_id: string
+  channel_message_id: string
+  provider: "slack" | "whatsapp" | "telegram"
+  recipient_id: string
+  payload: Record<string, unknown>
+  status: "pending" | "sending" | "sent" | "dead"
+  attempt_count: number
+  max_attempts: number
+  next_attempt_at: string
+  last_error: string | null
+  locked_at: string | null
+  sent_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProviderCredentialResponse {
+  provider: "slack" | "whatsapp" | "telegram"
+  api_base_url: string
+  api_version: string
+  phone_number_id: string
+  has_access_token: boolean
+  has_signing_secret: boolean
+  has_secret_token: boolean
+  updated_at: string
+}
+
+export interface CreateChannelLinkRequest {
+  user_id: string
+  platform: "slack" | "whatsapp" | "telegram"
+  platform_user_id: string
+}
+
+export interface UpsertProviderCredentialRequest {
+  access_token?: string
+  signing_secret?: string
+  secret_token?: string
+  api_base_url?: string
+  api_version?: string
+  phone_number_id?: string
+}
+
 // Role types — matches Go internal/tenant/role_handler.go responses
 export interface Role {
   id: string
