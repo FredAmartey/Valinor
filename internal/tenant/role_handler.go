@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -78,6 +80,27 @@ func (h *RoleHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role creation failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		roleUUID, _ := uuid.Parse(role.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionRoleCreated,
+			ResourceType: "role",
+			ResourceID:   &roleUUID,
+			Metadata:     map[string]any{"name": role.Name, "permissions": role.Permissions},
+			Source:       "api",
+		})
 	}
 
 	if h.evaluator != nil {
@@ -176,6 +199,27 @@ func (h *RoleHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		roleUUID, _ := uuid.Parse(role.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionRoleUpdated,
+			ResourceType: "role",
+			ResourceID:   &roleUUID,
+			Metadata:     map[string]any{"name": role.Name, "permissions": role.Permissions},
+			Source:       "api",
+		})
+	}
+
 	if h.evaluator != nil {
 		if err := h.evaluator.ReloadRoles(r.Context()); err != nil {
 			slog.Error("failed to reload RBAC roles after update", "error", err)
@@ -218,6 +262,26 @@ func (h *RoleHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 		slog.Error("role deletion failed", "role_id", roleID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role deletion failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		roleUUID, _ := uuid.Parse(roleID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionRoleDeleted,
+			ResourceType: "role",
+			ResourceID:   &roleUUID,
+			Source:       "api",
+		})
 	}
 
 	if h.evaluator != nil {
@@ -297,6 +361,27 @@ func (h *RoleHandler) HandleAssignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		userUUID, _ := uuid.Parse(userID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionUserRoleAssigned,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Metadata:     map[string]any{"role_id": req.RoleID, "scope_type": req.ScopeType, "scope_id": req.ScopeID},
+			Source:       "api",
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -336,6 +421,27 @@ func (h *RoleHandler) HandleRemoveRole(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "role removal failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		userUUID, _ := uuid.Parse(userID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionUserRoleRevoked,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Metadata:     map[string]any{"role_id": req.RoleID, "scope_type": req.ScopeType, "scope_id": req.ScopeID},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

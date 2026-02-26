@@ -6,8 +6,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
@@ -61,6 +63,27 @@ func (h *UserHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "user creation failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		userUUID, _ := uuid.Parse(user.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionUserCreated,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Metadata:     map[string]any{"email": user.Email, "display_name": user.DisplayName},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusCreated, user)
@@ -176,6 +199,27 @@ func (h *UserHandler) HandleAddToDepartment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		userUUID, _ := uuid.Parse(userID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionUserUpdated,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Metadata:     map[string]any{"department_added": req.DepartmentID},
+			Source:       "api",
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -200,6 +244,27 @@ func (h *UserHandler) HandleRemoveFromDepartment(w http.ResponseWriter, r *http.
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "removing user from department failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		userUUID, _ := uuid.Parse(userID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionUserUpdated,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Metadata:     map[string]any{"department_removed": deptID},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

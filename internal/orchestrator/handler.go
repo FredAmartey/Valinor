@@ -101,6 +101,26 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		instID, _ := uuid.Parse(inst.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionAgentProvisioned,
+			ResourceType: "agent",
+			ResourceID:   &instID,
+			Metadata:     map[string]any{"status": inst.Status},
+			Source:       "api",
+		})
+	}
+
 	writeJSON(w, http.StatusCreated, inst)
 }
 
@@ -203,6 +223,25 @@ func (h *Handler) HandleDestroyAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(middleware.GetTenantID(r.Context()))
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		instID, _ := uuid.Parse(id)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionAgentDestroyed,
+			ResourceType: "agent",
+			ResourceID:   &instID,
+			Source:       "api",
+		})
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -279,6 +318,26 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist, nil, nil); pushErr != nil {
 			slog.Warn("config push to agent failed", "id", id, "error", pushErr)
 		}
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(middleware.GetTenantID(r.Context()))
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		instID, _ := uuid.Parse(id)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionAgentUpdated,
+			ResourceType: "agent",
+			ResourceID:   &instID,
+			Metadata:     map[string]any{"tool_allowlist_count": len(req.ToolAllowlist)},
+			Source:       "api",
+		})
 	}
 
 	// Return updated instance

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/valinor-ai/valinor/internal/auth"
 )
 
 // Handler handles tenant HTTP endpoints.
@@ -57,6 +59,26 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "tenant creation failed"})
 		return
+	}
+
+	if h.auditLog != nil {
+		identity := auth.GetIdentity(r.Context())
+		var actorID *uuid.UUID
+		if identity != nil {
+			if uid, parseErr := uuid.Parse(identity.UserID); parseErr == nil {
+				actorID = &uid
+			}
+		}
+		tenantUUID, _ := uuid.Parse(t.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       actorID,
+			Action:       audit.ActionTenantCreated,
+			ResourceType: "tenant",
+			ResourceID:   &tenantUUID,
+			Metadata:     map[string]any{"name": t.Name, "slug": t.Slug},
+			Source:       "api",
+		})
 	}
 
 	writeJSON(w, http.StatusCreated, t)
