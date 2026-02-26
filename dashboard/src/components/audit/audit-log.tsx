@@ -1,16 +1,27 @@
 "use client"
 
-import { useState, useDeferredValue } from "react"
+import { useState, useDeferredValue, useCallback } from "react"
+import { keepPreviousData } from "@tanstack/react-query"
 import { useAuditEventsQuery } from "@/lib/queries/audit"
 import { formatTimeAgo, formatDate, truncateId } from "@/lib/format"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { MagnifyingGlass, CaretDown, CaretUp, Copy, ArrowLeft, ArrowRight } from "@phosphor-icons/react"
+import {
+  MagnifyingGlass,
+  CaretDown,
+  CaretUp,
+  Copy,
+  Check,
+  ArrowLeft,
+  ArrowRight,
+  ArrowCounterClockwise,
+} from "@phosphor-icons/react"
 import type { AuditEvent, AuditFilters } from "@/lib/types"
 import {
   getActionLabel,
   getCategoryColor,
   SOURCE_LABELS,
+  ACTION_CATEGORIES,
   RESOURCE_TYPES,
   SOURCES,
 } from "./audit-labels"
@@ -18,23 +29,27 @@ import {
 const PAGE_SIZE = 50
 
 export function AuditLog() {
-  const [actionFilter, setActionFilter] = useState("")
+  const [actionCategory, setActionCategory] = useState("")
   const [resourceType, setResourceType] = useState("")
   const [sourceFilter, setSourceFilter] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
   const [search, setSearch] = useState("")
   const deferredSearch = useDeferredValue(search)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [cursor, setCursor] = useState<{ after?: string; before?: string }>({})
 
   const filters: AuditFilters = {
-    ...(actionFilter ? { action: actionFilter } : {}),
+    ...(actionCategory ? { action: actionCategory } : {}),
     ...(resourceType ? { resource_type: resourceType } : {}),
     ...(sourceFilter ? { source: sourceFilter } : {}),
+    ...(dateFrom ? { after: new Date(dateFrom).toISOString() } : {}),
+    ...(dateTo ? { before: new Date(dateTo + "T23:59:59Z").toISOString() } : {}),
     ...cursor,
     limit: String(PAGE_SIZE),
   }
 
-  const { data, isLoading, isError } = useAuditEventsQuery(filters)
+  const { data, isLoading, isError, refetch } = useAuditEventsQuery(filters)
   const events = data?.events ?? []
 
   const filtered = deferredSearch
@@ -46,11 +61,13 @@ export function AuditLog() {
       )
     : events
 
-  const hasFilters = actionFilter || resourceType || sourceFilter || search
+  const hasFilters = actionCategory || resourceType || sourceFilter || search || dateFrom || dateTo
   const clearFilters = () => {
-    setActionFilter("")
+    setActionCategory("")
     setResourceType("")
     setSourceFilter("")
+    setDateFrom("")
+    setDateTo("")
     setSearch("")
     setCursor({})
   }
@@ -81,8 +98,15 @@ export function AuditLog() {
 
   if (isError) {
     return (
-      <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+      <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 flex items-center justify-between">
         <p className="text-sm text-rose-700">Failed to load audit events.</p>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-1.5 rounded-lg bg-rose-100 px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-200 transition-colors"
+        >
+          <ArrowCounterClockwise size={14} />
+          Retry
+        </button>
       </div>
     )
   }
@@ -102,6 +126,15 @@ export function AuditLog() {
         </div>
         <select
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+          value={actionCategory}
+          onChange={(e) => { setActionCategory(e.target.value); setCursor({}) }}
+        >
+          {ACTION_CATEGORIES.map((a) => (
+            <option key={a.value} value={a.value}>{a.label}</option>
+          ))}
+        </select>
+        <select
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
           value={resourceType}
           onChange={(e) => { setResourceType(e.target.value); setCursor({}) }}
         >
@@ -118,6 +151,20 @@ export function AuditLog() {
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => { setDateFrom(e.target.value); setCursor({}) }}
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+          aria-label="From date"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => { setDateTo(e.target.value); setCursor({}) }}
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+          aria-label="To date"
+        />
         {hasFilters && (
           <button
             onClick={clearFilters}
@@ -148,14 +195,14 @@ export function AuditLog() {
         </div>
       ) : (
         <>
-          <div className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
+          <div role="table" aria-label="Audit events" className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white">
             {/* Header */}
-            <div className="grid grid-cols-[140px_1fr_1fr_1fr_100px] gap-4 px-4 py-2 text-xs font-medium uppercase tracking-wider text-zinc-400">
-              <span>Time</span>
-              <span>Action</span>
-              <span>Resource</span>
-              <span>Actor</span>
-              <span>Source</span>
+            <div role="row" className="grid grid-cols-[140px_1fr_1fr_1fr_100px] gap-4 px-4 py-2 text-xs font-medium uppercase tracking-wider text-zinc-400">
+              <span role="columnheader">Time</span>
+              <span role="columnheader">Action</span>
+              <span role="columnheader">Resource</span>
+              <span role="columnheader">Actor</span>
+              <span role="columnheader">Source</span>
             </div>
             {filtered.map((event) => (
               <AuditRow
@@ -175,7 +222,7 @@ export function AuditLog() {
             <div className="flex gap-2">
               {cursor.before && (
                 <button
-                  onClick={() => setCursor({})}
+                  onClick={() => setCursor({ after: events[0]?.created_at })}
                   className="flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 transition-colors"
                 >
                   <ArrowLeft size={14} /> Newer
@@ -208,21 +255,24 @@ function AuditRow({
 }) {
   const actionLabel = getActionLabel(event.action)
   const categoryColor = getCategoryColor(actionLabel.category)
+  const detailId = `audit-detail-${event.id}`
 
   return (
-    <div>
+    <div role="row">
       <button
         onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={detailId}
         className="grid w-full grid-cols-[140px_1fr_1fr_1fr_100px] gap-4 px-4 py-3 text-left text-sm hover:bg-zinc-50 transition-colors"
       >
-        <span className="text-zinc-500" title={formatDate(event.created_at, "long")}>
+        <span role="cell" className="text-zinc-500" title={formatDate(event.created_at, "long")}>
           {formatTimeAgo(event.created_at)}
         </span>
-        <span className="flex items-center gap-2">
+        <span role="cell" className="flex items-center gap-2">
           <span className={`inline-block h-2 w-2 rounded-full ${categoryColor}`} />
           <span className="text-zinc-900">{actionLabel.label}</span>
         </span>
-        <span className="text-zinc-600">
+        <span role="cell" className="text-zinc-600">
           {event.resource_type ?? "\u2014"}
           {event.resource_id && (
             <span className="ml-1 font-mono text-xs text-zinc-400">
@@ -230,35 +280,35 @@ function AuditRow({
             </span>
           )}
         </span>
-        <span className="font-mono text-xs text-zinc-500">
+        <span role="cell" className="font-mono text-xs text-zinc-500">
           {event.user_id ? truncateId(event.user_id) : "System"}
         </span>
-        <span className="flex items-center justify-between">
+        <span role="cell" className="flex items-center justify-between">
           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
             {SOURCE_LABELS[event.source] ?? event.source}
           </span>
           {expanded ? <CaretUp size={14} className="text-zinc-400" /> : <CaretDown size={14} className="text-zinc-400" />}
         </span>
       </button>
-      {expanded && <AuditRowDetail event={event} />}
+      {expanded && (
+        <div id={detailId} role="region" aria-label={`Details for ${actionLabel.label}`}>
+          <AuditRowDetail event={event} />
+        </div>
+      )}
     </div>
   )
 }
 
 function AuditRowDetail({ event }: { event: AuditEvent }) {
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-  }
-
   return (
     <div className="border-t border-zinc-100 bg-zinc-50 px-4 py-3">
       <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-        <DetailField label="Event ID" value={event.id} copyable onCopy={copyToClipboard} />
+        <CopyableField label="Event ID" value={event.id} />
         {event.resource_id && (
-          <DetailField label="Resource ID" value={event.resource_id} copyable onCopy={copyToClipboard} />
+          <CopyableField label="Resource ID" value={event.resource_id} />
         )}
         {event.user_id && (
-          <DetailField label="Actor ID" value={event.user_id} copyable onCopy={copyToClipboard} />
+          <CopyableField label="Actor ID" value={event.user_id} />
         )}
         <DetailField label="Timestamp" value={formatDate(event.created_at, "long")} />
         {event.metadata && Object.keys(event.metadata).length > 0 && (
@@ -266,10 +316,10 @@ function AuditRowDetail({ event }: { event: AuditEvent }) {
             <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">Metadata</span>
             <div className="mt-1 space-y-1">
               {Object.entries(event.metadata).map(([key, value]) => (
-                <div key={key} className="flex gap-2 text-sm">
-                  <span className="font-mono text-zinc-500">{key}:</span>
-                  <span className="font-mono text-zinc-700">
-                    {typeof value === "string" ? value : JSON.stringify(value)}
+                <div key={String(key)} className="flex gap-2 text-sm">
+                  <span className="font-mono text-zinc-500">{String(key)}:</span>
+                  <span className="font-mono text-zinc-700 break-all">
+                    {String(typeof value === "object" && value !== null ? JSON.stringify(value) : value)}
                   </span>
                 </div>
               ))}
@@ -281,31 +331,39 @@ function AuditRowDetail({ event }: { event: AuditEvent }) {
   )
 }
 
-function DetailField({
-  label,
-  value,
-  copyable,
-  onCopy,
-}: {
-  label: string
-  value: string
-  copyable?: boolean
-  onCopy?: (text: string) => void
-}) {
+function CopyableField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }, [value])
+
   return (
     <div>
       <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">{label}</span>
       <div className="flex items-center gap-1.5 mt-0.5">
         <span className="font-mono text-sm text-zinc-700">{value}</span>
-        {copyable && onCopy && (
-          <button
-            onClick={() => onCopy(value)}
-            className="rounded p-0.5 text-zinc-400 hover:text-zinc-600 transition-colors"
-            title="Copy"
-          >
-            <Copy size={12} />
-          </button>
-        )}
+        <button
+          onClick={handleCopy}
+          className="rounded p-0.5 text-zinc-400 hover:text-zinc-600 transition-colors"
+          title={copied ? "Copied" : "Copy"}
+        >
+          {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">{label}</span>
+      <div className="mt-0.5">
+        <span className="font-mono text-sm text-zinc-700">{value}</span>
       </div>
     </div>
   )

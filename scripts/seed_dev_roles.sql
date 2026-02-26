@@ -20,7 +20,7 @@ BEGIN
     INSERT INTO roles (tenant_id, name, permissions, is_system)
     VALUES
         (v_tenant_id, 'org_admin',     '["*"]'::jsonb, true),
-        (v_tenant_id, 'dept_head',     '["agents:read","agents:write","agents:message","users:read","users:write","departments:read","connectors:read","connectors:write","channels:links:read","channels:links:write","channels:messages:write","channels:outbox:read","channels:outbox:write","channels:providers:read","channels:providers:write"]'::jsonb, true),
+        (v_tenant_id, 'dept_head',     '["agents:read","agents:write","agents:message","users:read","users:write","departments:read","connectors:read","connectors:write","channels:links:read","channels:links:write","channels:messages:write","channels:outbox:read","channels:outbox:write","channels:providers:read","channels:providers:write","audit:read"]'::jsonb, true),
         (v_tenant_id, 'standard_user', '["agents:read","agents:message","channels:messages:write"]'::jsonb, true),
         (v_tenant_id, 'read_only',     '["agents:read"]'::jsonb, true)
     ON CONFLICT (tenant_id, name) DO NOTHING;

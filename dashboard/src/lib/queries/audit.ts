@@ -1,6 +1,6 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { apiClient } from "@/lib/api-client"
 import type { AuditListResponse, AuditFilters } from "@/lib/types"
@@ -32,5 +32,6 @@ export function useAuditEventsQuery(filters?: AuditFilters) {
     queryFn: () => fetchAuditEvents(session!.accessToken, filters),
     enabled: !!session?.accessToken,
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   })
 }

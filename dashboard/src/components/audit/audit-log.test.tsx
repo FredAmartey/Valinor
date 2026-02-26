@@ -22,6 +22,7 @@ describe("AuditLog", () => {
       data: undefined,
       isLoading: true,
       isError: false,
+      refetch: vi.fn(),
     })
 
     render(<AuditLog />)
@@ -29,15 +30,22 @@ describe("AuditLog", () => {
     expect(skeletons.length).toBeGreaterThan(0)
   })
 
-  it("shows error state on failure", () => {
+  it("shows error state with retry button on failure", () => {
+    const mockRefetch = vi.fn()
     mockUseAuditEventsQuery.mockReturnValue({
       data: undefined,
       isLoading: false,
       isError: true,
+      refetch: mockRefetch,
     })
 
     render(<AuditLog />)
     expect(screen.getByText("Failed to load audit events.")).toBeTruthy()
+
+    const retryBtn = screen.getByText("Retry")
+    expect(retryBtn).toBeTruthy()
+    fireEvent.click(retryBtn)
+    expect(mockRefetch).toHaveBeenCalled()
   })
 
   it("shows empty state when no events", () => {
@@ -45,13 +53,14 @@ describe("AuditLog", () => {
       data: { events: [], count: 0 },
       isLoading: false,
       isError: false,
+      refetch: vi.fn(),
     })
 
     render(<AuditLog />)
     expect(screen.getByText("No events recorded yet")).toBeTruthy()
   })
 
-  it("renders events in table", () => {
+  it("renders events in table with ARIA roles", () => {
     mockUseAuditEventsQuery.mockReturnValue({
       data: {
         events: [
@@ -71,15 +80,16 @@ describe("AuditLog", () => {
       },
       isLoading: false,
       isError: false,
+      refetch: vi.fn(),
     })
 
     render(<AuditLog />)
     expect(screen.getByText("User Created")).toBeTruthy()
-    expect(screen.getAllByText("API").length).toBeGreaterThan(0)
+    expect(screen.getByRole("table")).toBeTruthy()
     expect(screen.getByText("1 event")).toBeTruthy()
   })
 
-  it("expands row to show details on click", () => {
+  it("expands row to show details with ARIA attributes", () => {
     mockUseAuditEventsQuery.mockReturnValue({
       data: {
         events: [
@@ -99,11 +109,37 @@ describe("AuditLog", () => {
       },
       isLoading: false,
       isError: false,
+      refetch: vi.fn(),
     })
 
     render(<AuditLog />)
-    fireEvent.click(screen.getByText("Tenant Created"))
+    const toggleBtn = screen.getByText("Tenant Created").closest("button")!
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("false")
+
+    fireEvent.click(toggleBtn)
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByRole("region")).toBeTruthy()
     expect(screen.getByText("name:")).toBeTruthy()
     expect(screen.getByText("Gondolin FC")).toBeTruthy()
+  })
+
+  it("renders action, resource, source, and date filters", () => {
+    mockUseAuditEventsQuery.mockReturnValue({
+      data: { events: [], count: 0 },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    })
+
+    const { container } = render(<AuditLog />)
+    // 3 select dropdowns (action, resource, source)
+    const selects = container.querySelectorAll("select")
+    expect(selects.length).toBe(3)
+    // 2 date inputs
+    const dateInputs = container.querySelectorAll('input[type="date"]')
+    expect(dateInputs.length).toBe(2)
+    // Search input exists
+    const searchInputs = container.querySelectorAll('input[placeholder="Search by ID..."]')
+    expect(searchInputs.length).toBeGreaterThan(0)
   })
 })
