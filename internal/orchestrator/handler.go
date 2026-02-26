@@ -124,6 +124,42 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Load active connectors and push config if agent is already running.
+	var agentConnectors []map[string]any
+	if h.connectorStore != nil && h.pool != nil {
+		if connErr := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			configs, listErr := h.connectorStore.ListForAgent(ctx, q)
+			if listErr != nil {
+				slog.Warn("failed to load connectors for agent", "error", listErr)
+				return nil
+			}
+			for _, c := range configs {
+				var tools []string
+				if len(c.Tools) > 0 {
+					if unmarshalErr := json.Unmarshal(c.Tools, &tools); unmarshalErr != nil {
+						slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", unmarshalErr)
+					}
+				}
+				agentConnectors = append(agentConnectors, map[string]any{
+					"name":     c.Name,
+					"type":     c.Type,
+					"endpoint": c.Endpoint,
+					"auth":     c.Auth,
+					"tools":    tools,
+				})
+			}
+			return nil
+		}); connErr != nil {
+			slog.Warn("failed to load tenant connectors", "error", connErr)
+		}
+	}
+
+	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
+		if pushErr := h.configPusher.PushConfig(r.Context(), inst.ID, *inst.VsockCID, nil, nil, nil, nil, agentConnectors); pushErr != nil {
+			slog.Warn("config push to agent failed", "id", inst.ID, "error", pushErr)
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, inst)
 }
 
@@ -324,7 +360,9 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 				// Parse tools from json.RawMessage to []string for type-safe agent deserialization
 				var tools []string
 				if len(c.Tools) > 0 {
-					_ = json.Unmarshal(c.Tools, &tools)
+					if unmarshalErr := json.Unmarshal(c.Tools, &tools); unmarshalErr != nil {
+						slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", unmarshalErr)
+					}
 				}
 				agentConnectors = append(agentConnectors, map[string]any{
 					"name":     c.Name,

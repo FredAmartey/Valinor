@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
@@ -348,6 +350,115 @@ func nestedLookupAny(root map[string]any, path ...string) any {
 		current = next
 	}
 	return current
+}
+
+// mockConfigPusher records calls to PushConfig for assertion in tests.
+type mockConfigPusher struct {
+	calls []pushConfigCall
+}
+
+type pushConfigCall struct {
+	agentID    string
+	connectors []map[string]any
+}
+
+func (m *mockConfigPusher) PushConfig(_ context.Context, agentID string, _ uint32, _ map[string]any, _ []string, _ map[string]any, _ []string, conns []map[string]any) error {
+	m.calls = append(m.calls, pushConfigCall{agentID: agentID, connectors: conns})
+	return nil
+}
+
+// mockConnectorLister returns a fixed set of connectors, ignoring the DB querier.
+type mockConnectorLister struct {
+	items []connectors.AgentConnectorConfig
+}
+
+func (m *mockConnectorLister) ListForAgent(_ context.Context, _ database.Querier) ([]connectors.AgentConnectorConfig, error) {
+	return m.items, nil
+}
+
+func TestHandler_Configure_InjectsConnectors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx, "INSERT INTO tenants (name, slug) VALUES ('InjectConf', 'inject-conf') RETURNING id").Scan(&tenantID)
+	require.NoError(t, err)
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
+
+	pusher := &mockConfigPusher{}
+	lister := &mockConnectorLister{items: []connectors.AgentConnectorConfig{
+		{Name: "search", Type: "mcp", Endpoint: "http://localhost:9000", Tools: json.RawMessage(`["web_search"]`)},
+	}}
+	handler := orchestrator.NewHandler(mgr, pusher, nil, lister, pool)
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{})
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"config":{"model":"gpt-4"},"tool_allowlist":["web_search"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+inst.ID+"/configure", body)
+	req.SetPathValue("id", inst.ID)
+	req = withIdentity(req, tenantID, false)
+	w := httptest.NewRecorder()
+
+	handler.HandleConfigure(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, pusher.calls, 1)
+	assert.Equal(t, inst.ID, pusher.calls[0].agentID)
+	require.Len(t, pusher.calls[0].connectors, 1)
+	assert.Equal(t, "search", pusher.calls[0].connectors[0]["name"])
+	assert.Equal(t, []string{"web_search"}, pusher.calls[0].connectors[0]["tools"])
+}
+
+func TestHandler_Provision_InjectsConnectors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx, "INSERT INTO tenants (name, slug) VALUES ('InjectProv', 'inject-prov') RETURNING id").Scan(&tenantID)
+	require.NoError(t, err)
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.ManagerConfig{Driver: "mock"})
+
+	pusher := &mockConfigPusher{}
+	lister := &mockConnectorLister{items: []connectors.AgentConnectorConfig{
+		{Name: "code", Type: "mcp", Endpoint: "http://localhost:9001", Tools: json.RawMessage(`["run_code"]`)},
+	}}
+	handler := orchestrator.NewHandler(mgr, pusher, nil, lister, pool)
+
+	body := bytes.NewBufferString(`{}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", body)
+	req = withIdentity(req, tenantID, false)
+	w := httptest.NewRecorder()
+
+	handler.HandleProvision(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp orchestrator.AgentInstance
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, orchestrator.StatusRunning, resp.Status)
+
+	require.Len(t, pusher.calls, 1)
+	assert.Equal(t, resp.ID, pusher.calls[0].agentID)
+	require.Len(t, pusher.calls[0].connectors, 1)
+	assert.Equal(t, "code", pusher.calls[0].connectors[0]["name"])
+	assert.Equal(t, []string{"run_code"}, pusher.calls[0].connectors[0]["tools"])
 }
 
 func TestHandler_DestroyAgent(t *testing.T) {
