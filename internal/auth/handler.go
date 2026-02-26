@@ -27,12 +27,13 @@ type HandlerConfig struct {
 
 // Handler handles authentication HTTP endpoints.
 type Handler struct {
-	tokenSvc       *TokenService
-	store          *Store
-	refreshStore   *RefreshTokenStore
-	oidc           OIDCProvider
-	stateStore     *StateStore
-	tenantResolver *TenantResolver
+	tokenSvc         *TokenService
+	store            *Store
+	refreshStore     *RefreshTokenStore
+	oidc             OIDCProvider
+	stateStore       *StateStore
+	tenantResolver   *TenantResolver
+	idTokenValidator *IDTokenValidator
 }
 
 func NewHandler(cfg HandlerConfig) *Handler {
@@ -46,11 +47,17 @@ func NewHandler(cfg HandlerConfig) *Handler {
 	}
 }
 
+// SetIDTokenValidator configures the handler for external id_token exchange.
+func (h *Handler) SetIDTokenValidator(v *IDTokenValidator) {
+	h.idTokenValidator = v
+}
+
 // RegisterRoutes registers auth routes on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", h.HandleLogin)
 	mux.HandleFunc("GET /auth/callback", h.HandleCallback)
 	mux.HandleFunc("POST /auth/token/refresh", h.HandleRefresh)
+	mux.HandleFunc("POST /auth/exchange", h.HandleExchange)
 }
 
 // RegisterDevRoutes registers dev-only auth routes.
@@ -166,6 +173,127 @@ func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 			DisplayName:     identity.DisplayName,
 			TenantID:        identity.TenantID,
 			IsPlatformAdmin: identity.IsPlatformAdmin,
+		},
+	})
+}
+
+// HandleExchange validates an external OIDC id_token and returns Valinor tokens.
+// Used by the dashboard to exchange Clerk id_tokens for platform JWTs.
+func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
+	if h.idTokenValidator == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "OIDC token exchange not configured",
+		})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
+
+	var req struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IDToken == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "missing or invalid id_token",
+		})
+		return
+	}
+
+	userInfo, err := h.idTokenValidator.Validate(req.IDToken)
+	if err != nil {
+		slog.Warn("id_token validation failed", "error", err)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "invalid id_token",
+		})
+		return
+	}
+
+	if h.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "auth store not configured",
+		})
+		return
+	}
+
+	// Resolve tenant from Origin header subdomain.
+	var tenantID string
+	if h.tenantResolver != nil {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			tid, resolveErr := h.tenantResolver.ResolveFromOrigin(r.Context(), origin)
+			if resolveErr != nil {
+				slog.Warn("tenant resolution failed", "origin", origin, "error", resolveErr)
+			} else {
+				tenantID = tid
+			}
+		}
+	}
+
+	// No tenant resolved: check if user is a platform admin.
+	if tenantID == "" {
+		adminIdentity, adminErr := h.store.LookupPlatformAdminByOIDC(r.Context(), userInfo.Issuer, userInfo.Subject)
+		if adminErr != nil || adminIdentity == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"error": "tenant not found",
+			})
+			return
+		}
+		// Platform admin — proceed without tenant scope.
+	}
+
+	identity, _, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, tenantID)
+	if err != nil {
+		slog.Error("exchange: user resolution failed", "error", err, "subject", userInfo.Subject)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "user resolution failed",
+		})
+		return
+	}
+
+	fullIdentity, err := h.store.GetIdentityWithRoles(r.Context(), identity.UserID)
+	if err != nil {
+		slog.Error("exchange: loading identity failed", "error", err, "user_id", identity.UserID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "loading identity failed",
+		})
+		return
+	}
+
+	accessToken, err := h.tokenSvc.CreateAccessToken(fullIdentity)
+	if err != nil {
+		slog.Error("exchange: access token creation failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "token creation failed",
+		})
+		return
+	}
+
+	refreshToken, err := h.tokenSvc.CreateRefreshToken(fullIdentity)
+	if err != nil {
+		slog.Error("exchange: refresh token creation failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "token creation failed",
+		})
+		return
+	}
+
+	slog.Info("token exchange successful",
+		"subject", userInfo.Subject,
+		"email", userInfo.Email,
+		"user_id", fullIdentity.UserID,
+	)
+
+	writeJSON(w, http.StatusOK, devLoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    h.tokenSvc.AccessTokenExpirySeconds(),
+		User: devLoginUserInfo{
+			ID:              fullIdentity.UserID,
+			Email:           fullIdentity.Email,
+			DisplayName:     fullIdentity.DisplayName,
+			TenantID:        fullIdentity.TenantID,
+			IsPlatformAdmin: fullIdentity.IsPlatformAdmin,
 		},
 	})
 }
