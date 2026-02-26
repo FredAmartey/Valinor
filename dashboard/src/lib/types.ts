@@ -126,6 +126,11 @@ export interface AssignRoleRequest {
   scope_id: string
 }
 
+export interface UpdateRoleRequest {
+  name: string
+  permissions: string[]
+}
+
 // Agent request types — matches Go internal/orchestrator/handler.go
 export interface ProvisionAgentRequest {
   user_id?: string

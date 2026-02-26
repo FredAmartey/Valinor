@@ -223,6 +223,16 @@ func New(addr string, deps Dependencies) *Server {
 				http.HandlerFunc(deps.RoleHandler.HandleList),
 			),
 		)
+		protectedMux.Handle("PUT /api/v1/roles/{id}",
+			rbac.RequirePermission(deps.RBAC, "users:manage", rbacOpts...)(
+				http.HandlerFunc(deps.RoleHandler.HandleUpdate),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/roles/{id}",
+			rbac.RequirePermission(deps.RBAC, "users:manage", rbacOpts...)(
+				http.HandlerFunc(deps.RoleHandler.HandleDelete),
+			),
+		)
 		protectedMux.Handle("POST /api/v1/users/{id}/roles",
 			rbac.RequirePermission(deps.RBAC, "users:manage", rbacOpts...)(
 				http.HandlerFunc(deps.RoleHandler.HandleAssignRole),

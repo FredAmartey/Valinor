@@ -106,6 +106,36 @@ func TestRoleStore(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("LoadRoles", func(t *testing.T) {
+		tenLR, err := tenantStore.Create(ctx, "LoadRoles Org", "loadroles-org")
+		require.NoError(t, err)
+
+		// Create roles in tenant context
+		err = database.WithTenantConnection(ctx, rlsPool, tenLR.ID, func(ctx context.Context, q database.Querier) error {
+			_, createErr := roleStore.Create(ctx, q, "admin", []string{"*"})
+			require.NoError(t, createErr)
+			_, createErr = roleStore.Create(ctx, q, "viewer", []string{"agents:read"})
+			require.NoError(t, createErr)
+			return nil
+		})
+		require.NoError(t, err)
+
+		// LoadRoles uses the owner pool directly (no RLS — cross-tenant)
+		roles, loadErr := roleStore.LoadRoles(ctx, ownerPool)
+		require.NoError(t, loadErr)
+		require.GreaterOrEqual(t, len(roles), 2)
+
+		// Find our roles and verify they carry the correct tenant ID
+		found := map[string]bool{}
+		for _, r := range roles {
+			if r.TenantID == tenLR.ID && (r.Name == "admin" || r.Name == "viewer") {
+				found[r.Name] = true
+			}
+		}
+		assert.True(t, found["admin"])
+		assert.True(t, found["viewer"])
+	})
+
 	t.Run("RemoveFromUser", func(t *testing.T) {
 		ten5, err := tenantStore.Create(ctx, "Remove Role Org", "remove-role-org")
 		require.NoError(t, err)

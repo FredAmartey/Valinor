@@ -6,9 +6,12 @@ import (
 )
 
 var (
-	ErrRoleNotFound  = errors.New("role not found")
-	ErrRoleNameEmpty = errors.New("role name is required")
-	ErrRoleDuplicate = errors.New("role name already exists in tenant")
+	ErrRoleNotFound   = errors.New("role not found")
+	ErrRoleNameEmpty  = errors.New("role name is required")
+	ErrRoleDuplicate  = errors.New("role name already exists in tenant")
+	ErrRoleIsSystem   = errors.New("system roles cannot be modified")
+	ErrRoleHasUsers   = errors.New("role is assigned to users")
+	ErrWildcardDenied = errors.New("wildcard permission not allowed for custom roles")
 )
 
 // Role represents a role within a tenant.
