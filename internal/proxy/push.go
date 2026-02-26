@@ -13,6 +13,7 @@ import (
 func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32,
 	config map[string]any, toolAllowlist []string,
 	toolPolicies map[string]any, canaryTokens []string,
+	connectors []map[string]any,
 	timeout time.Duration) error {
 	conn, err := pool.Get(ctx, agentID, cid)
 	if err != nil {
@@ -20,15 +21,17 @@ func PushConfig(ctx context.Context, pool *ConnPool, agentID string, cid uint32,
 	}
 
 	payload := struct {
-		Config        map[string]any `json:"config"`
-		ToolAllowlist []string       `json:"tool_allowlist"`
-		ToolPolicies  map[string]any `json:"tool_policies,omitempty"`
-		CanaryTokens  []string       `json:"canary_tokens,omitempty"`
+		Config        map[string]any   `json:"config"`
+		ToolAllowlist []string         `json:"tool_allowlist"`
+		ToolPolicies  map[string]any   `json:"tool_policies,omitempty"`
+		CanaryTokens  []string         `json:"canary_tokens,omitempty"`
+		Connectors    []map[string]any `json:"connectors,omitempty"`
 	}{
 		Config:        config,
 		ToolAllowlist: toolAllowlist,
 		ToolPolicies:  toolPolicies,
 		CanaryTokens:  canaryTokens,
+		Connectors:    connectors,
 	}
 
 	payloadJSON, err := json.Marshal(payload)

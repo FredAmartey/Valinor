@@ -57,6 +57,9 @@ const (
 
 	ActionUserRoleAssigned = "user_role.assigned"
 	ActionUserRoleRevoked  = "user_role.revoked"
+
+	ActionToolExecuted = "tool.executed"
+	ActionToolFailed   = "tool.failed"
 )
 
 const (

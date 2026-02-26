@@ -9,32 +9,88 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/valinor-ai/valinor/internal/proxy"
 )
+
+const maxToolIterations = 10
 
 // openClawResponse models the OpenClaw chat completions response.
 type openClawResponse struct {
 	Choices []struct {
 		Message struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
+			Content   string     `json:"content"`
+			ToolCalls []toolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 }
 
-// forwardToOpenClaw sends a message to OpenClaw and returns response frames.
+type toolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// callOpenClaw sends a chat completions request to OpenClaw and returns the parsed response.
+func (a *Agent) callOpenClaw(ctx context.Context, messages []any) (*openClawResponse, error) {
+	reqBody := map[string]any{
+		"messages": messages,
+	}
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/chat/completions", a.cfg.OpenClawURL)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("OpenClaw request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenClaw returned %d", resp.StatusCode)
+	}
+
+	var ocResp openClawResponse
+	if err := json.Unmarshal(respBody, &ocResp); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	if len(ocResp.Choices) == 0 {
+		return nil, fmt.Errorf("OpenClaw returned no choices")
+	}
+
+	return &ocResp, nil
+}
+
+// forwardToOpenClaw sends a message to OpenClaw and loops through tool calls until a final text response.
 func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
+	// Total timeout for the entire tool execution loop
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
 	if err := validateOpenClawURL(a.cfg.OpenClawURL, a.cfg.AllowRemoteOpenClaw); err != nil {
 		a.sendError(ctx, conn, frame.ID, "invalid_config", err.Error())
 		return
 	}
 
+	// Parse initial messages from frame payload
 	var msg struct {
 		Role     string `json:"role"`
 		Content  string `json:"content"`
@@ -48,7 +104,9 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		return
 	}
 
-	messages := make([]map[string]string, 0, len(msg.Messages)+1)
+	// messages uses []any because OpenAI chat format requires heterogeneous shapes
+	// (user=map[string]string, assistant=map with tool_calls, tool=map with tool_call_id)
+	var messages []any
 	for _, item := range msg.Messages {
 		role := strings.TrimSpace(item.Role)
 		content := strings.TrimSpace(item.Content)
@@ -73,68 +131,53 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		})
 	}
 
-	// Build OpenClaw request
-	reqBody := map[string]any{
-		"messages": messages,
-	}
-	bodyJSON, err := json.Marshal(reqBody)
-	if err != nil {
-		a.sendError(ctx, conn, frame.ID, "marshal_error", "failed to marshal request")
-		return
-	}
+	// Agentic tool execution loop
+	for iteration := 0; iteration < maxToolIterations; iteration++ {
+		ocResp, err := a.callOpenClaw(ctx, messages)
+		if err != nil {
+			a.sendError(ctx, conn, frame.ID, "openclaw_error", err.Error())
+			return
+		}
 
-	url := fmt.Sprintf("%s/v1/chat/completions", a.cfg.OpenClawURL)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyJSON))
-	if err != nil {
-		a.sendError(ctx, conn, frame.ID, "request_error", "failed to create request")
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
+		choice := ocResp.Choices[0]
 
-	resp, err := a.httpClient.Do(httpReq)
-	if err != nil {
-		a.sendError(ctx, conn, frame.ID, "openclaw_error", fmt.Sprintf("OpenClaw request failed: %v", err))
-		return
-	}
-	defer resp.Body.Close()
+		// Check for canary token leak in content
+		if found, token := a.checkCanary(choice.Message.Content); found {
+			slog.Error("canary token detected in OpenClaw response", "token", token)
+			haltPayload, marshalErr := json.Marshal(map[string]string{
+				"reason": "canary_leak",
+				"token":  token,
+			})
+			if marshalErr != nil {
+				slog.Error("failed to marshal canary halt payload", "error", marshalErr)
+			}
+			halt := proxy.Frame{
+				Type:    proxy.TypeSessionHalt,
+				ID:      frame.ID,
+				Payload: haltPayload,
+			}
+			if sendErr := conn.Send(ctx, halt); sendErr != nil {
+				slog.Error("session_halt send failed", "error", sendErr)
+			}
+			return
+		}
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		a.sendError(ctx, conn, frame.ID, "read_error", "failed to read OpenClaw response")
-		return
-	}
+		// No tool calls → final text response
+		if len(choice.Message.ToolCalls) == 0 {
+			a.sendDoneChunk(ctx, conn, frame.ID, choice.Message.Content)
+			return
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		a.sendError(ctx, conn, frame.ID, "openclaw_error", fmt.Sprintf("OpenClaw returned %d", resp.StatusCode))
-		return
-	}
-
-	var ocResp openClawResponse
-	err = json.Unmarshal(respBody, &ocResp)
-	if err != nil {
-		a.sendError(ctx, conn, frame.ID, "parse_error", "failed to parse OpenClaw response")
-		return
-	}
-
-	if len(ocResp.Choices) == 0 {
-		a.sendError(ctx, conn, frame.ID, "empty_response", "OpenClaw returned no choices")
-		return
-	}
-
-	choice := ocResp.Choices[0]
-
-	// Check for tool calls
-	if len(choice.Message.ToolCalls) > 0 {
+		// Validate all tool calls before executing any
 		for _, tc := range choice.Message.ToolCalls {
 			result := a.validateToolCall(tc.Function.Name, tc.Function.Arguments)
 			if !result.Allowed {
-				var payload []byte
-				payload, err = json.Marshal(map[string]string{
+				payload, marshalErr := json.Marshal(map[string]string{
 					"tool_name": tc.Function.Name,
 					"reason":    result.Reason,
 				})
-				if err != nil {
-					slog.Error("marshal tool_blocked payload failed", "error", err)
+				if marshalErr != nil {
+					slog.Error("marshal tool_blocked payload failed", "error", marshalErr)
 					return
 				}
 				blocked := proxy.Frame{
@@ -142,37 +185,91 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 					ID:      frame.ID,
 					Payload: payload,
 				}
-				err = conn.Send(ctx, blocked)
-				if err != nil {
-					slog.Error("tool_blocked send failed", "error", err)
+				if sendErr := conn.Send(ctx, blocked); sendErr != nil {
+					slog.Error("tool_blocked send failed", "error", sendErr)
 				}
 				return
 			}
 		}
-		// All tools allowed — in a full implementation, we'd execute them
-		// For MVP, send the content back
-	}
 
-	// Check for canary token leak
-	if found, token := a.checkCanary(choice.Message.Content); found {
-		slog.Error("canary token detected in OpenClaw response", "token", token)
-		haltPayload, _ := json.Marshal(map[string]string{
-			"reason": "canary_leak",
-			"token":  token,
+		// Append assistant message (with tool_calls) to conversation
+		messages = append(messages, map[string]any{
+			"role":       "assistant",
+			"content":    choice.Message.Content,
+			"tool_calls": choice.Message.ToolCalls,
 		})
-		halt := proxy.Frame{
-			Type:    proxy.TypeSessionHalt,
-			ID:      frame.ID,
-			Payload: haltPayload,
+
+		// Execute each tool call via MCP
+		a.mu.RLock()
+		currentConnectors := a.connectors
+		a.mu.RUnlock()
+
+		for _, tc := range choice.Message.ToolCalls {
+			start := time.Now()
+
+			connector, resolveErr := resolveConnector(currentConnectors, tc.Function.Name)
+			if resolveErr != nil {
+				errMsg := fmt.Sprintf("error: %v", resolveErr)
+				messages = append(messages, map[string]any{
+					"role":         "tool",
+					"tool_call_id": tc.ID,
+					"content":      errMsg,
+				})
+				a.emitToolAudit(ctx, conn, frame.ID, proxy.TypeToolFailed, tc.Function.Name, "", time.Since(start), resolveErr.Error())
+				continue
+			}
+
+			toolResult, callErr := a.mcp.callTool(ctx, connector, tc.Function.Name, tc.Function.Arguments)
+			elapsed := time.Since(start)
+
+			if callErr != nil {
+				errMsg := fmt.Sprintf("error: %v", callErr)
+				messages = append(messages, map[string]any{
+					"role":         "tool",
+					"tool_call_id": tc.ID,
+					"content":      errMsg,
+				})
+				a.emitToolAudit(ctx, conn, frame.ID, proxy.TypeToolFailed, tc.Function.Name, connector.Name, elapsed, callErr.Error())
+				continue
+			}
+
+			// Check tool result for canary token leak
+			if found, token := a.checkCanary(toolResult); found {
+				slog.Error("canary token detected in tool result", "tool", tc.Function.Name, "token", token)
+				haltPayload, marshalErr := json.Marshal(map[string]string{
+					"reason": "canary_leak",
+					"token":  token,
+					"source": "tool:" + tc.Function.Name,
+				})
+				if marshalErr != nil {
+					slog.Error("failed to marshal canary halt payload", "error", marshalErr)
+				}
+				halt := proxy.Frame{
+					Type:    proxy.TypeSessionHalt,
+					ID:      frame.ID,
+					Payload: haltPayload,
+				}
+				if sendErr := conn.Send(ctx, halt); sendErr != nil {
+					slog.Error("session_halt send failed", "error", sendErr)
+				}
+				return
+			}
+
+			messages = append(messages, map[string]any{
+				"role":         "tool",
+				"tool_call_id": tc.ID,
+				"content":      toolResult,
+			})
+			a.emitToolAudit(ctx, conn, frame.ID, proxy.TypeToolExecuted, tc.Function.Name, connector.Name, elapsed, "")
 		}
-		if sendErr := conn.Send(ctx, halt); sendErr != nil {
-			slog.Error("session_halt send failed", "error", sendErr)
-		}
-		return
+		// Loop continues with updated messages
 	}
 
-	// Send content as done chunk
-	content := choice.Message.Content
+	a.sendError(ctx, conn, frame.ID, "max_iterations", "tool call loop exceeded maximum iterations")
+}
+
+// sendDoneChunk sends a final content chunk to the control plane.
+func (a *Agent) sendDoneChunk(ctx context.Context, conn *proxy.AgentConn, reqID, content string) {
 	payload, err := json.Marshal(map[string]any{
 		"content": content,
 		"done":    true,
@@ -183,11 +280,38 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 	}
 	chunk := proxy.Frame{
 		Type:    proxy.TypeChunk,
-		ID:      frame.ID,
+		ID:      reqID,
 		Payload: payload,
 	}
 	if err := conn.Send(ctx, chunk); err != nil {
 		slog.Error("chunk send failed", "error", err)
+	}
+}
+
+// emitToolAudit sends a fire-and-forget audit frame to the control plane.
+func (a *Agent) emitToolAudit(ctx context.Context, conn *proxy.AgentConn, reqID, frameType, toolName, connectorName string, elapsed time.Duration, errMsg string) {
+	meta := map[string]any{
+		"tool_name":   toolName,
+		"duration_ms": elapsed.Milliseconds(),
+	}
+	if connectorName != "" {
+		meta["connector_name"] = connectorName
+	}
+	if errMsg != "" {
+		meta["error"] = errMsg
+	}
+	payload, err := json.Marshal(meta)
+	if err != nil {
+		slog.Error("marshal tool audit payload failed", "error", err)
+		return
+	}
+	auditFrame := proxy.Frame{
+		Type:    frameType,
+		ID:      reqID,
+		Payload: payload,
+	}
+	if err := conn.Send(ctx, auditFrame); err != nil {
+		slog.Warn("failed to send tool audit frame", "type", frameType, "tool", toolName, "error", err)
 	}
 }
 

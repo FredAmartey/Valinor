@@ -11,24 +11,33 @@ import (
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/connectors"
+	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
 // ConfigPusher pushes config to a running agent over vsock.
 type ConfigPusher interface {
-	PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string) error
+	PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string, connectors []map[string]any) error
+}
+
+// ConnectorLister loads active connectors for agent config injection.
+type ConnectorLister interface {
+	ListForAgent(ctx context.Context, q database.Querier) ([]connectors.AgentConnectorConfig, error)
 }
 
 // Handler handles HTTP requests for agent lifecycle.
 type Handler struct {
-	manager      *Manager
-	configPusher ConfigPusher // optional, nil = no vsock push
-	auditLog     audit.Logger
+	manager        *Manager
+	configPusher   ConfigPusher // optional, nil = no vsock push
+	auditLog       audit.Logger
+	connectorStore ConnectorLister
+	pool           *database.Pool
 }
 
 // NewHandler creates a new orchestrator Handler.
-func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger) *Handler {
-	return &Handler{manager: manager, configPusher: pusher, auditLog: auditLog}
+func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger, connectorLister ConnectorLister, pool *database.Pool) *Handler {
+	return &Handler{manager: manager, configPusher: pusher, auditLog: auditLog, connectorStore: connectorLister, pool: pool}
 }
 
 // HandleProvision creates a new agent for the caller's tenant.
@@ -113,6 +122,42 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 			Metadata:     map[string]any{"status": inst.Status},
 			Source:       "api",
 		})
+	}
+
+	// Load active connectors and push config if agent is already running.
+	var agentConnectors []map[string]any
+	if h.connectorStore != nil && h.pool != nil {
+		if connErr := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			configs, listErr := h.connectorStore.ListForAgent(ctx, q)
+			if listErr != nil {
+				slog.Warn("failed to load connectors for agent", "error", listErr)
+				return nil
+			}
+			for _, c := range configs {
+				var tools []string
+				if len(c.Tools) > 0 {
+					if unmarshalErr := json.Unmarshal(c.Tools, &tools); unmarshalErr != nil {
+						slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", unmarshalErr)
+					}
+				}
+				agentConnectors = append(agentConnectors, map[string]any{
+					"name":     c.Name,
+					"type":     c.Type,
+					"endpoint": c.Endpoint,
+					"auth":     c.Auth,
+					"tools":    tools,
+				})
+			}
+			return nil
+		}); connErr != nil {
+			slog.Warn("failed to load tenant connectors", "error", connErr)
+		}
+	}
+
+	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
+		if pushErr := h.configPusher.PushConfig(r.Context(), inst.ID, *inst.VsockCID, nil, nil, nil, nil, agentConnectors); pushErr != nil {
+			slog.Warn("config push to agent failed", "id", inst.ID, "error", pushErr)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, inst)
@@ -301,9 +346,41 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load active connectors for this tenant
+	var agentConnectors []map[string]any
+	if h.connectorStore != nil && h.pool != nil {
+		tenantID := middleware.GetTenantID(r.Context())
+		if connErr := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			configs, listErr := h.connectorStore.ListForAgent(ctx, q)
+			if listErr != nil {
+				slog.Warn("failed to load connectors for agent", "error", listErr)
+				return nil
+			}
+			for _, c := range configs {
+				// Parse tools from json.RawMessage to []string for type-safe agent deserialization
+				var tools []string
+				if len(c.Tools) > 0 {
+					if unmarshalErr := json.Unmarshal(c.Tools, &tools); unmarshalErr != nil {
+						slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", unmarshalErr)
+					}
+				}
+				agentConnectors = append(agentConnectors, map[string]any{
+					"name":     c.Name,
+					"type":     c.Type,
+					"endpoint": c.Endpoint,
+					"auth":     c.Auth,
+					"tools":    tools,
+				})
+			}
+			return nil
+		}); connErr != nil {
+			slog.Warn("failed to load tenant connectors", "error", connErr)
+		}
+	}
+
 	// Best-effort push to running agent via vsock
 	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
-		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist, nil, nil); pushErr != nil {
+		if pushErr := h.configPusher.PushConfig(r.Context(), id, *inst.VsockCID, req.Config, req.ToolAllowlist, nil, nil, agentConnectors); pushErr != nil {
 			slog.Warn("config push to agent failed", "id", id, "error", pushErr)
 		}
 	}
