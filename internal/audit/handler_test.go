@@ -114,3 +114,19 @@ func TestHandleListEvents_InvalidUserIDFilter(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestHandleListEvents_ComposedFilters(t *testing.T) {
+	h := NewHandler(nil)
+	req := httptest.NewRequest("GET",
+		"/api/v1/audit/events?action=user.created&resource_type=user&source=api&limit=25",
+		nil,
+	)
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+	w := httptest.NewRecorder()
+
+	h.HandleListEvents(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"count":0`)
+	assert.Contains(t, w.Body.String(), `"events":[]`)
+}
