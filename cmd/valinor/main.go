@@ -383,11 +383,19 @@ func buildConnectorHandler(pool *database.Pool) *connectors.Handler {
 }
 
 func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*channels.Handler, error) {
-	if !cfg.Ingress.Enabled {
+	if pool == nil {
 		return nil, nil
 	}
-	if pool == nil {
-		return nil, fmt.Errorf("database pool is required when channels ingress is enabled")
+
+	store, err := buildChannelStore(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Admin CRUD routes (links, outbox, providers) are always available when
+	// the database is connected, regardless of whether webhook ingress is enabled.
+	if !cfg.Ingress.Enabled {
+		return channels.NewHandler(nil).WithLinkStore(pool, store), nil
 	}
 
 	replayWindow := time.Duration(cfg.Ingress.ReplayWindowSeconds) * time.Second
@@ -395,10 +403,6 @@ func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*chann
 		replayWindow = 24 * time.Hour
 	}
 
-	store, err := buildChannelStore(cfg)
-	if err != nil {
-		return nil, err
-	}
 	resolveVerifier := newChannelVerifierResolver(pool, store)
 	resolveLink := func(ctx context.Context, platform, platformUserID string) (*channels.ChannelLink, error) {
 		tenantID := middleware.GetTenantID(ctx)

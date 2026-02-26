@@ -19,14 +19,23 @@ func TestBuildConnectorHandler(t *testing.T) {
 }
 
 func TestBuildChannelHandler(t *testing.T) {
-	t.Run("disabled ingress returns nil handler", func(t *testing.T) {
+	t.Run("disabled ingress without pool returns nil handler", func(t *testing.T) {
 		handler, err := buildChannelHandler(nil, config.ChannelsConfig{})
 		require.NoError(t, err)
 		assert.Nil(t, handler)
 	})
 
-	t.Run("enabled ingress without database pool fails", func(t *testing.T) {
-		_, err := buildChannelHandler(nil, config.ChannelsConfig{
+	t.Run("disabled ingress with pool returns handler for admin CRUD", func(t *testing.T) {
+		pool := (*database.Pool)(&pgxpool.Pool{})
+		handler, err := buildChannelHandler(pool, config.ChannelsConfig{
+			Ingress: config.ChannelsIngressConfig{Enabled: false},
+		})
+		require.NoError(t, err)
+		assert.NotNil(t, handler, "handler must not be nil — admin CRUD routes (links, outbox, providers) should work even when webhook ingress is disabled")
+	})
+
+	t.Run("enabled ingress without database pool returns nil handler", func(t *testing.T) {
+		handler, err := buildChannelHandler(nil, config.ChannelsConfig{
 			Ingress: config.ChannelsIngressConfig{
 				Enabled: true,
 			},
@@ -37,8 +46,8 @@ func TestBuildChannelHandler(t *testing.T) {
 				},
 			},
 		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "database")
+		require.NoError(t, err)
+		assert.Nil(t, handler)
 	})
 
 	t.Run("enabled provider without global secret still returns handler", func(t *testing.T) {
