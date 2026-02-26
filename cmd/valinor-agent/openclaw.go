@@ -144,10 +144,13 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		// Check for canary token leak in content
 		if found, token := a.checkCanary(choice.Message.Content); found {
 			slog.Error("canary token detected in OpenClaw response", "token", token)
-			haltPayload, _ := json.Marshal(map[string]string{
+			haltPayload, marshalErr := json.Marshal(map[string]string{
 				"reason": "canary_leak",
 				"token":  token,
 			})
+			if marshalErr != nil {
+				slog.Error("failed to marshal canary halt payload", "error", marshalErr)
+			}
 			halt := proxy.Frame{
 				Type:    proxy.TypeSessionHalt,
 				ID:      frame.ID,
@@ -233,11 +236,14 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 			// Check tool result for canary token leak
 			if found, token := a.checkCanary(toolResult); found {
 				slog.Error("canary token detected in tool result", "tool", tc.Function.Name, "token", token)
-				haltPayload, _ := json.Marshal(map[string]string{
+				haltPayload, marshalErr := json.Marshal(map[string]string{
 					"reason": "canary_leak",
 					"token":  token,
 					"source": "tool:" + tc.Function.Name,
 				})
+				if marshalErr != nil {
+					slog.Error("failed to marshal canary halt payload", "error", marshalErr)
+				}
 				halt := proxy.Frame{
 					Type:    proxy.TypeSessionHalt,
 					ID:      frame.ID,
