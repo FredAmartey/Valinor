@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -43,6 +44,41 @@ func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Reques
 	}
 
 	return tenantID, nil
+}
+
+// ResolveFromOrigin extracts the tenant slug from an Origin header URL
+// (e.g. "https://gondolin.valinor.example.com") and looks up the tenant ID.
+func (tr *TenantResolver) ResolveFromOrigin(ctx context.Context, origin string) (string, error) {
+	slug, err := tr.extractSlugFromOrigin(origin)
+	if err != nil {
+		return "", err
+	}
+
+	var tenantID string
+	err = tr.pool.QueryRow(ctx,
+		"SELECT id FROM tenants WHERE slug = $1",
+		slug,
+	).Scan(&tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("%w: slug %q", ErrTenantNotFound, slug)
+		}
+		return "", fmt.Errorf("querying tenant: %w", err)
+	}
+
+	return tenantID, nil
+}
+
+// extractSlugFromOrigin parses the subdomain from an Origin URL string.
+func (tr *TenantResolver) extractSlugFromOrigin(origin string) (string, error) {
+	if origin == "" {
+		return "", fmt.Errorf("%w: empty origin", ErrTenantNotFound)
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("%w: invalid origin %q", ErrTenantNotFound, origin)
+	}
+	return tr.extractSlug(u.Host)
 }
 
 // extractSlug parses the subdomain from a host string.
