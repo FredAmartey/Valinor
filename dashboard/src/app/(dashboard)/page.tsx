@@ -11,7 +11,12 @@ export default async function OverviewPage() {
     isPlatformAdmin
       ? api<Tenant[]>("/api/v1/tenants").catch(() => [] as Tenant[])
       : ([] as Tenant[]),
-    api<{ agents: AgentInstance[] }>("/api/v1/agents").then((r) => r.agents).catch(() => [] as AgentInstance[]),
+    api<{ agents: AgentInstance[] }>("/api/v1/agents")
+      .then((r) => r.agents)
+      .catch((err) => {
+        console.error("Failed to fetch agents for overview SSR:", err)
+        return [] as AgentInstance[]
+      }),
   ])
 
   return <PlatformOverview initialTenants={tenants} initialAgents={agents} />

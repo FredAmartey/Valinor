@@ -384,6 +384,9 @@ func buildConnectorHandler(pool *database.Pool) *connectors.Handler {
 
 func buildChannelHandler(pool *database.Pool, cfg config.ChannelsConfig) (*channels.Handler, error) {
 	if pool == nil {
+		if cfg.Ingress.Enabled {
+			slog.Warn("channels ingress enabled but database pool is unavailable — channel routes disabled")
+		}
 		return nil, nil
 	}
 
