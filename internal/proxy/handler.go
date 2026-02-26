@@ -297,6 +297,32 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				"error": "session terminated for security reasons",
 			})
 			return
+
+		case TypeToolExecuted:
+			if h.audit != nil {
+				var meta map[string]any
+				_ = json.Unmarshal(reply.Payload, &meta)
+				evt := auditFromRequest(r, "tool.executed", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = meta
+				evt.Source = "agent"
+				h.audit.Log(r.Context(), evt)
+			}
+			continue
+
+		case TypeToolFailed:
+			if h.audit != nil {
+				var meta map[string]any
+				_ = json.Unmarshal(reply.Payload, &meta)
+				evt := auditFromRequest(r, "tool.failed", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = meta
+				evt.Source = "agent"
+				h.audit.Log(r.Context(), evt)
+			}
+			continue
 		}
 	}
 }
@@ -503,6 +529,32 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 			}
 			return
+
+		case TypeToolExecuted:
+			if h.audit != nil {
+				var meta map[string]any
+				_ = json.Unmarshal(reply.Payload, &meta)
+				evt := auditFromRequest(r, "tool.executed", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = meta
+				evt.Source = "agent"
+				h.audit.Log(r.Context(), evt)
+			}
+			continue
+
+		case TypeToolFailed:
+			if h.audit != nil {
+				var meta map[string]any
+				_ = json.Unmarshal(reply.Payload, &meta)
+				evt := auditFromRequest(r, "tool.failed", "agent", agentTenant)
+				agentUUID, _ := uuid.Parse(agentID)
+				evt.ResourceID = &agentUUID
+				evt.Metadata = meta
+				evt.Source = "agent"
+				h.audit.Log(r.Context(), evt)
+			}
+			continue
 		}
 	}
 }
