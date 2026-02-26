@@ -49,3 +49,11 @@ Patterns and corrections captured during development. Review at session start.
 **Mistake:** Manually aligned `=` signs across blank-line-separated const groups. `gofmt` only aligns within contiguous blocks, so it reformatted them and CI failed.
 
 **Rule:** Don't manually align constants across groups separated by blank lines. Run `gofmt -d` locally before pushing.
+
+---
+
+## 2026-02-26: Wait for ALL review sources before fixing — don't fix in rounds
+
+**Mistake:** On PR #60, I started fixing my own review findings immediately, pushed them, then Claude's external review came back with additional findings, requiring a second round of fixes. Two push cycles instead of one.
+
+**Rule:** After triggering external review + CI (step 6), do your own review in parallel but **hold all fixes** until both CI and external review results are in (step 7). Triage everything together (step 8), then fix once. One round of fixes, one push, one re-verification.
