@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -46,4 +47,60 @@ func TestBuildBatchInsert_Empty(t *testing.T) {
 	store := NewStore()
 	err := store.InsertBatch(context.Background(), nil, nil)
 	require.NoError(t, err)
+}
+
+func TestBuildListQuery_NoFilters(t *testing.T) {
+	tenantID := uuid.New()
+	params := ListEventsParams{
+		TenantID: tenantID,
+		Limit:    50,
+	}
+	sql, args := buildListQuery(params)
+	assert.Contains(t, sql, "WHERE tenant_id = $1")
+	assert.Contains(t, sql, "LIMIT $2")
+	assert.Equal(t, tenantID, args[0])
+	assert.Equal(t, 50, args[1])
+}
+
+func TestBuildListQuery_AllFilters(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	action := "user.created"
+	resType := "user"
+	source := "api"
+	after := time.Date(2026, 2, 25, 0, 0, 0, 0, time.UTC)
+	before := time.Date(2026, 2, 26, 0, 0, 0, 0, time.UTC)
+	params := ListEventsParams{
+		TenantID:     tenantID,
+		Action:       &action,
+		ResourceType: &resType,
+		UserID:       &userID,
+		Source:       &source,
+		After:        &after,
+		Before:       &before,
+		Limit:        100,
+	}
+	sql, args := buildListQuery(params)
+	assert.Contains(t, sql, "action = $")
+	assert.Contains(t, sql, "resource_type = $")
+	assert.Contains(t, sql, "user_id = $")
+	assert.Contains(t, sql, "source = $")
+	assert.Contains(t, sql, "created_at > $")
+	assert.Contains(t, sql, "created_at < $")
+	// tenant_id + 6 filters + limit = 8 args
+	assert.Len(t, args, 8)
+}
+
+func TestBuildListQuery_PartialFilters(t *testing.T) {
+	tenantID := uuid.New()
+	action := "role.deleted"
+	params := ListEventsParams{
+		TenantID: tenantID,
+		Action:   &action,
+		Limit:    50,
+	}
+	sql, args := buildListQuery(params)
+	assert.Contains(t, sql, "action = $2")
+	assert.Contains(t, sql, "LIMIT $3")
+	assert.Len(t, args, 3)
 }
