@@ -236,7 +236,7 @@ func run() error {
 			timeout: time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 		}
 
-		agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger)
+		agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger, connectors.NewStore(), pool)
 
 		userContextStore = proxy.NewDBUserContextStore(pool)
 		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{
@@ -600,8 +600,8 @@ type configPusherAdapter struct {
 	timeout time.Duration
 }
 
-func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string) error {
-	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, toolPolicies, canaryTokens, a.timeout)
+func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string, connectors []map[string]any) error {
+	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, toolPolicies, canaryTokens, connectors, a.timeout)
 }
 
 // sentinelAdapter bridges sentinel.Sentinel to proxy.Sentinel.
