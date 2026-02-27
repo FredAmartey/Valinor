@@ -95,6 +95,15 @@ export interface Connector {
   created_at: string
 }
 
+export interface CreateConnectorRequest {
+  name: string
+  connector_type?: string
+  endpoint: string
+  auth_config?: Record<string, unknown>
+  tools?: string[]
+  resources?: string[]
+}
+
 // Channel link types — matches Go internal/channels/handler.go responses
 export interface ChannelLink {
   id: string
