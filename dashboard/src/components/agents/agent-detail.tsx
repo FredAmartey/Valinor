@@ -11,6 +11,7 @@ import { formatDate, formatTimeAgo, truncateId } from "@/lib/format"
 import { Wrench, Trash, Gear } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useCan } from "@/components/providers/permission-provider"
+import { AgentChat } from "./agent-chat"
 
 function parseJsonField(val: string | Record<string, unknown> | null): Record<string, unknown> {
   if (!val) return {}
@@ -213,6 +214,12 @@ export function AgentDetail({ id }: { id: string }) {
           </div>
         </>
       )}
+
+      {/* Debug Console */}
+      <div>
+        <h2 className="mb-3 text-sm font-medium text-zinc-900">Debug Console</h2>
+        <AgentChat agentId={id} agentStatus={agent.status} />
+      </div>
     </div>
   )
 }
