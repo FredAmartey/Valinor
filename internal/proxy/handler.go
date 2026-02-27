@@ -14,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/valinor-ai/valinor/internal/rbac"
 )
 
 // AgentLookup provides agent instance lookups for the proxy handler.
@@ -72,6 +73,8 @@ type Handler struct {
 	sentinel         Sentinel
 	audit            AuditLogger
 	userContextStore UserContextStore
+	tokenValidator   TokenValidator
+	rbacEval         *rbac.Evaluator
 }
 
 // NewHandler creates a proxy Handler.
