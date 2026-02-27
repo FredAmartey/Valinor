@@ -16,11 +16,13 @@ log:
   format: "json"
 
 auth:
-  devmode: true  # Set to false in production
+  devmode: true  # Required for mock orchestrator; dashboard OIDC works regardless
   oidc:
-    issuerurl: ""
-    clientid: ""
+    enabled: true
+    issuerurl: "https://free-cow-74.clerk.accounts.dev"
+    clientid: "SMGALHI3UVMTc4Xe"
     clientsecret: ""
+    jwksurl: "https://free-cow-74.clerk.accounts.dev/.well-known/jwks.json"
     redirecturl: "http://localhost:8080/auth/callback"
   jwt:
     signingkey: "dev-signing-key-change-in-production-must-be-32-chars"
