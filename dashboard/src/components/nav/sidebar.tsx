@@ -21,6 +21,7 @@ export function Sidebar() {
   const hasTenant = !!session?.user?.tenantId
 
   const canReadUsers = useCan("users:read")
+  const canReadAgents = useCan("agents:read")
   const canReadConnectors = useCan("connectors:read")
   const canReadAudit = useCan("audit:read")
 
@@ -37,12 +38,14 @@ export function Sidebar() {
           ? [
               { href: "/users", icon: <Users size={20} />, label: "Users" },
               { href: "/departments", icon: <TreeStructure size={20} />, label: "Departments" },
+              { href: "/rbac", icon: <ShieldCheck size={20} />, label: "RBAC" },
             ]
           : []),
-        { href: "/agents", icon: <Robot size={20} />, label: "Agents" },
+        ...(canReadAgents
+          ? [{ href: "/agents", icon: <Robot size={20} />, label: "Agents" }]
+          : []),
         ...(canReadConnectors
           ? [
-              { href: "/rbac", icon: <ShieldCheck size={20} />, label: "RBAC" },
               { href: "/channels", icon: <ChatCircle size={20} />, label: "Channels" },
               { href: "/connectors", icon: <Plugs size={20} />, label: "Connectors" },
             ]

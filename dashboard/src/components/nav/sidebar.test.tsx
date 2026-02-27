@@ -101,11 +101,39 @@ describe("Sidebar", () => {
 
     expect(screen.queryByText("Users")).toBeNull()
     expect(screen.queryByText("Departments")).toBeNull()
-    // Agents should still be visible
+    expect(screen.queryByText("RBAC")).toBeNull()
+    // Agents should still be visible (gated by agents:read, not users:read)
     expect(screen.getByText("Agents")).toBeDefined()
   })
 
-  it("hides RBAC, channels, connectors when lacking connectors:read", async () => {
+  it("hides Agents when lacking agents:read", async () => {
+    const { useSession } = await import("next-auth/react")
+    vi.mocked(useSession).mockReturnValue({
+      data: {
+        user: {
+          id: "user-6",
+          name: "Tenant Admin",
+          email: "tenant5@test.com",
+          isPlatformAdmin: false,
+          tenantId: "t-1",
+        },
+      },
+      status: "authenticated",
+    } as ReturnType<typeof useSession>)
+
+    const { useCan } = await import("@/components/providers/permission-provider")
+    vi.mocked(useCan).mockImplementation((permission) => permission !== "agents:read")
+
+    const { Sidebar } = await import("./sidebar")
+    render(<Sidebar />)
+
+    expect(screen.queryByText("Agents")).toBeNull()
+    // Other items should still be visible
+    expect(screen.getByText("Users")).toBeDefined()
+    expect(screen.getByText("Connectors")).toBeDefined()
+  })
+
+  it("hides channels and connectors when lacking connectors:read", async () => {
     const { useSession } = await import("next-auth/react")
     vi.mocked(useSession).mockReturnValue({
       data: {
@@ -126,9 +154,10 @@ describe("Sidebar", () => {
     const { Sidebar } = await import("./sidebar")
     render(<Sidebar />)
 
-    expect(screen.queryByText("RBAC")).toBeNull()
     expect(screen.queryByText("Channels")).toBeNull()
     expect(screen.queryByText("Connectors")).toBeNull()
+    // RBAC is gated by users:read, not connectors:read
+    expect(screen.getByText("RBAC")).toBeDefined()
     // Audit Log is gated by audit:read, not connectors:read
     expect(screen.getByText("Audit Log")).toBeDefined()
     // Agents should still be visible
