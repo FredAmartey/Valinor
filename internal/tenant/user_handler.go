@@ -139,6 +139,38 @@ func (h *UserHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
+// HandleListUserDepartments returns all departments a user belongs to.
+func (h *UserHandler) HandleListUserDepartments(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("id")
+	if userID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing user id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	var departments []Department
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var listErr error
+		departments, listErr = h.store.ListDepartments(ctx, q, userID)
+		return listErr
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "listing user departments failed"})
+		return
+	}
+
+	if departments == nil {
+		departments = []Department{}
+	}
+
+	writeJSON(w, http.StatusOK, departments)
+}
+
 // HandleAddToDepartment adds a user to a department.
 func (h *UserHandler) HandleAddToDepartment(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)

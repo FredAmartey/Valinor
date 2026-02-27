@@ -103,6 +103,65 @@ func TestUserHandler(t *testing.T) {
 		assert.Len(t, users, 2)
 	})
 
+	t.Run("ListUserDepartments", func(t *testing.T) {
+		tenLD, err := tenantStore.Create(ctx, "List Dept Org", "list-dept-org")
+		require.NoError(t, err)
+
+		var userID, deptID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenLD.ID, func(ctx context.Context, q database.Querier) error {
+			u, createErr := tenant.NewUserStore().Create(ctx, q, "listdept@test.com", "ListDept")
+			require.NoError(t, createErr)
+			userID = u.ID
+			d, createErr := tenant.NewDepartmentStore().Create(ctx, q, "Engineering", nil)
+			require.NoError(t, createErr)
+			deptID = d.ID
+			addErr := tenant.NewUserStore().AddToDepartment(ctx, q, userID, deptID)
+			require.NoError(t, addErr)
+			return nil
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+userID+"/departments", nil)
+		req.SetPathValue("id", userID)
+		req = withTenantIdentity(req, tenLD.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleListUserDepartments).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var departments []tenant.Department
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &departments))
+		assert.Len(t, departments, 1)
+		assert.Equal(t, deptID, departments[0].ID)
+		assert.Equal(t, "Engineering", departments[0].Name)
+	})
+
+	t.Run("ListUserDepartments_Empty", func(t *testing.T) {
+		tenLE, err := tenantStore.Create(ctx, "Empty Dept Org", "empty-dept-org")
+		require.NoError(t, err)
+
+		var userID string
+		err = database.WithTenantConnection(ctx, rlsPool, tenLE.ID, func(ctx context.Context, q database.Querier) error {
+			u, createErr := tenant.NewUserStore().Create(ctx, q, "nodepts@test.com", "NoDepts")
+			require.NoError(t, createErr)
+			userID = u.ID
+			return nil
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+userID+"/departments", nil)
+		req.SetPathValue("id", userID)
+		req = withTenantIdentity(req, tenLE.ID)
+		w := httptest.NewRecorder()
+
+		wrapWithTenantCtx(handler.HandleListUserDepartments).ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var departments []tenant.Department
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &departments))
+		assert.Len(t, departments, 0)
+	})
+
 	t.Run("AddToDepartment", func(t *testing.T) {
 		ten3, err := tenantStore.Create(ctx, "Dept Member Org", "dept-member-handler-org")
 		require.NoError(t, err)

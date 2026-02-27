@@ -199,6 +199,11 @@ func New(addr string, deps Dependencies) *Server {
 				http.HandlerFunc(deps.UserHandler.HandleList),
 			),
 		)
+		protectedMux.Handle("GET /api/v1/users/{id}/departments",
+			rbac.RequirePermission(deps.RBAC, "users:read", rbacOpts...)(
+				http.HandlerFunc(deps.UserHandler.HandleListUserDepartments),
+			),
+		)
 		protectedMux.Handle("POST /api/v1/users/{id}/departments",
 			rbac.RequirePermission(deps.RBAC, "users:write", rbacOpts...)(
 				http.HandlerFunc(deps.UserHandler.HandleAddToDepartment),

@@ -50,9 +50,7 @@ export function UserDetail({ id, tenantId }: UserDetailProps) {
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
-          {/* TODO: No Go endpoint returns user's department memberships.
-              Add GET /api/v1/users/{id}/departments and wire it here. */}
-          <UserDepartmentsSection userId={id} memberDepartmentIds={[]} />
+          <UserDepartmentsSection userId={id} />
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
           <UserRolesSection userId={id} tenantId={tenantId} />

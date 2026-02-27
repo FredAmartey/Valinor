@@ -53,6 +53,21 @@ describe("user query functions", () => {
     )
   })
 
+  it("fetchUserDepartments calls correct endpoint", async () => {
+    const { apiClient } = await import("@/lib/api-client")
+    const mockedClient = vi.mocked(apiClient)
+    mockedClient.mockResolvedValueOnce([{ id: "d-1", name: "Engineering" }])
+
+    const { fetchUserDepartments } = await import("./users")
+    await fetchUserDepartments("test-token", "u-1")
+
+    expect(mockedClient).toHaveBeenCalledWith(
+      "/api/v1/users/u-1/departments",
+      "test-token",
+      undefined,
+    )
+  })
+
   it("addUserToDepartment posts to correct endpoint", async () => {
     const { apiClient } = await import("@/lib/api-client")
     const mockedClient = vi.mocked(apiClient)

@@ -3,12 +3,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { apiClient } from "@/lib/api-client"
-import type { User, CreateUserRequest } from "@/lib/types"
+import type { User, CreateUserRequest, Department } from "@/lib/types"
 
 export const userKeys = {
   all: ["users"] as const,
   list: () => [...userKeys.all, "list"] as const,
   detail: (id: string) => [...userKeys.all, "detail", id] as const,
+  userDepartments: (id: string) => [...userKeys.all, "departments", id] as const,
 }
 
 export async function fetchUsers(
@@ -33,6 +34,13 @@ export async function createUser(
     method: "POST",
     body: JSON.stringify(data),
   })
+}
+
+export async function fetchUserDepartments(
+  accessToken: string,
+  userId: string,
+): Promise<Department[]> {
+  return apiClient<Department[]>(`/api/v1/users/${userId}/departments`, accessToken, undefined)
 }
 
 export async function addUserToDepartment(
@@ -76,6 +84,15 @@ export function useUserQuery(id: string) {
   })
 }
 
+export function useUserDepartmentsQuery(userId: string) {
+  const { data: session } = useSession()
+  return useQuery({
+    queryKey: userKeys.userDepartments(userId),
+    queryFn: () => fetchUserDepartments(session!.accessToken, userId),
+    enabled: !!session?.accessToken && !!userId,
+  })
+}
+
 export function useCreateUserMutation() {
   const { data: session } = useSession()
   const queryClient = useQueryClient()
@@ -94,7 +111,7 @@ export function useAddUserToDepartmentMutation(userId: string) {
     mutationFn: (departmentId: string) =>
       addUserToDepartment(session!.accessToken, userId, departmentId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: userKeys.detail(userId) })
+      queryClient.invalidateQueries({ queryKey: userKeys.userDepartments(userId) })
     },
   })
 }
@@ -106,7 +123,7 @@ export function useRemoveUserFromDepartmentMutation(userId: string) {
     mutationFn: (departmentId: string) =>
       removeUserFromDepartment(session!.accessToken, userId, departmentId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: userKeys.detail(userId) })
+      queryClient.invalidateQueries({ queryKey: userKeys.userDepartments(userId) })
     },
   })
 }
