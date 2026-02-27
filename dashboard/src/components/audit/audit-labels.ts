@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<string, ActionLabel> = {
   "agent.provisioned": { label: "Agent Provisioned", category: "agent" },
   "agent.updated": { label: "Agent Updated", category: "agent" },
   "agent.destroyed": { label: "Agent Destroyed", category: "agent" },
+  "agent.message.ws": { label: "Agent Message (WS)", category: "agent" },
 
   // Tenant events
   "tenant.created": { label: "Tenant Created", category: "tenant" },
@@ -74,6 +75,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   telegram: "Telegram",
   slack: "Slack",
   system: "System",
+  websocket: "WebSocket",
 }
 
 export const ACTION_CATEGORIES = [
@@ -104,4 +106,5 @@ export const SOURCES = [
   { value: "telegram", label: "Telegram" },
   { value: "slack", label: "Slack" },
   { value: "system", label: "System" },
+  { value: "websocket", label: "WebSocket" },
 ] as const
