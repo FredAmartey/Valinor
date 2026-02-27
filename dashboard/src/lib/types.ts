@@ -231,3 +231,25 @@ export interface OverviewStats {
   userCount: number
   recentAuditEvents: AuditEvent[]
 }
+
+// WebSocket chat types for agent debug console
+export interface ChatMessage {
+  id: string
+  type: "user" | "assistant" | "tool" | "error" | "halt"
+  content: string
+  toolName?: string
+  reason?: string
+  requestId?: string
+  timestamp: number
+  streaming?: boolean
+}
+
+export interface WsServerMessage {
+  type: "chunk" | "tool_executed" | "tool_blocked" | "error" | "session_halt"
+  request_id?: string
+  content?: string
+  done?: boolean
+  tool_name?: string
+  reason?: string
+  message?: string
+}
