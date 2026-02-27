@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   useAddUserToDepartmentMutation,
   useRemoveUserFromDepartmentMutation,
+  useUserDepartmentsQuery,
 } from "@/lib/queries/users"
 import { useDepartmentsQuery } from "@/lib/queries/departments"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -12,31 +13,29 @@ import { X, Plus } from "@phosphor-icons/react"
 
 interface UserDepartmentsSectionProps {
   userId: string
-  memberDepartmentIds: string[]
 }
 
-export function UserDepartmentsSection({ userId, memberDepartmentIds }: UserDepartmentsSectionProps) {
-  const { data: allDepartments, isLoading } = useDepartmentsQuery()
+export function UserDepartmentsSection({ userId }: UserDepartmentsSectionProps) {
+  const { data: allDepartments, isLoading: loadingAll } = useDepartmentsQuery()
+  const { data: memberDepartments, isLoading: loadingMember } = useUserDepartmentsQuery(userId)
   const addMutation = useAddUserToDepartmentMutation(userId)
   const removeMutation = useRemoveUserFromDepartmentMutation(userId)
   const [adding, setAdding] = useState(false)
 
-  if (isLoading) {
+  if (loadingAll || loadingMember) {
     return <Skeleton className="h-24 w-full" />
   }
 
-  const memberDepartments = allDepartments?.filter((d) =>
-    memberDepartmentIds.includes(d.id),
-  ) ?? []
+  const memberIds = new Set(memberDepartments?.map((d) => d.id) ?? [])
 
   const availableDepartments = allDepartments?.filter(
-    (d) => !memberDepartmentIds.includes(d.id),
+    (d) => !memberIds.has(d.id),
   ) ?? []
 
   return (
     <div>
       <h2 className="mb-3 text-sm font-medium text-zinc-900">Departments</h2>
-      {memberDepartments.length === 0 ? (
+      {!memberDepartments?.length ? (
         <p className="text-sm text-zinc-500">Not a member of any department.</p>
       ) : (
         <div className="space-y-2">

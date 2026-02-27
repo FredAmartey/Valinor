@@ -68,7 +68,7 @@ Agents are not limited to the core process skills above.
 4. Run local verification.
 5. Open PR with clear summary and evidence.
 6. Trigger manual external review (for example `@claude`) immediately — run in parallel with CI/security checks, not after.
-7. Wait for both CI and review results.
+7. Wait for both CI and claude review results.
 8. Address or challenge findings with technical reasoning.
 9. Re-verify.
 10. Ask owner for merge decision.
