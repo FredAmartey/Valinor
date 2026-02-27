@@ -1,6 +1,6 @@
 export interface ActionLabel {
   label: string
-  category: "channel" | "user" | "agent" | "tenant" | "department" | "role"
+  category: "channel" | "user" | "agent" | "tenant" | "department" | "role" | "connector"
 }
 
 const ACTION_LABELS: Record<string, ActionLabel> = {
@@ -44,6 +44,10 @@ const ACTION_LABELS: Record<string, ActionLabel> = {
   "role.deleted": { label: "Role Deleted", category: "role" },
   "user_role.assigned": { label: "Role Assigned", category: "role" },
   "user_role.revoked": { label: "Role Revoked", category: "role" },
+
+  // Connector events
+  "connector.created": { label: "Connector Created", category: "connector" },
+  "connector.deleted": { label: "Connector Deleted", category: "connector" },
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -53,6 +57,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   tenant: "bg-violet-500",
   department: "bg-cyan-500",
   role: "bg-rose-500",
+  connector: "bg-orange-500",
 }
 
 export function getActionLabel(action: string): ActionLabel {
@@ -79,6 +84,7 @@ export const ACTION_CATEGORIES = [
   { value: "tenant", label: "Tenant" },
   { value: "department", label: "Department" },
   { value: "role", label: "Role" },
+  { value: "connector", label: "Connector" },
 ] as const
 
 export const RESOURCE_TYPES = [
