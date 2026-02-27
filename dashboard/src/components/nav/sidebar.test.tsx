@@ -40,13 +40,18 @@ describe("Sidebar", () => {
     expect(screen.getByText("Overview")).toBeDefined()
   })
 
-  it("renders Tenants link for platform admin", async () => {
+  it("renders only Overview and Tenants for platform admin (no tenant context)", async () => {
     const { Sidebar } = await import("./sidebar")
     render(<Sidebar />)
+    expect(screen.getByText("Overview")).toBeDefined()
     expect(screen.getByText("Tenants")).toBeDefined()
+    // No tenant-scoped items
+    expect(screen.queryByText("Users")).toBeNull()
+    expect(screen.queryByText("Agents")).toBeNull()
+    expect(screen.queryByText("Audit Log")).toBeNull()
   })
 
-  it("renders tenant admin nav items and hides Tenants link", async () => {
+  it("hides Tenants link for non-platform-admin tenant user", async () => {
     const { useSession } = await import("next-auth/react")
     vi.mocked(useSession).mockReturnValue({
       data: {
