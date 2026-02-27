@@ -254,7 +254,7 @@ func run() error {
 			MessageTimeout: time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
 			ConfigTimeout:  time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 			PingTimeout:    time.Duration(cfg.Proxy.PingTimeout) * time.Second,
-		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithUserContextStore(userContextStore)
+		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine)
 	}
 	if connPool != nil {
 		defer connPool.Close()

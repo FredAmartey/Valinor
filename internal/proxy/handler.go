@@ -100,6 +100,24 @@ func (h *Handler) WithUserContextStore(store UserContextStore) *Handler {
 	return h
 }
 
+// WithTokenValidator wires JWT validation for WebSocket auth.
+func (h *Handler) WithTokenValidator(tv TokenValidator) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.tokenValidator = tv
+	return h
+}
+
+// WithRBACEvaluator wires RBAC permission checks for WebSocket auth.
+func (h *Handler) WithRBACEvaluator(eval *rbac.Evaluator) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.rbacEval = eval
+	return h
+}
+
 // HandleMessage sends a user message to an agent and returns the full response.
 // POST /agents/:id/message
 func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
