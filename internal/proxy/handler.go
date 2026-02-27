@@ -14,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/valinor-ai/valinor/internal/rbac"
 )
 
 // AgentLookup provides agent instance lookups for the proxy handler.
@@ -59,9 +60,10 @@ type AuditEvent struct {
 
 // HandlerConfig holds proxy handler configuration.
 type HandlerConfig struct {
-	MessageTimeout time.Duration
-	ConfigTimeout  time.Duration
-	PingTimeout    time.Duration
+	MessageTimeout   time.Duration
+	ConfigTimeout    time.Duration
+	PingTimeout      time.Duration
+	WSAllowedOrigins []string // Origin patterns for WebSocket upgrade (e.g. "localhost:3000")
 }
 
 // Handler serves proxy HTTP endpoints for agent communication.
@@ -72,6 +74,8 @@ type Handler struct {
 	sentinel         Sentinel
 	audit            AuditLogger
 	userContextStore UserContextStore
+	tokenValidator   TokenValidator
+	rbacEval         *rbac.Evaluator
 }
 
 // NewHandler creates a proxy Handler.
@@ -94,6 +98,24 @@ func (h *Handler) WithUserContextStore(store UserContextStore) *Handler {
 		return nil
 	}
 	h.userContextStore = store
+	return h
+}
+
+// WithTokenValidator wires JWT validation for WebSocket auth.
+func (h *Handler) WithTokenValidator(tv TokenValidator) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.tokenValidator = tv
+	return h
+}
+
+// WithRBACEvaluator wires RBAC permission checks for WebSocket auth.
+func (h *Handler) WithRBACEvaluator(eval *rbac.Evaluator) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.rbacEval = eval
 	return h
 }
 

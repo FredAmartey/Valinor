@@ -95,6 +95,10 @@ func New(addr string, deps Dependencies) *Server {
 			http.HandlerFunc(deps.ChannelHandler.HandleWebhook),
 		)
 	}
+	// WebSocket route — handler does its own JWT auth from query parameter
+	if deps.ProxyHandler != nil {
+		topMux.HandleFunc("GET /api/v1/agents/{id}/ws", deps.ProxyHandler.HandleWebSocket)
+	}
 
 	// Build RBAC middleware options (audit logger if available)
 	var rbacOpts []rbac.MiddlewareOption
