@@ -6,13 +6,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
 )
 
 // TokenValidator validates a raw JWT string and returns the identity.
@@ -36,6 +37,10 @@ type wsServerMessage struct {
 	Reason    string `json:"reason,omitempty"`
 	Message   string `json:"message,omitempty"`
 }
+
+// wsIdleTimeout is the maximum time the server waits for a client message
+// before closing an idle connection. Resets on each received message.
+const wsIdleTimeout = 10 * time.Minute
 
 // HandleWebSocket upgrades to a WebSocket connection for bidirectional
 // agent messaging. Auth is performed via access_token query parameter
@@ -104,24 +109,44 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx := auth.WithIdentity(r.Context(), identity)
 	ctx = middleware.WithTenantID(ctx, identity.TenantID)
 
-	// Upgrade to WebSocket
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"*"},
-	})
+	// Upgrade to WebSocket — restrict origins to configured CORS origins
+	acceptOpts := &websocket.AcceptOptions{}
+	if len(h.cfg.WSAllowedOrigins) > 0 {
+		acceptOpts.OriginPatterns = h.cfg.WSAllowedOrigins
+	}
+	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		slog.Error("websocket upgrade failed", "error", err)
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
+
+	// Limit inbound message size (matches HTTP handler's 1MB limit)
+	conn.SetReadLimit(1 << 20)
+
+	// Disable the server's WriteTimeout for this long-lived connection,
+	// same pattern as the SSE handler in HandleStream.
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
 
 	h.runWebSocketRelay(ctx, conn, inst, identity)
 }
 
+// runWebSocketRelay reads client messages one at a time and relays each to the
+// agent, forwarding response frames back over the WebSocket. This is a
+// synchronous (single-goroutine) design: the client cannot send a new message
+// until the current agent response completes. This is simpler than the
+// two-goroutine design in the design doc and acceptable for a debug console
+// where conversations are sequential.
 func (h *Handler) runWebSocketRelay(ctx context.Context, wsConn *websocket.Conn, inst *orchestrator.AgentInstance, identity *auth.Identity) {
 	for {
+		// Apply idle timeout — close connection if no message within window
+		readCtx, readCancel := context.WithTimeout(ctx, wsIdleTimeout)
 		var msg wsClientMessage
-		if err := wsjson.Read(ctx, wsConn, &msg); err != nil {
-			wsConn.Close(websocket.StatusNormalClosure, "")
+		err := wsjson.Read(readCtx, wsConn, &msg)
+		readCancel()
+		if err != nil {
+			_ = wsConn.Close(websocket.StatusNormalClosure, "")
 			return
 		}
 
@@ -260,7 +285,7 @@ func (h *Handler) relayAgentFrames(ctx context.Context, wsConn *websocket.Conn, 
 			}
 			_ = json.Unmarshal(frame.Payload, &tool)
 			_ = wsjson.Write(ctx, wsConn, wsServerMessage{
-				Type:      "tool_executed",
+				Type:      "tool_failed",
 				RequestID: requestID,
 				ToolName:  tool.ToolName,
 				Reason:    tool.Reason,
@@ -289,7 +314,7 @@ func (h *Handler) relayAgentFrames(ctx context.Context, wsConn *websocket.Conn, 
 				RequestID: requestID,
 				Reason:    halt.Reason,
 			})
-			wsConn.Close(websocket.StatusPolicyViolation, halt.Reason)
+			_ = wsConn.Close(websocket.StatusPolicyViolation, halt.Reason)
 			return
 		}
 	}

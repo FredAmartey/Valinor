@@ -245,7 +245,7 @@ export interface ChatMessage {
 }
 
 export interface WsServerMessage {
-  type: "chunk" | "tool_executed" | "tool_blocked" | "error" | "session_halt"
+  type: "chunk" | "tool_executed" | "tool_failed" | "tool_blocked" | "error" | "session_halt"
   request_id?: string
   content?: string
   done?: boolean

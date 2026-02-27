@@ -93,6 +93,20 @@ export function useAgentWebSocket(agentId: string, enabled: boolean) {
               },
             ]
 
+          case "tool_failed":
+            return [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                type: "tool",
+                content: `Tool \`${msg.tool_name}\` failed: ${msg.reason}`,
+                toolName: msg.tool_name,
+                reason: msg.reason,
+                requestId: msg.request_id,
+                timestamp: Date.now(),
+              },
+            ]
+
           case "tool_blocked":
             return [
               ...prev,

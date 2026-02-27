@@ -215,11 +215,13 @@ export function AgentDetail({ id }: { id: string }) {
         </>
       )}
 
-      {/* Debug Console */}
-      <div>
-        <h2 className="mb-3 text-sm font-medium text-zinc-900">Debug Console</h2>
-        <AgentChat agentId={id} agentStatus={agent.status} />
-      </div>
+      {/* Debug Console — only shown to users with agents:write permission */}
+      {canWrite && (
+        <div>
+          <h2 className="mb-3 text-sm font-medium text-zinc-900">Debug Console</h2>
+          <AgentChat agentId={id} agentStatus={agent.status} />
+        </div>
+      )}
     </div>
   )
 }

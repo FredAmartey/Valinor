@@ -251,9 +251,10 @@ func run() error {
 
 		userContextStore = proxy.NewDBUserContextStore(pool)
 		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{
-			MessageTimeout: time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
-			ConfigTimeout:  time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
-			PingTimeout:    time.Duration(cfg.Proxy.PingTimeout) * time.Second,
+			MessageTimeout:   time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
+			ConfigTimeout:    time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
+			PingTimeout:      time.Duration(cfg.Proxy.PingTimeout) * time.Second,
+			WSAllowedOrigins: cfg.CORS.AllowedOrigins,
 		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine)
 	}
 	if connPool != nil {

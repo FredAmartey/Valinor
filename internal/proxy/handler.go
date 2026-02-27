@@ -60,9 +60,10 @@ type AuditEvent struct {
 
 // HandlerConfig holds proxy handler configuration.
 type HandlerConfig struct {
-	MessageTimeout time.Duration
-	ConfigTimeout  time.Duration
-	PingTimeout    time.Duration
+	MessageTimeout   time.Duration
+	ConfigTimeout    time.Duration
+	PingTimeout      time.Duration
+	WSAllowedOrigins []string // Origin patterns for WebSocket upgrade (e.g. "localhost:3000")
 }
 
 // Handler serves proxy HTTP endpoints for agent communication.
