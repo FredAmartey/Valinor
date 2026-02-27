@@ -27,6 +27,11 @@ export function ConnectorsView({ canWrite }: { canWrite: boolean }) {
     deleteMutation.mutate(connector.id)
   }
 
+  const deleteError = deleteMutation.isError
+    ? (deleteMutation.error instanceof ApiError ? deleteMutation.error.body?.error : null) ??
+      "Failed to delete connector."
+    : null
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -79,6 +84,11 @@ export function ConnectorsView({ canWrite }: { canWrite: boolean }) {
       {/* Create form */}
       {showCreate && (
         <CreateConnectorForm onClose={() => setShowCreate(false)} />
+      )}
+
+      {/* Delete error */}
+      {deleteError && (
+        <p className="text-sm text-rose-600">{deleteError}</p>
       )}
 
       {/* List */}
@@ -168,9 +178,11 @@ function CreateConnectorForm({ onClose }: { onClose: () => void }) {
     tools: "",
     auth_config: "",
   })
+  const [jsonError, setJsonError] = useState<string | null>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    setJsonError(null)
     const payload: CreateConnectorRequest = {
       name: form.name.trim(),
       endpoint: form.endpoint.trim(),
@@ -183,7 +195,8 @@ function CreateConnectorForm({ onClose }: { onClose: () => void }) {
       try {
         payload.auth_config = JSON.parse(form.auth_config)
       } catch {
-        return // let native validation or user fix it
+        setJsonError("Invalid JSON in auth config.")
+        return
       }
     }
     mutation.mutate(payload, {
@@ -268,6 +281,7 @@ function CreateConnectorForm({ onClose }: { onClose: () => void }) {
           {mutation.isPending ? "Registering..." : "Register"}
         </button>
       </div>
+      {jsonError && <p className="text-sm text-rose-600">{jsonError}</p>}
       {errorMessage && <p className="text-sm text-rose-600">{errorMessage}</p>}
     </form>
   )
