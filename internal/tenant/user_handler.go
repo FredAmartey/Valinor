@@ -279,3 +279,107 @@ func (h *UserHandler) HandleRemoveFromDepartment(w http.ResponseWriter, r *http.
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// HandleUpdate modifies a user's display_name and/or status.
+func (h *UserHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
+
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing user id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	var req struct {
+		DisplayName string `json:"display_name"`
+		Status      string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.Status != "" && req.Status != "active" && req.Status != "suspended" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be 'active' or 'suspended'"})
+		return
+	}
+
+	var user *User
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var updateErr error
+		user, updateErr = h.store.Update(ctx, q, id, req.DisplayName, req.Status)
+		return updateErr
+	})
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "updating user failed"})
+		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		userUUID, _ := uuid.Parse(user.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionUserUpdated,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Metadata:     map[string]any{"display_name": user.DisplayName, "status": user.Status},
+			Source:       "api",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, user)
+}
+
+// HandleDelete soft-deletes a user by setting status to "suspended".
+func (h *UserHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing user id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return h.store.SoftDelete(ctx, q, id)
+	})
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "deleting user failed"})
+		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		userUUID, _ := uuid.Parse(id)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionUserSuspended,
+			ResourceType: "user",
+			ResourceID:   &userUUID,
+			Source:       "api",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
