@@ -82,6 +82,67 @@ func TestDepartmentStore(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("Update_Name", func(t *testing.T) {
+		err := database.WithTenantConnection(ctx, rlsPool, ten.ID, func(ctx context.Context, q database.Querier) error {
+			dept, createErr := store.Create(ctx, q, "Old Name", nil)
+			require.NoError(t, createErr)
+
+			updated, updateErr := store.Update(ctx, q, dept.ID, "New Name", nil)
+			require.NoError(t, updateErr)
+			assert.Equal(t, "New Name", updated.Name)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("Update_Parent", func(t *testing.T) {
+		err := database.WithTenantConnection(ctx, rlsPool, ten.ID, func(ctx context.Context, q database.Querier) error {
+			parent, createErr := store.Create(ctx, q, "Parent Dept", nil)
+			require.NoError(t, createErr)
+			child, createErr := store.Create(ctx, q, "Child Dept", nil)
+			require.NoError(t, createErr)
+
+			updated, updateErr := store.Update(ctx, q, child.ID, "", &parent.ID)
+			require.NoError(t, updateErr)
+			assert.Equal(t, &parent.ID, updated.ParentID)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("Update_NotFound", func(t *testing.T) {
+		err := database.WithTenantConnection(ctx, rlsPool, ten.ID, func(ctx context.Context, q database.Querier) error {
+			_, updateErr := store.Update(ctx, q, "00000000-0000-0000-0000-000000000000", "Name", nil)
+			assert.ErrorIs(t, updateErr, tenant.ErrDepartmentNotFound)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		err := database.WithTenantConnection(ctx, rlsPool, ten.ID, func(ctx context.Context, q database.Querier) error {
+			dept, createErr := store.Create(ctx, q, "To Delete", nil)
+			require.NoError(t, createErr)
+
+			deleteErr := store.Delete(ctx, q, dept.ID)
+			require.NoError(t, deleteErr)
+
+			_, getErr := store.GetByID(ctx, q, dept.ID)
+			assert.ErrorIs(t, getErr, tenant.ErrDepartmentNotFound)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("Delete_NotFound", func(t *testing.T) {
+		err := database.WithTenantConnection(ctx, rlsPool, ten.ID, func(ctx context.Context, q database.Querier) error {
+			deleteErr := store.Delete(ctx, q, "00000000-0000-0000-0000-000000000000")
+			assert.ErrorIs(t, deleteErr, tenant.ErrDepartmentNotFound)
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
 	t.Run("List", func(t *testing.T) {
 		// Create a fresh tenant to avoid interference from other subtests
 		ten2, err := tenantStore.Create(ctx, "List Org", "list-org")

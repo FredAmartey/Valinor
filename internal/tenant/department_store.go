@@ -83,3 +83,43 @@ func (s *DepartmentStore) List(ctx context.Context, q database.Querier) ([]Depar
 	}
 	return departments, rows.Err()
 }
+
+// Update modifies a department's name and/or parent. An empty name preserves
+// the current value. Pass a non-nil parentID to change parent, or nil to keep it.
+// To clear the parent (make top-level), pass a pointer to an empty string.
+func (s *DepartmentStore) Update(ctx context.Context, q database.Querier, id, name string, parentID *string) (*Department, error) {
+	query := `UPDATE departments
+		SET name      = CASE WHEN $2 = '' THEN name ELSE $2 END,
+		    parent_id = CASE WHEN $3::BOOLEAN THEN $4::UUID ELSE parent_id END
+		WHERE id = $1
+		RETURNING id, tenant_id, name, parent_id, created_at`
+
+	updateParent := parentID != nil
+	var parentVal *string
+	if parentID != nil && *parentID != "" {
+		parentVal = parentID
+	}
+
+	var dept Department
+	err := q.QueryRow(ctx, query, id, name, updateParent, parentVal).
+		Scan(&dept.ID, &dept.TenantID, &dept.Name, &dept.ParentID, &dept.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrDepartmentNotFound
+		}
+		return nil, fmt.Errorf("updating department: %w", err)
+	}
+	return &dept, nil
+}
+
+// Delete removes a department. CASCADE on user_departments removes memberships.
+func (s *DepartmentStore) Delete(ctx context.Context, q database.Querier, id string) error {
+	tag, err := q.Exec(ctx, `DELETE FROM departments WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("deleting department: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrDepartmentNotFound
+	}
+	return nil
+}
