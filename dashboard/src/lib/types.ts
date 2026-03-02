@@ -182,9 +182,19 @@ export interface CreateUserRequest {
   display_name?: string
 }
 
+export interface UpdateUserRequest {
+  display_name?: string
+  status?: "active" | "suspended"
+}
+
 export interface CreateDepartmentRequest {
   name: string
   parent_id?: string
+}
+
+export interface UpdateDepartmentRequest {
+  name?: string
+  parent_id?: string | null
 }
 
 export interface AssignRoleRequest {
