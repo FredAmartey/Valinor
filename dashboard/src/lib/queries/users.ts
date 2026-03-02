@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { apiClient } from "@/lib/api-client"
-import type { User, CreateUserRequest, Department } from "@/lib/types"
+import type { User, CreateUserRequest, UpdateUserRequest, Department } from "@/lib/types"
 
 export const userKeys = {
   all: ["users"] as const,
@@ -51,6 +51,26 @@ export async function addUserToDepartment(
   return apiClient<{ status: string }>(`/api/v1/users/${userId}/departments`, accessToken, {
     method: "POST",
     body: JSON.stringify({ department_id: departmentId }),
+  })
+}
+
+export async function updateUser(
+  accessToken: string,
+  id: string,
+  data: UpdateUserRequest,
+): Promise<User> {
+  return apiClient<User>(`/api/v1/users/${id}`, accessToken, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteUser(
+  accessToken: string,
+  id: string,
+): Promise<{ status: string }> {
+  return apiClient<{ status: string }>(`/api/v1/users/${id}`, accessToken, {
+    method: "DELETE",
   })
 }
 
@@ -124,6 +144,30 @@ export function useRemoveUserFromDepartmentMutation(userId: string) {
       removeUserFromDepartment(session!.accessToken, userId, departmentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.userDepartments(userId) })
+    },
+  })
+}
+
+export function useUpdateUserMutation(id: string) {
+  const { data: session } = useSession()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: UpdateUserRequest) =>
+      updateUser(session!.accessToken, id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: userKeys.detail(id) })
+      queryClient.invalidateQueries({ queryKey: userKeys.list() })
+    },
+  })
+}
+
+export function useDeleteUserMutation(id: string) {
+  const { data: session } = useSession()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => deleteUser(session!.accessToken, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: userKeys.all })
     },
   })
 }
