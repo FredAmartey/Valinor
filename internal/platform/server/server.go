@@ -184,6 +184,16 @@ func New(addr string, deps Dependencies) *Server {
 				http.HandlerFunc(deps.DepartmentHandler.HandleList),
 			),
 		)
+		protectedMux.Handle("PUT /api/v1/departments/{id}",
+			rbac.RequirePermission(deps.RBAC, "departments:write", rbacOpts...)(
+				http.HandlerFunc(deps.DepartmentHandler.HandleUpdate),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/departments/{id}",
+			rbac.RequirePermission(deps.RBAC, "departments:write", rbacOpts...)(
+				http.HandlerFunc(deps.DepartmentHandler.HandleDelete),
+			),
+		)
 	}
 
 	// User routes (tenant-scoped, RBAC-protected)
@@ -216,6 +226,16 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("DELETE /api/v1/users/{id}/departments/{deptId}",
 			rbac.RequirePermission(deps.RBAC, "users:write", rbacOpts...)(
 				http.HandlerFunc(deps.UserHandler.HandleRemoveFromDepartment),
+			),
+		)
+		protectedMux.Handle("PUT /api/v1/users/{id}",
+			rbac.RequirePermission(deps.RBAC, "users:write", rbacOpts...)(
+				http.HandlerFunc(deps.UserHandler.HandleUpdate),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/users/{id}",
+			rbac.RequirePermission(deps.RBAC, "users:write", rbacOpts...)(
+				http.HandlerFunc(deps.UserHandler.HandleDelete),
 			),
 		)
 	}
