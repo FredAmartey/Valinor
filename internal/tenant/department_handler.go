@@ -137,3 +137,102 @@ func (h *DepartmentHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, departments)
 }
+
+// HandleUpdate modifies a department's name and/or parent.
+func (h *DepartmentHandler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<10)
+
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing department id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	var req struct {
+		Name     string  `json:"name"`
+		ParentID *string `json:"parent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	var dept *Department
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var updateErr error
+		dept, updateErr = h.store.Update(ctx, q, id, req.Name, req.ParentID)
+		return updateErr
+	})
+	if err != nil {
+		if errors.Is(err, ErrDepartmentNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "department not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "updating department failed"})
+		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		deptUUID, _ := uuid.Parse(dept.ID)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionDepartmentUpdated,
+			ResourceType: "department",
+			ResourceID:   &deptUUID,
+			Metadata:     map[string]any{"name": dept.Name},
+			Source:       "api",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, dept)
+}
+
+// HandleDelete hard-deletes a department. Cascading FK removes user_departments rows.
+func (h *DepartmentHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing department id"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
+	err := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		return h.store.Delete(ctx, q, id)
+	})
+	if err != nil {
+		if errors.Is(err, ErrDepartmentNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "department not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "deleting department failed"})
+		return
+	}
+
+	if h.auditLog != nil {
+		tenantUUID, _ := uuid.Parse(tenantID)
+		deptUUID, _ := uuid.Parse(id)
+		h.auditLog.Log(r.Context(), audit.Event{
+			TenantID:     tenantUUID,
+			UserID:       audit.ActorIDFromContext(r.Context()),
+			Action:       audit.ActionDepartmentDeleted,
+			ResourceType: "department",
+			ResourceID:   &deptUUID,
+			Source:       "api",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
