@@ -1,0 +1,21 @@
+{
+  "gateway": {
+    "bind": "127.0.0.1",
+    "port": 8081
+  },
+  "agents": {
+    "defaults": {
+      "sandbox": {
+        "mode": "non-main"
+      }
+    }
+  },
+  "tools": {
+    "exec": {
+      "workspaceOnly": true,
+      "applyPatch": {
+        "workspaceOnly": true
+      }
+    }
+  }
+}
