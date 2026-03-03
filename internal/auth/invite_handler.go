@@ -58,13 +58,13 @@ func (h *InviteRedeemHandler) HandleRedeem(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Assign user to tenant
-	if err := h.authStore.UpdateUserTenant(r.Context(), identity.UserID, inv.TenantID); err != nil {
+	if assignErr := h.authStore.UpdateUserTenant(r.Context(), identity.UserID, inv.TenantID); assignErr != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to assign user to tenant")
 		return
 	}
 
 	// Assign the invite's role
-	if err := h.authStore.AssignRole(r.Context(), identity.UserID, inv.TenantID, inv.Role); err != nil {
+	if roleErr := h.authStore.AssignRole(r.Context(), identity.UserID, inv.TenantID, inv.Role); roleErr != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to assign role")
 		return
 	}
@@ -89,7 +89,7 @@ func (h *InviteRedeemHandler) HandleRedeem(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if encErr := json.NewEncoder(w).Encode(map[string]interface{}{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 		"token_type":    "Bearer",
@@ -101,5 +101,7 @@ func (h *InviteRedeemHandler) HandleRedeem(w http.ResponseWriter, r *http.Reques
 			"tenant_id":         updatedIdentity.TenantID,
 			"is_platform_admin": updatedIdentity.IsPlatformAdmin,
 		},
-	})
+	}); encErr != nil {
+		writeAuthError(w, http.StatusInternalServerError, "failed to encode response")
+	}
 }

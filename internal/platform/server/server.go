@@ -24,27 +24,27 @@ import (
 
 // Dependencies holds all injected dependencies for the server.
 type Dependencies struct {
-	Pool               *pgxpool.Pool
-	Auth               *auth.TokenService
-	AuthHandler        *auth.Handler
-	RBAC               *rbac.Evaluator
-	TenantHandler      *tenant.Handler
-	DepartmentHandler  *tenant.DepartmentHandler
-	UserHandler        *tenant.UserHandler
-	RoleHandler        *tenant.RoleHandler
-	AgentHandler       *orchestrator.Handler
-	ProxyHandler       *proxy.Handler
-	AuditHandler       *audit.Handler
-	ConnectorHandler   *connectors.Handler
-	ChannelHandler     *channels.Handler
+	Pool                *pgxpool.Pool
+	Auth                *auth.TokenService
+	AuthHandler         *auth.Handler
+	RBAC                *rbac.Evaluator
+	TenantHandler       *tenant.Handler
+	DepartmentHandler   *tenant.DepartmentHandler
+	UserHandler         *tenant.UserHandler
+	RoleHandler         *tenant.RoleHandler
+	AgentHandler        *orchestrator.Handler
+	ProxyHandler        *proxy.Handler
+	AuditHandler        *audit.Handler
+	ConnectorHandler    *connectors.Handler
+	ChannelHandler      *channels.Handler
 	InviteHandler       *tenant.InviteHandler
 	OnboardingHandler   *tenant.OnboardingHandler
 	InviteRedeemHandler *auth.InviteRedeemHandler
-	RBACAuditLogger    rbac.AuditLogger
-	DevMode            bool
-	DevIdentity        *auth.Identity
-	Logger             *slog.Logger
-	CORSAllowedOrigins []string
+	RBACAuditLogger     rbac.AuditLogger
+	DevMode             bool
+	DevIdentity         *auth.Identity
+	Logger              *slog.Logger
+	CORSAllowedOrigins  []string
 }
 
 type Server struct {
