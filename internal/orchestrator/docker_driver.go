@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
@@ -205,6 +206,14 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 	}
 
 	containerName := fmt.Sprintf("valinor-%s", id)
+
+	// Inspect before removal to capture the tenant label for network cleanup.
+	var tenantID string
+	info, inspectErr := d.cli.ContainerInspect(ctx, containerName)
+	if inspectErr == nil {
+		tenantID = info.Config.Labels[dockerTenantLabel]
+	}
+
 	err := d.cli.ContainerRemove(ctx, containerName, container.RemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
@@ -214,7 +223,40 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 	}
 
 	slog.Info("docker container cleaned up", "container", containerName)
+
+	// Remove the tenant network if no other valinor containers use it.
+	if tenantID != "" {
+		d.cleanupTenantNetwork(ctx, tenantID)
+	}
 	return nil
+}
+
+// cleanupTenantNetwork removes the tenant's Docker network if no valinor
+// containers are still connected to it. Best-effort; errors are logged, not returned.
+func (d *DockerDriver) cleanupTenantNetwork(ctx context.Context, tenantID string) {
+	networkName := fmt.Sprintf("valinor-net-%s", tenantID)
+
+	// List only valinor containers that belong to this tenant.
+	tenantFilter := filters.NewArgs(
+		filters.Arg("label", fmt.Sprintf("%s=%s", dockerTenantLabel, tenantID)),
+	)
+	containers, err := d.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: tenantFilter,
+	})
+	if err != nil {
+		slog.Warn("failed to list tenant containers for network cleanup", "tenant", tenantID, "error", err)
+		return
+	}
+	if len(containers) > 0 {
+		return // other containers still using this network
+	}
+
+	if removeErr := d.cli.NetworkRemove(ctx, networkName); removeErr != nil {
+		slog.Warn("failed to remove tenant network", "network", networkName, "error", removeErr)
+		return
+	}
+	slog.Info("removed orphaned tenant network", "network", networkName)
 }
 
 // ensureTenantNetwork creates an internal Docker bridge network for the tenant
@@ -222,7 +264,10 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 func (d *DockerDriver) ensureTenantNetwork(ctx context.Context, tenantID string) (string, error) {
 	networkName := fmt.Sprintf("valinor-net-%s", tenantID)
 
-	networks, err := d.cli.NetworkList(ctx, network.ListOptions{})
+	labelFilter := filters.NewArgs(
+		filters.Arg("label", fmt.Sprintf("%s=%s", dockerTenantLabel, tenantID)),
+	)
+	networks, err := d.cli.NetworkList(ctx, network.ListOptions{Filters: labelFilter})
 	if err != nil {
 		return "", fmt.Errorf("listing networks: %w", err)
 	}
@@ -244,7 +289,7 @@ func (d *DockerDriver) ensureTenantNetwork(ctx context.Context, tenantID string)
 		// Handle TOCTOU race: another goroutine may have created the network
 		// between our list and create calls.
 		if strings.Contains(err.Error(), "already exists") {
-			networks, listErr := d.cli.NetworkList(ctx, network.ListOptions{})
+			networks, listErr := d.cli.NetworkList(ctx, network.ListOptions{Filters: labelFilter})
 			if listErr != nil {
 				return "", fmt.Errorf("re-listing networks after race: %w", listErr)
 			}

@@ -67,7 +67,11 @@ func (a *Agent) Run(ctx context.Context) error {
 		if err := openclaw.Start(ctx); err != nil {
 			return fmt.Errorf("starting openclaw: %w", err)
 		}
-		defer func() { _ = openclaw.Stop(ctx) }()
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = openclaw.Stop(shutdownCtx)
+		}()
 
 		if err := openclaw.WaitForReady(ctx); err != nil {
 			slog.Warn("openclaw not ready, continuing anyway", "error", err)

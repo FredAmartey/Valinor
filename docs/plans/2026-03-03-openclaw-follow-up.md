@@ -2,29 +2,24 @@
 
 Deferred items from internal and external code reviews on PR #70.
 
-## From Reviews
+## Resolved
 
 ### 1. Filter network list in `ensureTenantNetwork`
-**File:** `internal/orchestrator/docker_driver.go:225`
-**Severity:** Minor (performance)
-`NetworkList` fetches all Docker networks. Should use a label filter to scope to valinor-managed networks only.
+**File:** `internal/orchestrator/docker_driver.go:226`
+**Resolution:** Added `filters.Arg("label", dockerContainerLabel)` to both NetworkList calls.
 
 ### 2. Tenant network cleanup on last container removal
-**File:** `internal/orchestrator/docker_driver.go` (Cleanup method)
-**Severity:** Medium (resource leak)
-When the last container for a tenant is removed, the per-tenant bridge network is orphaned. Add cleanup logic to remove the network when no containers reference it.
+**File:** `internal/orchestrator/docker_driver.go` (Cleanup + cleanupTenantNetwork)
+**Resolution:** Cleanup now inspects the container for its tenant label, then removes the tenant network if no other valinor containers belong to that tenant.
 
-### 3. OpenClaw guest config missing `memory.paths`
+### 3. OpenClaw guest config missing `memory.qmd.paths`
 **File:** `configs/openclaw-guest.json`
-**Severity:** Medium (functionality)
-The hardened config restricts execution but doesn't configure memory mount paths for OpenClaw to discover. Add `memory.paths` section mapping `/memory/personal`, `/memory/department`, etc.
+**Resolution:** Added `memory.qmd.paths` with entries for personal, department, tenant, and shared layers (correct key per OpenClaw docs — `memory.qmd.paths`, not `memory.paths`).
+
+## Dropped (not real problems)
 
 ### 4. Sanitize `tenantID` in Docker network names
-**File:** `internal/orchestrator/docker_driver.go:223`
-**Severity:** Medium (security hardening)
-`tenantID` is used directly in `fmt.Sprintf("valinor-net-%s", tenantID)`. Should validate/sanitize to prevent unexpected characters in Docker network names.
+**Reason:** TenantID comes from the JWT, sourced from `users.tenant_id` in the database. Never user-supplied input.
 
 ### 5. Sanitize `spec.VMID` in container names
-**File:** `internal/orchestrator/docker_driver.go:67`
-**Severity:** Medium (security hardening)
-`spec.VMID` is used directly in `fmt.Sprintf("valinor-%s", spec.VMID)`. Should validate against a strict pattern (e.g., `^[a-zA-Z0-9-]+$`) to prevent container name injection.
+**Reason:** VMID is system-generated (`vm-{prefix}-{timestamp}` or `warm-{cid}-{timestamp}`). Never user-supplied input.

@@ -17,5 +17,15 @@
         "workspaceOnly": true
       }
     }
+  },
+  "memory": {
+    "qmd": {
+      "paths": [
+        { "name": "personal", "path": "/memory/personal", "pattern": "**/*.md" },
+        { "name": "department", "path": "/memory/department", "pattern": "**/*.md" },
+        { "name": "tenant", "path": "/memory/tenant", "pattern": "**/*.md" },
+        { "name": "shared", "path": "/memory/shared", "pattern": "**/*.md" }
+      ]
+    }
   }
 }
