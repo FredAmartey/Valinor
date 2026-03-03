@@ -53,6 +53,24 @@ func selectVMDriver(cfg config.OrchestratorConfig, devMode bool) (orchestrator.V
 			jailerCfg,
 		), nil
 
+	case "docker":
+		image := strings.TrimSpace(cfg.Docker.Image)
+		if image == "" {
+			return nil, fmt.Errorf("docker image is required when driver is %q", driver)
+		}
+		networkMode := strings.TrimSpace(cfg.Docker.NetworkMode)
+		if networkMode == "" {
+			networkMode = "per-tenant"
+		}
+		return orchestrator.NewDockerDriver(orchestrator.DockerDriverConfig{
+			Image:            image,
+			NetworkMode:      networkMode,
+			DefaultCPUs:      cfg.Docker.DefaultCPUs,
+			DefaultMemoryMB:  cfg.Docker.DefaultMemoryMB,
+			MemoryBasePath:   cfg.Docker.MemoryBasePath,
+			WorkspaceQuotaMB: cfg.Docker.WorkspaceQuotaMB,
+		}), nil
+
 	default:
 		return nil, fmt.Errorf("unsupported orchestrator driver %q", cfg.Driver)
 	}

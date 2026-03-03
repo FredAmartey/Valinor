@@ -1,4 +1,6 @@
-# Firecracker Build and Test Runbook
+# Firecracker Build and Test Runbook (Enterprise Tier)
+
+> **Scope:** This runbook applies to the **Enterprise tier** (Firecracker microVMs). For the **Teams tier** (Docker containers), see [docker-teams-tier-setup.md](docker-teams-tier-setup.md).
 
 This runbook defines the practical path to build and validate Firecracker support in Valinor.
 

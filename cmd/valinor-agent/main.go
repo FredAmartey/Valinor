@@ -22,6 +22,7 @@ func run() error {
 	portFlag := flag.Int("port", 1024, "listen port (vsock port or TCP port)")
 	openclawURL := flag.String("openclaw-url", "http://localhost:8081", "OpenClaw API URL")
 	allowRemoteOpenClaw := flag.Bool("allow-remote-openclaw", false, "allow non-loopback OpenClaw URL (unsafe)")
+	skipOpenClawSpawn := flag.Bool("skip-openclaw-spawn", false, "skip spawning OpenClaw gateway as child process")
 	flag.Parse()
 
 	if err := validateOpenClawURL(*openclawURL, *allowRemoteOpenClaw); err != nil {
@@ -47,6 +48,7 @@ func run() error {
 		Port:                uint32(*portFlag), // #nosec G115 -- bounds checked above
 		OpenClawURL:         *openclawURL,
 		AllowRemoteOpenClaw: *allowRemoteOpenClaw,
+		SkipOpenClawSpawn:   *skipOpenClawSpawn,
 	})
 
 	return agent.Run(ctx)

@@ -125,6 +125,7 @@ func (m *Manager) coldStart(ctx context.Context, tenantID string, opts Provision
 
 	spec := VMSpec{
 		VMID:             vmID,
+		TenantID:         tenantID,
 		VsockCID:         cid,
 		DataDriveQuotaMB: m.cfg.WorkspaceDataQuotaMB,
 	}

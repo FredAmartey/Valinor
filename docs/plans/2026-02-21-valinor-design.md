@@ -2,9 +2,20 @@
 
 ## Context
 
-OpenClaw is a popular open-source AI agent harness (39k+ GitHub stars) designed as a single-user tool. It stores data as local Markdown/JSONL/YAML files, has no permission system, no multi-tenancy, and its group chat integration is a known security risk. Enterprises need AI agents but cannot safely deploy OpenClaw without: tenant isolation, RBAC, audit logging, prompt injection defense, and secure tool execution.
+OpenClaw is a popular open-source AI agent runtime (247k+ GitHub stars) designed as a single-user tool. It stores data as local Markdown files, has no permission system, no multi-tenancy, and its trust model assumes a single operator. Enterprises need AI agents but cannot safely deploy OpenClaw without: tenant isolation, RBAC, audit logging, prompt injection defense, and secure tool execution.
 
 **Valinor** is a horizontal infrastructure platform — a secure control plane that orchestrates isolated OpenClaw instances per tenant. It enables startups and enterprises across any sector to deploy AI agent workforces safely. Valinor is to AI agents what Stripe is to payments: the infrastructure layer that handles security, isolation, and compliance so clients can focus on their product.
+
+**Two product tiers** serve different isolation needs:
+
+| | **Teams** | **Enterprise** |
+|---|---|---|
+| Runtime | Docker containers | Firecracker microVMs |
+| Isolation | Container namespace + per-tenant Docker network | Separate kernel per agent (KVM) |
+| Deployment | Any Docker host, Kubernetes, VPS | Bare-metal / KVM-capable instances (Linux only) |
+| Cold start | ~2-5s | ~125ms |
+
+Both tiers share the same control plane, dashboard, RBAC, audit, Sentinel, channels, and MCP connectors. The `VMDriver` interface abstracts the runtime — configuration selects the driver at startup.
 
 **Product positioning:** Valinor serves platform builders (e.g., "Marcelo AI" for football, "Harvey AI" for legal). These clients build domain-specific products with their own web/desktop UIs. Valinor provides the secure agent infrastructure underneath. End users never see Valinor — they interact through the client's product and messaging apps.
 
@@ -21,8 +32,8 @@ Single Go binary with 9 internal modules separated by Go interfaces. Deploys as 
 | `auth` | OAuth2/OIDC verification, JWT validation/creation, identity resolution | Yes |
 | `rbac` | Role resolution, hybrid policy evaluation (RBAC + resource policies), caching | Yes |
 | `tenant` | Tenant/org/department CRUD, user management, hierarchy | No |
-| `orchestrator` | Firecracker MicroVM lifecycle, warm pool, health checks | No (background) |
-| `proxy` | Route requests to correct MicroVM via vsock, WebSocket relay | Yes |
+| `orchestrator` | Agent runtime lifecycle (Docker or Firecracker), warm pool, health checks | No (background) |
+| `proxy` | Route requests to agent via TCP (Docker) or vsock (Firecracker), WebSocket relay | Yes |
 | `audit` | Async event pipeline via buffered Go channels, batch DB writes | No (async) |
 | `lifecycle` | OpenClaw start/stop/restart, config injection, in-guest agent protocol | No |
 | `channels` | Messaging platform webhooks, identity linking, message relay through RBAC | Yes |
@@ -41,9 +52,9 @@ Client API / WhatsApp / Telegram / Slack
          |
     [Input Sentinel] — prompt injection scan (pattern + LLM classifier)
          |
-    [Proxy] — route to tenant's MicroVM via vsock
+    [Proxy] — route to agent via TCP (Docker) or vsock (Firecracker)
          |
-    [Firecracker MicroVM]
+    [Docker Container / Firecracker MicroVM]
       [Valinor Agent] — tool allow-list enforcement, health reporting
         [OpenClaw] — processes message, calls MCP tools
            |
@@ -279,6 +290,29 @@ CREATE TABLE audit_events (
 ) PARTITION BY RANGE (created_at);
 ```
 
+### Knowledge Bases
+
+```sql
+CREATE TABLE knowledge_bases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    layer TEXT NOT NULL CHECK (layer IN ('tenant', 'department')),
+    source_department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE knowledge_base_grants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+    grant_type TEXT NOT NULL CHECK (grant_type IN ('department', 'role', 'user')),
+    grant_target_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
 ### Row-Level Security
 
 All tables with `tenant_id` get RLS:
@@ -287,18 +321,18 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON users
     USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
 -- Applied to: users, departments, roles, user_roles, resource_policies,
---             agent_instances, channel_links, connectors, audit_events
+--             agent_instances, channel_links, connectors, audit_events,
+--             knowledge_bases, knowledge_base_grants (via FK join)
 ```
 
 ---
 
 ## Security Architecture: 5 Layers of Defense
 
-### Layer 1: Tenant Isolation (Firecracker MicroVMs)
-- Each tenant gets a dedicated MicroVM with its own Linux kernel
-- Hardware-level isolation via KVM (same technology as AWS Lambda)
-- No shared filesystem, no shared database connections, no shared API keys
-- Prompt injection blast radius contained to single tenant's MicroVM
+### Layer 1: Tenant Isolation (Docker Containers or Firecracker MicroVMs)
+- **Teams tier (Docker):** Each agent runs in a dedicated container on a per-tenant isolated Docker network. Containers have no egress by default. Resource limits via cgroups.
+- **Enterprise tier (Firecracker):** Each agent gets a dedicated MicroVM with its own Linux kernel. Hardware-level isolation via KVM (same technology as AWS Lambda).
+- Both tiers: no shared filesystem, no shared database connections, no shared API keys. Prompt injection blast radius contained to single agent's isolation unit.
 
 ### Layer 2: RBAC Enforcement (Control Plane)
 - Every request passes through RBAC middleware before reaching any module
@@ -307,7 +341,7 @@ CREATE POLICY tenant_isolation ON users
 - Resource policies for exceptions (e.g., temporary cross-department access for a transfer deal)
 
 ### Layer 3: In-Guest Tool Restriction (Valinor Agent)
-- Small Go binary inside each MicroVM alongside OpenClaw
+- Small Go binary inside each container/MicroVM alongside OpenClaw
 - Maintains tool allow-list configured from control plane
 - Blocks unauthorized tool calls before they execute
 - Network egress disabled by default; only allowlisted external APIs reachable
@@ -326,7 +360,9 @@ CREATE POLICY tenant_isolation ON users
 
 ---
 
-## Firecracker VM Orchestration
+## Agent Runtime Orchestration
+
+Both tiers share the same lifecycle, warm pool, and health check patterns via the `VMDriver` interface.
 
 ### Lifecycle
 ```
@@ -334,28 +370,79 @@ CREATE POLICY tenant_isolation ON users
 ```
 
 ### Warm Pool
-- Pre-booted MicroVMs with base image, ready for tenant config
-- Background reconciliation loop maintains N warm VMs (configurable, default: 5)
-- Claim time: ~200ms (vs ~2-3s cold boot)
+- Pre-started agents (containers or MicroVMs) ready for tenant config
+- Background reconciliation loop maintains N warm agents (configurable, default: 2)
+- Claim time: ~200ms (warm) vs ~2-5s cold start (Docker) or ~125ms (Firecracker)
 
-### Base Image
-Minimal Linux rootfs: Valinor Agent binary + OpenClaw runtime (Node.js) + locked-down filesystem (read-only root, writable `/data` per tenant)
+### VMDriver Interface
+```go
+type VMDriver interface {
+    Start(ctx context.Context, spec VMSpec) (VMHandle, error)
+    Stop(ctx context.Context, id string) error
+    IsHealthy(ctx context.Context, id string) (bool, error)
+    Cleanup(ctx context.Context, id string) error
+}
+```
+Implementations: `DockerDriver` (Teams), `FirecrackerDriver` (Enterprise), `MockDriver` (tests).
 
-### Communication: virtio-vsock
-- Direct socket between host and guest (no TCP/IP networking)
-- Each VM gets unique Context ID (CID)
+### Teams Tier: Docker Containers
+- Container image: `valinor-agent` (Go binary) + OpenClaw Gateway (Node.js) in one container
+- Per-tenant Docker networks (internal bridge, no external access)
+- TCP transport: control plane connects to agent via `127.0.0.1:<basePort + CID>`
+- Resource limits via Docker cgroups (`--cpus`, `--memory`)
+- Hierarchical memory volumes mounted per container (see Memory section)
+
+### Enterprise Tier: Firecracker MicroVMs
+- Minimal Linux rootfs: valinor-agent binary + OpenClaw runtime (Node.js) + locked-down filesystem (read-only root, writable `/data` per user)
+- virtio-vsock: direct socket between host and guest (no TCP/IP networking), each VM gets unique Context ID (CID)
 - Lower latency than network, no firewall rules needed
+- Hardware-level isolation: separate kernel per agent
 
 ### Health Checks
-- Valinor Agent heartbeats over vsock every 10 seconds
-- 3 missed heartbeats → mark unhealthy → replace with new warm VM
-- Old VM destroyed, resources reclaimed
+- Valinor Agent heartbeats every 10 seconds (over TCP for Docker, vsock for Firecracker)
+- 3 missed heartbeats → mark unhealthy → replace with new warm agent
+- Old agent destroyed, resources reclaimed
 
 ### Resource Limits
-- CPU: configurable vCPU count (default: 1)
+- CPU: configurable (default: 1 vCPU)
 - Memory: configurable (default: 512MB)
-- Disk: tenant data volume with configurable quota
-- Network: disabled by default, allowlisted outbound via iptables
+- Disk: per-user workspace volume with configurable quota
+- Network: disabled by default (Docker: internal-only network; Firecracker: outbound-only via iptables)
+
+## Hierarchical Memory Model
+
+Valinor enforces four-layer memory isolation with hierarchical read-up and admin-controlled overrides.
+
+### Volume Mounts Per Agent
+
+```
+/memory/personal/     → read-write  (per-user)
+/memory/department/   → read-only   (per-department)
+/memory/tenant/       → read-only   (per-tenant)
+/memory/shared/       → read-only   (admin-granted cross-dept knowledge)
+```
+
+OpenClaw reads all four paths natively as local Markdown files.
+
+### Access Rules
+
+| Layer | Visibility | Writability |
+|---|---|---|
+| Personal | Only the owning user's agent | Read-write |
+| Department | All agents in that department | Read-only (write via MCP tool) |
+| Tenant | All agents in that tenant | Read-only (write via MCP tool) |
+| Shared (admin grants) | Granted departments/roles/users | Read-only (write via MCP tool) |
+
+### Default Hierarchy (zero config)
+- Agents automatically see: personal + own department + own tenant memory
+- No cross-department visibility by default
+- Admin overrides allow selective cross-department sharing via knowledge base grants
+
+### Publishing to Shared Memory
+Agents publish via the built-in `valinor_publish_memory` MCP tool. The control plane validates permissions, handles concurrency, and writes to the appropriate shared volume.
+
+### Dynamic Context Injection
+At message dispatch time, Valinor prepends small dynamic context (recent alerts, conversation summaries) via the existing context snapshot system. ~5ms added latency.
 
 ---
 
@@ -471,12 +558,14 @@ Rules:
 |----------|--------|-----------|
 | Architecture | Modular Monolith | 1-2 person team, single binary deployment, clean extraction path |
 | Language | Go | Industry standard for control planes (K8s, Docker, Terraform), concurrency model, single binary |
-| Isolation | Firecracker MicroVMs | Hardware-level tenant isolation, ~125ms boot, ~5MB overhead, AWS Lambda proven |
+| Isolation (Teams) | Docker containers | Per-tenant network isolation, cross-platform, easy deployment, ~2-5s cold start |
+| Isolation (Enterprise) | Firecracker MicroVMs | Hardware-level tenant isolation, ~125ms boot, ~5MB overhead, AWS Lambda proven |
 | Database | PostgreSQL + RLS | Row-level security for defense in depth, JSONB for flexibility, battle-tested |
 | Auth | OAuth2/OIDC | Enterprise SSO ready from day one |
 | RBAC | Hybrid roles + resource policies | Roles for 80% of cases, resource policies for exceptions |
 | Integration | MCP protocol | Emerging standard for AI agent ↔ external system communication |
-| Communication | virtio-vsock | Low-latency host↔guest without TCP/IP overhead |
+| Communication | TCP (Docker) / virtio-vsock (Firecracker) | TCP for cross-platform dev; vsock for low-latency host↔guest in production |
+| Memory model | Hierarchical volumes + context injection | Read-only shared layers, read-write personal, MCP tool for publishing |
 | Deployment | Hybrid (SaaS + on-prem) | SaaS default on AWS, single binary + Postgres for on-prem |
 | Dashboard | Next.js + shadcn/ui | Fast admin UI development, SSR, TypeScript |
 
@@ -489,8 +578,8 @@ Rules:
 | **1. Foundation** | 1-2 | `platform/*` | Go project scaffold, PostgreSQL + migrations, HTTP server, structured logging, health check |
 | **2. Auth + RBAC** | 3-4 | `auth`, `rbac` | OIDC login, JWT validation, role definitions, policy evaluation middleware |
 | **3. Tenant + Users** | 5-6 | `tenant` | Tenant CRUD, department hierarchy, user management, role assignment |
-| **4. VM Orchestrator** | 7-9 | `orchestrator` | Firecracker integration (firecracker-go-sdk), warm pool, VM provisioning, health checks |
-| **5. Proxy + Lifecycle** | 10-11 | `proxy`, `lifecycle` | vsock comms, request routing, OpenClaw lifecycle, in-guest Valinor Agent |
+| **4. VM Orchestrator** | 7-9 | `orchestrator` | VMDriver interface, Docker + Firecracker drivers, warm pool, provisioning, health checks |
+| **5. Proxy + Lifecycle** | 10-11 | `proxy`, `lifecycle` | TCP/vsock comms, request routing, OpenClaw lifecycle, in-guest Valinor Agent |
 | **6. Security + Audit** | 12-13 | `audit`, Layer 5 | Input Sentinel, Tool Call Validator, canary tokens, async audit pipeline |
 | **7. Connectors** | 14 | `connectors` | MCP server registration, connection brokering, context push/pull API |
 | **8. Channels** | 15-16 | `channels` | WhatsApp webhook integration, identity linking, message relay through RBAC |
@@ -501,8 +590,10 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 ### Critical Files
 
 - `cmd/valinor/main.go` — Composition root, all module wiring
-- `internal/orchestrator/manager.go` — Firecracker integration (most complex module)
-- `internal/proxy/vsock.go` — Host↔guest communication (critical data path)
+- `internal/orchestrator/manager.go` — Agent runtime orchestration (most complex module)
+- `internal/orchestrator/docker_driver.go` — Docker container lifecycle (Teams tier)
+- `internal/orchestrator/firecracker_driver.go` — Firecracker VM lifecycle (Enterprise tier)
+- `internal/proxy/handler.go` — Host↔agent communication (critical data path)
 - `internal/rbac/evaluator.go` — Policy evaluation engine (security-critical, on hot path)
 - `internal/platform/middleware/middleware.go` — Request pipeline spine
 - `valinor-agent/main.go` — In-guest sidecar (tool restriction, health reporting)
@@ -511,7 +602,8 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 
 ### Key Dependencies
 
-- `github.com/firecracker-microvm/firecracker-go-sdk` — Firecracker VM management
+- `github.com/docker/docker` — Docker Engine API client (Teams tier)
+- Firecracker binary + jailer (Enterprise tier, Linux only)
 - `github.com/coreos/go-oidc/v3` — OIDC provider integration
 - `github.com/golang-jwt/jwt/v5` — JWT handling
 - `github.com/jackc/pgx/v5` — PostgreSQL driver
@@ -542,15 +634,15 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 - Verify cross-tenant isolation via RLS
 
 ### Phase 4 (Orchestrator)
-- Firecracker MicroVM boots from warm pool
+- Docker container (Teams) or Firecracker MicroVM (Enterprise) boots from warm pool
 - Health checks report running status
-- Unhealthy VM is replaced automatically
-- VM destroyed cleanly on tenant deprovisioning
+- Unhealthy agent is replaced automatically
+- Agent destroyed cleanly on tenant deprovisioning
 
 ### Phase 5 (Proxy + Lifecycle)
 - Send message via API → receive OpenClaw response
-- WebSocket streaming works end-to-end
-- OpenClaw starts/stops via lifecycle commands
+- SSE streaming works end-to-end
+- valinor-agent spawns OpenClaw as child process
 - In-guest Valinor Agent enforces tool allow-list
 
 ### Phase 6 (Security + Audit)
@@ -587,7 +679,7 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 4. Admin registers Marcelo AI's MCP server as connector
 5. Admin links Scout A's WhatsApp number
 6. Scout A sends WhatsApp: "Search for centre-backs under 25 in Serie A"
-7. Message flows through: channels → auth → RBAC → sentinel → proxy → MicroVM → OpenClaw → MCP tool call → Tool Call Validator → Marcelo AI's API → response back via WhatsApp
+7. Message flows through: channels → auth → RBAC → sentinel → proxy → agent container/VM → OpenClaw → MCP tool call → Tool Call Validator → Marcelo AI's API → response back via WhatsApp
 8. Scout A sends: "What did the DoF write about the transfer budget?"
 9. Tool Call Validator blocks (scout has no access to executive data)
 10. Audit log shows both the allowed and denied actions

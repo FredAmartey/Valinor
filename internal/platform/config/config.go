@@ -107,7 +107,12 @@ type JailerConfig struct {
 }
 
 type DockerConfig struct {
-	Image string `koanf:"image"`
+	Image            string `koanf:"image"`
+	NetworkMode      string `koanf:"network_mode"`
+	DefaultCPUs      int    `koanf:"default_cpus"`
+	DefaultMemoryMB  int    `koanf:"default_memory_mb"`
+	MemoryBasePath   string `koanf:"memory_base_path"`
+	WorkspaceQuotaMB int    `koanf:"workspace_quota_mb"`
 }
 
 type ProxyConfig struct {
@@ -211,6 +216,11 @@ func Load(configPaths ...string) (*Config, error) {
 		"orchestrator.reconcile_interval_secs":             30,
 		"orchestrator.max_consecutive_failures":            3,
 		"orchestrator.docker.image":                        "valinor-agent:latest",
+		"orchestrator.docker.network_mode":                 "per-tenant",
+		"orchestrator.docker.default_cpus":                 1,
+		"orchestrator.docker.default_memory_mb":            512,
+		"orchestrator.docker.memory_base_path":             "/var/lib/valinor/memory",
+		"orchestrator.docker.workspace_quota_mb":           1024,
 		"orchestrator.firecracker.jailer.enabled":          false,
 		"orchestrator.firecracker.jailer.daemonize":        false,
 		"orchestrator.firecracker.workspace.enabled":       true,

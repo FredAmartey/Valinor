@@ -369,6 +369,40 @@ func TestSelectVMDriver_FirecrackerAllowsIsolatedNetworkPolicyInDevMode(t *testi
 	require.NotNil(t, driver)
 }
 
+func TestSelectVMDriver_Docker(t *testing.T) {
+	cfg := config.OrchestratorConfig{
+		Driver: "docker",
+		Docker: config.DockerConfig{
+			Image:            "valinor/agent:latest",
+			NetworkMode:      "per-tenant",
+			DefaultCPUs:      1,
+			DefaultMemoryMB:  512,
+			MemoryBasePath:   "/var/lib/valinor/memory",
+			WorkspaceQuotaMB: 1024,
+		},
+	}
+
+	driver, err := selectVMDriver(cfg, false)
+	require.NoError(t, err)
+	require.NotNil(t, driver)
+
+	_, ok := driver.(*orchestrator.DockerDriver)
+	require.True(t, ok, "expected *orchestrator.DockerDriver")
+}
+
+func TestSelectVMDriver_Docker_MissingImage(t *testing.T) {
+	cfg := config.OrchestratorConfig{
+		Driver: "docker",
+		Docker: config.DockerConfig{
+			Image: "",
+		},
+	}
+
+	_, err := selectVMDriver(cfg, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image")
+}
+
 func TestSelectVMDriver_FirecrackerWorkspaceQuotaMustBePositive(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only validation")

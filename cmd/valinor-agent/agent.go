@@ -19,6 +19,7 @@ type AgentConfig struct {
 	Port                uint32
 	OpenClawURL         string
 	AllowRemoteOpenClaw bool
+	SkipOpenClawSpawn   bool
 }
 
 // AgentConnector represents an MCP connector available for tool execution.
@@ -55,6 +56,24 @@ func NewAgent(cfg AgentConfig) *Agent {
 
 // Run starts the agent: listens for control plane connections.
 func (a *Agent) Run(ctx context.Context) error {
+	// Start OpenClaw Gateway as a child process when URL is loopback and spawn is not skipped.
+	if !a.cfg.SkipOpenClawSpawn && validateOpenClawURL(a.cfg.OpenClawURL, false) == nil {
+		openclaw := &Subprocess{
+			Name:      "openclaw",
+			Args:      []string{"gateway", "--port", "8081"},
+			ReadyURL:  a.cfg.OpenClawURL + "/v1/chat/completions",
+			ReadyWait: 15 * time.Second,
+		}
+		if err := openclaw.Start(ctx); err != nil {
+			return fmt.Errorf("starting openclaw: %w", err)
+		}
+		defer func() { _ = openclaw.Stop(ctx) }()
+
+		if err := openclaw.WaitForReady(ctx); err != nil {
+			slog.Warn("openclaw not ready, continuing anyway", "error", err)
+		}
+	}
+
 	var transport proxy.Transport
 	switch a.cfg.Transport {
 	case "tcp":
