@@ -11,11 +11,10 @@ describe("role query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchRoles } = await import("./roles")
-    await fetchRoles("test-token")
+    await fetchRoles()
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/roles",
-      "test-token",
       undefined,
     )
   })
@@ -26,11 +25,10 @@ describe("role query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchUserRoles } = await import("./roles")
-    await fetchUserRoles("test-token", "u-1")
+    await fetchUserRoles("u-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1/roles",
-      "test-token",
       undefined,
     )
   })
@@ -41,7 +39,7 @@ describe("role query functions", () => {
     mockedClient.mockResolvedValueOnce({ status: "ok" })
 
     const { assignRole } = await import("./roles")
-    await assignRole("test-token", "u-1", {
+    await assignRole("u-1", {
       role_id: "r-1",
       scope_type: "org",
       scope_id: "t-1",
@@ -49,7 +47,6 @@ describe("role query functions", () => {
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1/roles",
-      "test-token",
       {
         method: "POST",
         body: JSON.stringify({ role_id: "r-1", scope_type: "org", scope_id: "t-1" }),
@@ -63,7 +60,7 @@ describe("role query functions", () => {
     mockedClient.mockResolvedValueOnce({ status: "ok" })
 
     const { removeRole } = await import("./roles")
-    await removeRole("test-token", "u-1", {
+    await removeRole("u-1", {
       role_id: "r-1",
       scope_type: "department",
       scope_id: "d-1",
@@ -71,7 +68,6 @@ describe("role query functions", () => {
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1/roles",
-      "test-token",
       {
         method: "DELETE",
         body: JSON.stringify({ role_id: "r-1", scope_type: "department", scope_id: "d-1" }),

@@ -5,7 +5,6 @@ import type { NextAuthConfig } from "next-auth"
 // Extend the built-in types
 declare module "next-auth" {
   interface Session {
-    accessToken: string
     user: {
       id: string
       email: string
@@ -51,6 +50,14 @@ function decodeJwtRoles(token: string): string[] {
     console.error("decodeJwtRoles: failed to decode JWT roles", err)
     return []
   }
+}
+
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.VALINOR_DEV_MODE &&
+  process.env.VERCEL_ENV === "production"
+) {
+  throw new Error("VALINOR_DEV_MODE must not be enabled in production")
 }
 
 const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
@@ -217,7 +224,6 @@ export const authConfig: NextAuthConfig = {
       }
     },
     async session({ session, token }) {
-      session.accessToken = token.accessToken
       session.user.id = token.userId
       session.user.tenantId = token.tenantId
       session.user.isPlatformAdmin = token.isPlatformAdmin
@@ -234,3 +240,25 @@ export const authConfig: NextAuthConfig = {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig)
+
+/**
+ * Read the Valinor access token from the server-side JWT.
+ * Use this in route handlers, server actions, and server components
+ * that need the raw token (e.g. the BFF proxy).
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const session = await auth()
+  if (!session) return null
+  // The JWT callback stores the accessToken on the token object.
+  // We read it via the internal auth() call which decodes the JWT.
+  // Since we removed accessToken from the Session type (to keep it off the client),
+  // we access the underlying JWT by re-importing getToken.
+  const { cookies } = await import("next/headers")
+  const { getToken } = await import("next-auth/jwt")
+  const cookieStore = await cookies()
+  const token = await getToken({
+    req: { cookies: cookieStore } as any,
+    secret: process.env.AUTH_SECRET,
+  })
+  return token?.accessToken ?? null
+}

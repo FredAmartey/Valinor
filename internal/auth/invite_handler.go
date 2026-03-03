@@ -3,7 +3,16 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+)
+
+// Sentinel errors for invite redemption. These mirror the tenant package
+// sentinels and are translated by the adapter in cmd/valinor/main.go.
+var (
+	ErrInviteNotFound = errors.New("invite not found")
+	ErrInviteExpired  = errors.New("invite has expired")
+	ErrInviteUsed     = errors.New("invite has already been used")
 )
 
 // InviteInfo holds the fields needed from a redeemed invite.
@@ -53,7 +62,16 @@ func (h *InviteRedeemHandler) HandleRedeem(w http.ResponseWriter, r *http.Reques
 	// Redeem atomically (validates expiry + used status in SQL)
 	inv, err := h.invites.Redeem(r.Context(), req.Code, identity.UserID)
 	if err != nil {
-		writeAuthError(w, http.StatusBadRequest, err.Error())
+		switch {
+		case errors.Is(err, ErrInviteNotFound):
+			writeAuthError(w, http.StatusBadRequest, "invite not found")
+		case errors.Is(err, ErrInviteExpired):
+			writeAuthError(w, http.StatusBadRequest, "invite has expired")
+		case errors.Is(err, ErrInviteUsed):
+			writeAuthError(w, http.StatusBadRequest, "invite has already been used")
+		default:
+			writeAuthError(w, http.StatusInternalServerError, "failed to redeem invite")
+		}
 		return
 	}
 

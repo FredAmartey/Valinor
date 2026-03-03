@@ -15,39 +15,36 @@ interface AgentListResponse {
   agents: AgentInstance[]
 }
 
-export async function fetchAgents(accessToken: string): Promise<AgentListResponse> {
-  return apiClient<AgentListResponse>("/api/v1/agents", accessToken, undefined)
+export async function fetchAgents(): Promise<AgentListResponse> {
+  return apiClient<AgentListResponse>("/api/v1/agents", undefined)
 }
 
-export async function fetchAgent(accessToken: string, id: string): Promise<AgentInstance> {
-  return apiClient<AgentInstance>(`/api/v1/agents/${id}`, accessToken, undefined)
+export async function fetchAgent(id: string): Promise<AgentInstance> {
+  return apiClient<AgentInstance>(`/api/v1/agents/${id}`, undefined)
 }
 
 export async function provisionAgent(
-  accessToken: string,
   data: ProvisionAgentRequest,
 ): Promise<AgentInstance> {
-  return apiClient<AgentInstance>("/api/v1/agents", accessToken, {
+  return apiClient<AgentInstance>("/api/v1/agents", {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export async function destroyAgent(
-  accessToken: string,
   id: string,
 ): Promise<void> {
-  return apiClient<void>(`/api/v1/agents/${id}`, accessToken, {
+  return apiClient<void>(`/api/v1/agents/${id}`, {
     method: "DELETE",
   })
 }
 
 export async function configureAgent(
-  accessToken: string,
   id: string,
   data: ConfigureAgentRequest,
 ): Promise<AgentInstance> {
-  return apiClient<AgentInstance>(`/api/v1/agents/${id}/configure`, accessToken, {
+  return apiClient<AgentInstance>(`/api/v1/agents/${id}/configure`, {
     method: "POST",
     body: JSON.stringify(data),
   })
@@ -57,14 +54,14 @@ export function useAgentsQuery(statusFilter?: string) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: agentKeys.list(),
-    queryFn: () => fetchAgents(session!.accessToken),
+    queryFn: () => fetchAgents(),
     select: (data) => {
       if (statusFilter && statusFilter !== "all") {
         return { agents: data.agents.filter((a) => a.status === statusFilter) }
       }
       return data
     },
-    enabled: !!session?.accessToken,
+    enabled: !!session,
     refetchInterval: 10_000,
   })
 }
@@ -73,18 +70,17 @@ export function useAgentQuery(id: string) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: agentKeys.detail(id),
-    queryFn: () => fetchAgent(session!.accessToken, id),
-    enabled: !!session?.accessToken && !!id,
+    queryFn: () => fetchAgent(id),
+    enabled: !!session && !!id,
     refetchInterval: 10_000,
   })
 }
 
 export function useProvisionAgentMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: ProvisionAgentRequest) =>
-      provisionAgent(session!.accessToken, data),
+      provisionAgent(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentKeys.all })
     },
@@ -92,10 +88,9 @@ export function useProvisionAgentMutation() {
 }
 
 export function useDestroyAgentMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => destroyAgent(session!.accessToken, id),
+    mutationFn: (id: string) => destroyAgent(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentKeys.all })
     },
@@ -103,11 +98,10 @@ export function useDestroyAgentMutation() {
 }
 
 export function useConfigureAgentMutation(id: string) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: ConfigureAgentRequest) =>
-      configureAgent(session!.accessToken, id, data),
+      configureAgent(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentKeys.detail(id) })
       queryClient.invalidateQueries({ queryKey: agentKeys.list() })

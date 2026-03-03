@@ -681,7 +681,18 @@ type inviteRedeemAdapter struct {
 func (a *inviteRedeemAdapter) Redeem(ctx context.Context, code, userID string) (*auth.InviteInfo, error) {
 	inv, err := a.store.Redeem(ctx, code, userID)
 	if err != nil {
-		return nil, err
+		// Translate tenant sentinel errors to auth sentinels so the auth
+		// package can switch on them without importing tenant.
+		switch {
+		case errors.Is(err, tenant.ErrInviteNotFound):
+			return nil, auth.ErrInviteNotFound
+		case errors.Is(err, tenant.ErrInviteExpired):
+			return nil, auth.ErrInviteExpired
+		case errors.Is(err, tenant.ErrInviteUsed):
+			return nil, auth.ErrInviteUsed
+		default:
+			return nil, err
+		}
 	}
 	return &auth.InviteInfo{TenantID: inv.TenantID, Role: inv.Role}, nil
 }

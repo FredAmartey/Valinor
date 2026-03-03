@@ -3,7 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react"
 
 vi.mock("next-auth/react", () => ({
   useSession: vi.fn().mockReturnValue({
-    data: { accessToken: "test", user: { isPlatformAdmin: false, tenantId: "t-1" } },
+    data: { user: { isPlatformAdmin: false, tenantId: "t-1" } },
     status: "authenticated",
   }),
 }))

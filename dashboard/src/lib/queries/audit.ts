@@ -11,7 +11,6 @@ export const auditKeys = {
 }
 
 export async function fetchAuditEvents(
-  accessToken: string,
   filters?: AuditFilters,
 ): Promise<AuditListResponse> {
   const params: Record<string, string> = {}
@@ -22,15 +21,15 @@ export async function fetchAuditEvents(
       }
     }
   }
-  return apiClient<AuditListResponse>("/api/v1/audit/events", accessToken, { params })
+  return apiClient<AuditListResponse>("/api/v1/audit/events", { params })
 }
 
 export function useAuditEventsQuery(filters?: AuditFilters) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: auditKeys.list(filters),
-    queryFn: () => fetchAuditEvents(session!.accessToken, filters),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchAuditEvents(filters),
+    enabled: !!session,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   })

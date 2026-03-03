@@ -50,7 +50,7 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {
-            const isClerkEnabled = !!process.env.NEXT_PUBLIC_AUTH_CLERK_ENABLED
+            const isClerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
             if (isClerkEnabled) {
               const { getClerkSync } = await import("@/lib/clerk")
               const clerk = getClerkSync()

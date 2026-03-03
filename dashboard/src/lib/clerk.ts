@@ -19,10 +19,15 @@ export function getClerk(): Promise<Clerk> {
   }
 
   clerkPromise = (async () => {
-    const clerk = new Clerk(publishableKey)
-    await clerk.load()
-    clerkInstance = clerk
-    return clerk
+    try {
+      const clerk = new Clerk(publishableKey)
+      await clerk.load()
+      clerkInstance = clerk
+      return clerk
+    } catch (err) {
+      clerkPromise = null
+      throw err
+    }
   })()
 
   return clerkPromise

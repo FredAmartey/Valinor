@@ -22,28 +22,25 @@ export const channelKeys = {
 
 // --- Fetch functions ---
 
-export async function fetchChannelLinks(accessToken: string): Promise<ChannelLink[]> {
-  return apiClient<ChannelLink[]>("/api/v1/channels/links", accessToken, undefined)
+export async function fetchChannelLinks(): Promise<ChannelLink[]> {
+  return apiClient<ChannelLink[]>("/api/v1/channels/links", undefined)
 }
 
 export async function fetchOutbox(
-  accessToken: string,
   status?: string,
 ): Promise<ChannelOutbox[]> {
   const params: Record<string, string> = { limit: "100" }
   if (status && status !== "all") {
     params.status = status
   }
-  return apiClient<ChannelOutbox[]>("/api/v1/channels/outbox", accessToken, { params })
+  return apiClient<ChannelOutbox[]>("/api/v1/channels/outbox", { params })
 }
 
 export async function fetchProviderCredential(
-  accessToken: string,
   provider: ProviderName,
 ): Promise<ProviderCredentialResponse> {
   return apiClient<ProviderCredentialResponse>(
     `/api/v1/channels/providers/${provider}/credentials`,
-    accessToken,
     undefined,
   )
 }
@@ -51,46 +48,41 @@ export async function fetchProviderCredential(
 // --- Mutation functions ---
 
 export async function createChannelLink(
-  accessToken: string,
   data: CreateChannelLinkRequest,
 ): Promise<ChannelLink> {
-  return apiClient<ChannelLink>("/api/v1/channels/links", accessToken, {
+  return apiClient<ChannelLink>("/api/v1/channels/links", {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
-export async function deleteChannelLink(accessToken: string, id: string): Promise<void> {
-  return apiClient<void>(`/api/v1/channels/links/${id}`, accessToken, {
+export async function deleteChannelLink(id: string): Promise<void> {
+  return apiClient<void>(`/api/v1/channels/links/${id}`, {
     method: "DELETE",
   })
 }
 
-export async function requeueOutboxJob(accessToken: string, id: string): Promise<void> {
-  return apiClient<void>(`/api/v1/channels/outbox/${id}/requeue`, accessToken, {
+export async function requeueOutboxJob(id: string): Promise<void> {
+  return apiClient<void>(`/api/v1/channels/outbox/${id}/requeue`, {
     method: "POST",
   })
 }
 
 export async function upsertProviderCredential(
-  accessToken: string,
   provider: ProviderName,
   data: UpsertProviderCredentialRequest,
 ): Promise<ProviderCredentialResponse> {
   return apiClient<ProviderCredentialResponse>(
     `/api/v1/channels/providers/${provider}/credentials`,
-    accessToken,
     { method: "PUT", body: JSON.stringify(data) },
   )
 }
 
 export async function deleteProviderCredential(
-  accessToken: string,
   provider: ProviderName,
 ): Promise<void> {
   return apiClient<void>(
     `/api/v1/channels/providers/${provider}/credentials`,
-    accessToken,
     { method: "DELETE" },
   )
 }
@@ -101,8 +93,8 @@ export function useChannelLinksQuery() {
   const { data: session } = useSession()
   return useQuery({
     queryKey: channelKeys.links(),
-    queryFn: () => fetchChannelLinks(session!.accessToken),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchChannelLinks(),
+    enabled: !!session,
     staleTime: 30_000,
   })
 }
@@ -111,8 +103,8 @@ export function useOutboxQuery(status?: string) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: channelKeys.outbox(status),
-    queryFn: () => fetchOutbox(session!.accessToken, status),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchOutbox(status),
+    enabled: !!session,
     refetchInterval: status === "pending" || status === "sending" ? 10_000 : undefined,
     placeholderData: keepPreviousData,
   })
@@ -122,8 +114,8 @@ export function useProviderCredentialQuery(provider: ProviderName) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: channelKeys.provider(provider),
-    queryFn: () => fetchProviderCredential(session!.accessToken, provider),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchProviderCredential(provider),
+    enabled: !!session,
     retry: false,
   })
 }
@@ -131,11 +123,10 @@ export function useProviderCredentialQuery(provider: ProviderName) {
 // --- Mutation hooks ---
 
 export function useCreateChannelLinkMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: CreateChannelLinkRequest) =>
-      createChannelLink(session!.accessToken, data),
+      createChannelLink(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: channelKeys.links() })
     },
@@ -143,10 +134,9 @@ export function useCreateChannelLinkMutation() {
 }
 
 export function useDeleteChannelLinkMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => deleteChannelLink(session!.accessToken, id),
+    mutationFn: (id: string) => deleteChannelLink(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: channelKeys.links() })
     },
@@ -154,10 +144,9 @@ export function useDeleteChannelLinkMutation() {
 }
 
 export function useRequeueOutboxMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => requeueOutboxJob(session!.accessToken, id),
+    mutationFn: (id: string) => requeueOutboxJob(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: channelKeys.all })
     },
@@ -165,11 +154,10 @@ export function useRequeueOutboxMutation() {
 }
 
 export function useUpsertProviderCredentialMutation(provider: ProviderName) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: UpsertProviderCredentialRequest) =>
-      upsertProviderCredential(session!.accessToken, provider, data),
+      upsertProviderCredential(provider, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: channelKeys.provider(provider) })
     },
@@ -177,10 +165,9 @@ export function useUpsertProviderCredentialMutation(provider: ProviderName) {
 }
 
 export function useDeleteProviderCredentialMutation(provider: ProviderName) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => deleteProviderCredential(session!.accessToken, provider),
+    mutationFn: () => deleteProviderCredential(provider),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: channelKeys.provider(provider) })
     },

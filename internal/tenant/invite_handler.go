@@ -49,7 +49,7 @@ func (h *InviteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		req.Role = "standard_user"
 	}
 	if !allowedInviteRoles[req.Role] {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid role: " + req.Role})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid role"})
 		return
 	}
 
@@ -62,6 +62,11 @@ func (h *InviteHandler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *InviteHandler) HandleList(w http.ResponseWriter, r *http.Request) {
+	identity := auth.GetIdentity(r.Context())
+	if identity == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
@@ -80,13 +85,24 @@ func (h *InviteHandler) HandleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *InviteHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	identity := auth.GetIdentity(r.Context())
+	if identity == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		return
+	}
+
 	id := r.PathValue("id")
 	if id == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invite id required"})
 		return
 	}
 
-	err := h.store.Delete(r.Context(), id)
+	err := h.store.Delete(r.Context(), id, tenantID)
 	if errors.Is(err, ErrInviteNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "invite not found"})
 		return

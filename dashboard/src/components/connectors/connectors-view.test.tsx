@@ -14,7 +14,7 @@ vi.mock("@/lib/api-error", () => ({
 
 vi.mock("next-auth/react", () => ({
   useSession: vi.fn().mockReturnValue({
-    data: { accessToken: "test-token", user: { id: "u-1", isPlatformAdmin: false, tenantId: "t-1" } },
+    data: { user: { id: "u-1", isPlatformAdmin: false, tenantId: "t-1" } },
     status: "authenticated",
   }),
 }))

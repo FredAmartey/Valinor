@@ -1,18 +1,27 @@
 "use client"
 
 import { signIn } from "next-auth/react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AuthCard } from "@/components/auth/auth-card"
 import { getClerk } from "@/lib/clerk"
 
 const tenantSlug = process.env.NEXT_PUBLIC_TENANT_SLUG
+const SSO_TIMEOUT_MS = 30_000
 
 export default function SSOCallbackPage() {
   const router = useRouter()
   const [error, setError] = useState("")
+  const handled = useRef(false)
 
   useEffect(() => {
+    if (handled.current) return
+    handled.current = true
+
+    const timeout = setTimeout(() => {
+      setError("Sign-in is taking too long. Please try again.")
+    }, SSO_TIMEOUT_MS)
+
     async function handleCallback() {
       try {
         const clerk = await getClerk()
@@ -56,6 +65,8 @@ export default function SSOCallbackPage() {
         }
       } catch {
         setError("Social sign-in failed. Please try again.")
+      } finally {
+        clearTimeout(timeout)
       }
     }
 

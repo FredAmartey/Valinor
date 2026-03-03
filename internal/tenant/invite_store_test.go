@@ -131,6 +131,34 @@ func TestInviteStore_Redeem(t *testing.T) {
 	assert.ErrorIs(t, err, tenant.ErrInviteUsed)
 }
 
+func TestInviteStore_RedeemExpired(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := tenant.NewStore(pool)
+	inviteStore := tenant.NewInviteStore(pool)
+	ctx := context.Background()
+
+	tn, err := store.Create(ctx, "Expired Test Org", "expired-test-org")
+	require.NoError(t, err)
+
+	creatorID := createTestUser(t, ctx, pool, tn.ID, "exp-creator@example.com")
+	redeemerID := createTestUser(t, ctx, pool, tn.ID, "exp-redeemer@example.com")
+
+	// Create invite with 1ms TTL — expires immediately
+	inv, err := inviteStore.Create(ctx, tn.ID, creatorID, "standard_user", time.Millisecond)
+	require.NoError(t, err)
+
+	// Wait for expiry
+	time.Sleep(5 * time.Millisecond)
+
+	_, err = inviteStore.Redeem(ctx, inv.Code, redeemerID)
+	assert.ErrorIs(t, err, tenant.ErrInviteExpired)
+}
+
 func TestInviteStore_Delete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -150,10 +178,10 @@ func TestInviteStore_Delete(t *testing.T) {
 	inv, err := inviteStore.Create(ctx, tn.ID, userID, "standard_user", 24*time.Hour)
 	require.NoError(t, err)
 
-	err = inviteStore.Delete(ctx, inv.ID)
+	err = inviteStore.Delete(ctx, inv.ID, tn.ID)
 	require.NoError(t, err)
 
 	// Delete again fails
-	err = inviteStore.Delete(ctx, inv.ID)
+	err = inviteStore.Delete(ctx, inv.ID, tn.ID)
 	assert.ErrorIs(t, err, tenant.ErrInviteNotFound)
 }

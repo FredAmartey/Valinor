@@ -123,8 +123,8 @@ func (s *InviteStore) Redeem(ctx context.Context, code, userID string) (*Invite,
 	return &inv, nil
 }
 
-func (s *InviteStore) Delete(ctx context.Context, id string) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM tenant_invites WHERE id = $1`, id)
+func (s *InviteStore) Delete(ctx context.Context, id, tenantID string) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM tenant_invites WHERE id = $1 AND tenant_id = $2`, id, tenantID)
 	if err != nil {
 		return fmt.Errorf("deleting invite: %w", err)
 	}

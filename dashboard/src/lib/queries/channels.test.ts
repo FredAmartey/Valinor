@@ -11,11 +11,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchChannelLinks } = await import("./channels")
-    await fetchChannelLinks("test-token")
+    await fetchChannelLinks()
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/links",
-      "test-token",
       undefined,
     )
   })
@@ -26,11 +25,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchOutbox } = await import("./channels")
-    await fetchOutbox("test-token", "dead")
+    await fetchOutbox("dead")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/outbox",
-      "test-token",
       { params: { status: "dead", limit: "100" } },
     )
   })
@@ -41,11 +39,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchOutbox } = await import("./channels")
-    await fetchOutbox("test-token", "all")
+    await fetchOutbox("all")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/outbox",
-      "test-token",
       { params: { limit: "100" } },
     )
   })
@@ -56,11 +53,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce({ provider: "slack", has_access_token: true })
 
     const { fetchProviderCredential } = await import("./channels")
-    await fetchProviderCredential("test-token", "slack")
+    await fetchProviderCredential("slack")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/providers/slack/credentials",
-      "test-token",
       undefined,
     )
   })
@@ -71,7 +67,7 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce({ id: "link-1" })
 
     const { createChannelLink } = await import("./channels")
-    await createChannelLink("test-token", {
+    await createChannelLink({
       user_id: "u-1",
       platform: "slack",
       platform_user_id: "U12345",
@@ -79,7 +75,6 @@ describe("channel query functions", () => {
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/links",
-      "test-token",
       {
         method: "POST",
         body: JSON.stringify({
@@ -97,11 +92,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce(undefined)
 
     const { deleteChannelLink } = await import("./channels")
-    await deleteChannelLink("test-token", "link-1")
+    await deleteChannelLink("link-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/links/link-1",
-      "test-token",
       { method: "DELETE" },
     )
   })
@@ -112,11 +106,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce({ status: "requeued" })
 
     const { requeueOutboxJob } = await import("./channels")
-    await requeueOutboxJob("test-token", "job-1")
+    await requeueOutboxJob("job-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/outbox/job-1/requeue",
-      "test-token",
       { method: "POST" },
     )
   })
@@ -127,14 +120,13 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce({ provider: "slack" })
 
     const { upsertProviderCredential } = await import("./channels")
-    await upsertProviderCredential("test-token", "slack", {
+    await upsertProviderCredential("slack", {
       access_token: "xoxb-test",
       signing_secret: "secret",
     })
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/providers/slack/credentials",
-      "test-token",
       {
         method: "PUT",
         body: JSON.stringify({
@@ -151,11 +143,10 @@ describe("channel query functions", () => {
     mockedClient.mockResolvedValueOnce(undefined)
 
     const { deleteProviderCredential } = await import("./channels")
-    await deleteProviderCredential("test-token", "whatsapp")
+    await deleteProviderCredential("whatsapp")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/channels/providers/whatsapp/credentials",
-      "test-token",
       { method: "DELETE" },
     )
   })

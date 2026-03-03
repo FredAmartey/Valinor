@@ -10,7 +10,7 @@ import { getClerk } from "@/lib/clerk"
 import Link from "next/link"
 
 const isDevMode = process.env.NEXT_PUBLIC_VALINOR_DEV_MODE === "true"
-const isClerkEnabled = !!process.env.NEXT_PUBLIC_AUTH_CLERK_ENABLED
+const isClerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 const tenantSlug = process.env.NEXT_PUBLIC_TENANT_SLUG
 
 export default function LoginPage() {
@@ -100,7 +100,10 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const clerk = await getClerk()
-      if (!clerk.client) return
+      if (!clerk.client) {
+        setLoading(false)
+        return
+      }
       await clerk.client.signIn.authenticateWithRedirect({
         strategy,
         redirectUrl: "/sso-callback",

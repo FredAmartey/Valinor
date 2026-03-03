@@ -15,11 +15,10 @@ describe("tenant query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchTenants } = await import("./tenants")
-    await fetchTenants("test-token")
+    await fetchTenants()
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/tenants",
-      "test-token",
       undefined,
     )
   })
@@ -30,11 +29,10 @@ describe("tenant query functions", () => {
     mockedClient.mockResolvedValueOnce({ id: "t-1", name: "Acme" })
 
     const { fetchTenant } = await import("./tenants")
-    await fetchTenant("test-token", "t-1")
+    await fetchTenant("t-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/tenants/t-1",
-      "test-token",
       undefined,
     )
   })
@@ -45,11 +43,10 @@ describe("tenant query functions", () => {
     mockedClient.mockResolvedValueOnce({ id: "t-2", name: "New Corp" })
 
     const { createTenant } = await import("./tenants")
-    await createTenant("test-token", { name: "New Corp", slug: "new-corp" })
+    await createTenant({ name: "New Corp", slug: "new-corp" })
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/tenants",
-      "test-token",
       {
         method: "POST",
         body: JSON.stringify({ name: "New Corp", slug: "new-corp" }),

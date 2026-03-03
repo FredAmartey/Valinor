@@ -4,8 +4,7 @@ import { useSession } from "next-auth/react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { AuthCard } from "@/components/auth/auth-card"
-
-const API_URL = process.env.NEXT_PUBLIC_VALINOR_API_URL ?? "http://localhost:8080"
+import { apiClient } from "@/lib/api-client"
 
 export default function TeamPage() {
   const { data: session, update } = useSession()
@@ -27,28 +26,17 @@ export default function TeamPage() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/v1/tenants/self-service`, {
+      await apiClient("/api/v1/tenants/self-service", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.accessToken}`,
-        },
         body: JSON.stringify({ name: teamName }),
       })
-
-      if (!res.ok) {
-        const data = await res.json()
-        setError(data.error ?? "Failed to create team.")
-        setLoading(false)
-        return
-      }
 
       await update()
       router.push("/")
       router.refresh()
-    } catch {
+    } catch (err: any) {
       setLoading(false)
-      setError("Failed to create team. Please try again.")
+      setError(err?.body?.error ?? "Failed to create team. Please try again.")
     }
   }
 
@@ -58,34 +46,24 @@ export default function TeamPage() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/auth/invite/redeem`, {
+      await apiClient("/auth/invite/redeem", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.accessToken}`,
-        },
         body: JSON.stringify({ code: inviteCode }),
       })
-
-      if (!res.ok) {
-        const data = await res.json()
-        if (data.error?.includes("expired")) {
-          setError("This invite has expired. Ask your admin for a new one.")
-        } else if (data.error?.includes("used")) {
-          setError("This invite has already been used.")
-        } else {
-          setError(data.error ?? "Invalid invite code.")
-        }
-        setLoading(false)
-        return
-      }
 
       await update()
       router.push("/")
       router.refresh()
-    } catch {
+    } catch (err: any) {
       setLoading(false)
-      setError("Failed to join team. Please try again.")
+      const msg = err?.body?.error ?? ""
+      if (msg.includes("expired")) {
+        setError("This invite has expired. Ask your admin for a new one.")
+      } else if (msg.includes("used")) {
+        setError("This invite has already been used.")
+      } else {
+        setError(msg || "Invalid invite code.")
+      }
     }
   }
 

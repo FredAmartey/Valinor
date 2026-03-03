@@ -13,73 +13,65 @@ export const userKeys = {
 }
 
 export async function fetchUsers(
-  accessToken: string,
   params?: Record<string, string>,
 ): Promise<User[]> {
-  return apiClient<User[]>("/api/v1/users", accessToken, params ? { params } : undefined)
+  return apiClient<User[]>("/api/v1/users", params ? { params } : undefined)
 }
 
 export async function fetchUser(
-  accessToken: string,
   id: string,
 ): Promise<User> {
-  return apiClient<User>(`/api/v1/users/${id}`, accessToken, undefined)
+  return apiClient<User>(`/api/v1/users/${id}`, undefined)
 }
 
 export async function createUser(
-  accessToken: string,
   data: CreateUserRequest,
 ): Promise<User> {
-  return apiClient<User>("/api/v1/users", accessToken, {
+  return apiClient<User>("/api/v1/users", {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export async function fetchUserDepartments(
-  accessToken: string,
   userId: string,
 ): Promise<Department[]> {
-  return apiClient<Department[]>(`/api/v1/users/${userId}/departments`, accessToken, undefined)
+  return apiClient<Department[]>(`/api/v1/users/${userId}/departments`, undefined)
 }
 
 export async function addUserToDepartment(
-  accessToken: string,
   userId: string,
   departmentId: string,
 ): Promise<{ status: string }> {
-  return apiClient<{ status: string }>(`/api/v1/users/${userId}/departments`, accessToken, {
+  return apiClient<{ status: string }>(`/api/v1/users/${userId}/departments`, {
     method: "POST",
     body: JSON.stringify({ department_id: departmentId }),
   })
 }
 
 export async function updateUser(
-  accessToken: string,
   id: string,
   data: UpdateUserRequest,
 ): Promise<User> {
-  return apiClient<User>(`/api/v1/users/${id}`, accessToken, {
+  return apiClient<User>(`/api/v1/users/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
   })
 }
 
 export async function deleteUser(
-  accessToken: string,
   id: string,
 ): Promise<{ status: string }> {
-  return apiClient<{ status: string }>(`/api/v1/users/${id}`, accessToken, {
+  return apiClient<{ status: string }>(`/api/v1/users/${id}`, {
     method: "DELETE",
   })
 }
 
 export async function removeUserFromDepartment(
-  accessToken: string,
   userId: string,
   departmentId: string,
 ): Promise<{ status: string }> {
-  return apiClient<{ status: string }>(`/api/v1/users/${userId}/departments/${departmentId}`, accessToken, {
+  return apiClient<{ status: string }>(`/api/v1/users/${userId}/departments/${departmentId}`, {
     method: "DELETE",
   })
 }
@@ -89,8 +81,8 @@ export function useUsersQuery() {
   const { data: session } = useSession()
   return useQuery({
     queryKey: userKeys.list(),
-    queryFn: () => fetchUsers(session!.accessToken),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchUsers(),
+    enabled: !!session,
     staleTime: 30_000,
   })
 }
@@ -99,8 +91,8 @@ export function useUserQuery(id: string) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: userKeys.detail(id),
-    queryFn: () => fetchUser(session!.accessToken, id),
-    enabled: !!session?.accessToken && !!id,
+    queryFn: () => fetchUser(id),
+    enabled: !!session && !!id,
   })
 }
 
@@ -108,16 +100,15 @@ export function useUserDepartmentsQuery(userId: string) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: userKeys.userDepartments(userId),
-    queryFn: () => fetchUserDepartments(session!.accessToken, userId),
-    enabled: !!session?.accessToken && !!userId,
+    queryFn: () => fetchUserDepartments(userId),
+    enabled: !!session && !!userId,
   })
 }
 
 export function useCreateUserMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: CreateUserRequest) => createUser(session!.accessToken, data),
+    mutationFn: (data: CreateUserRequest) => createUser(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.all })
     },
@@ -125,11 +116,10 @@ export function useCreateUserMutation() {
 }
 
 export function useAddUserToDepartmentMutation(userId: string) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (departmentId: string) =>
-      addUserToDepartment(session!.accessToken, userId, departmentId),
+      addUserToDepartment(userId, departmentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.userDepartments(userId) })
     },
@@ -137,11 +127,10 @@ export function useAddUserToDepartmentMutation(userId: string) {
 }
 
 export function useRemoveUserFromDepartmentMutation(userId: string) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (departmentId: string) =>
-      removeUserFromDepartment(session!.accessToken, userId, departmentId),
+      removeUserFromDepartment(userId, departmentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.userDepartments(userId) })
     },
@@ -149,11 +138,10 @@ export function useRemoveUserFromDepartmentMutation(userId: string) {
 }
 
 export function useUpdateUserMutation(id: string) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: UpdateUserRequest) =>
-      updateUser(session!.accessToken, id, data),
+      updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.detail(id) })
       queryClient.invalidateQueries({ queryKey: userKeys.list() })
@@ -162,10 +150,9 @@ export function useUpdateUserMutation(id: string) {
 }
 
 export function useDeleteUserMutation(id: string) {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => deleteUser(session!.accessToken, id),
+    mutationFn: () => deleteUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.all })
     },
