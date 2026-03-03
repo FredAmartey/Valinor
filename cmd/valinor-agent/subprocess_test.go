@@ -21,7 +21,7 @@ func TestSubprocess_StartStop(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, sp.Running())
 
-	err = sp.Stop()
+	err = sp.Stop(ctx)
 	require.NoError(t, err)
 
 	// Stop() now waits for the process to exit, so Running() is immediately false.
@@ -46,7 +46,7 @@ func TestSubprocess_WaitForReady_Timeout(t *testing.T) {
 	err = sp.WaitForReady(ctx)
 	require.Error(t, err)
 
-	_ = sp.Stop()
+	_ = sp.Stop(ctx)
 }
 
 func TestSubprocess_WaitForReady_NoURL(t *testing.T) {
@@ -65,7 +65,7 @@ func TestSubprocess_WaitForReady_NoURL(t *testing.T) {
 	err = sp.WaitForReady(ctx)
 	require.NoError(t, err)
 
-	_ = sp.Stop()
+	_ = sp.Stop(ctx)
 }
 
 func TestSubprocess_StopIdempotent(t *testing.T) {
@@ -78,7 +78,7 @@ func TestSubprocess_StopIdempotent(t *testing.T) {
 	defer cancel()
 
 	require.NoError(t, sp.Start(ctx))
-	require.NoError(t, sp.Stop())
+	require.NoError(t, sp.Stop(ctx))
 	// Second stop should be a no-op
-	require.NoError(t, sp.Stop())
+	require.NoError(t, sp.Stop(ctx))
 }

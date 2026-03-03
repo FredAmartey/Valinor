@@ -32,7 +32,7 @@ type DockerDriverConfig struct {
 	DefaultCPUs      int
 	DefaultMemoryMB  int
 	MemoryBasePath   string
-	WorkspaceQuotaMB int
+	WorkspaceQuotaMB int // reserved for future --storage-opt support; not yet enforced
 	Cmd              []string // optional command override (default: use image ENTRYPOINT/CMD)
 }
 
@@ -96,6 +96,11 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 	var mounts []mount.Mount
 	if d.cfg.MemoryBasePath != "" {
 		personalDir := filepath.Join(d.cfg.MemoryBasePath, spec.VMID, "personal")
+		// Guard against path traversal via crafted VMID.
+		cleanBase := filepath.Clean(d.cfg.MemoryBasePath)
+		if !strings.HasPrefix(filepath.Clean(personalDir), cleanBase+string(filepath.Separator)) {
+			return VMHandle{}, fmt.Errorf("memory path %q escapes base %q", personalDir, cleanBase)
+		}
 		if err := os.MkdirAll(personalDir, 0o750); err != nil {
 			return VMHandle{}, fmt.Errorf("creating personal memory dir: %w", err)
 		}

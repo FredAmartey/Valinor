@@ -108,7 +108,8 @@ func (s *Subprocess) WaitForReady(ctx context.Context) error {
 }
 
 // Stop sends SIGTERM to the process group, waits for exit, then SIGKILL if needed.
-func (s *Subprocess) Stop() error {
+// The context controls the maximum time to wait for graceful shutdown.
+func (s *Subprocess) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.running || s.cmd == nil || s.cmd.Process == nil {
 		s.mu.Unlock()
@@ -124,14 +125,18 @@ func (s *Subprocess) Stop() error {
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 
-	// Wait for process to exit or timeout.
+	// Wait for process to exit, context cancellation, or timeout.
 	select {
 	case <-done:
 		// Process exited cleanly.
+	case <-ctx.Done():
+		slog.Warn("stop context expired, sending SIGKILL", "name", s.Name)
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		<-done
 	case <-time.After(subprocessStopTimeout):
 		slog.Warn("subprocess did not exit after SIGTERM, sending SIGKILL", "name", s.Name)
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		<-done // Wait for the kill to take effect.
+		<-done
 	}
 
 	return nil
