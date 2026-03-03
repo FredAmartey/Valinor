@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
@@ -85,6 +88,20 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 		Cmd: d.cfg.Cmd,
 	}
 
+	// Memory volume mounts: create host-side personal dir and bind mount it.
+	var mounts []mount.Mount
+	if d.cfg.MemoryBasePath != "" {
+		personalDir := filepath.Join(d.cfg.MemoryBasePath, spec.VMID, "personal")
+		if err := os.MkdirAll(personalDir, 0o750); err != nil {
+			return VMHandle{}, fmt.Errorf("creating personal memory dir: %w", err)
+		}
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeBind,
+			Source: personalDir,
+			Target: "/memory/personal",
+		})
+	}
+
 	hostCfg := &container.HostConfig{
 		PortBindings: nat.PortMap{
 			agentPort: []nat.PortBinding{
@@ -96,6 +113,7 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 			Memory:   int64(memMB) * 1024 * 1024,
 		},
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyDisabled},
+		Mounts:        mounts,
 	}
 
 	netCfg := &network.NetworkingConfig{}

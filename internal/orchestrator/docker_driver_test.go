@@ -2,7 +2,9 @@ package orchestrator_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -107,6 +109,69 @@ func TestDockerDriver_NoNetworkForWarmVM(t *testing.T) {
 		VsockCID: 201,
 	}
 
+	handle, err := driver.Start(ctx, spec)
+	require.NoError(t, err)
+	require.NotEmpty(t, handle.ID)
+
+	require.NoError(t, driver.Stop(ctx, spec.VMID))
+	require.NoError(t, driver.Cleanup(ctx, spec.VMID))
+}
+
+func TestDockerDriver_MemoryVolumeMounts(t *testing.T) {
+	requireDocker(t)
+
+	memBase := t.TempDir()
+	driver := orchestrator.NewDockerDriver(orchestrator.DockerDriverConfig{
+		Image:           "alpine:latest",
+		NetworkMode:     "none",
+		DefaultCPUs:     1,
+		DefaultMemoryMB: 128,
+		MemoryBasePath:  memBase,
+		Cmd:             []string{"sleep", "30"},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	spec := orchestrator.VMSpec{
+		VMID:     "test-memory-vols",
+		VsockCID: 300,
+	}
+
+	handle, err := driver.Start(ctx, spec)
+	require.NoError(t, err)
+	require.NotEmpty(t, handle.ID)
+
+	// Verify host-side personal memory dir was created
+	personalDir := filepath.Join(memBase, spec.VMID, "personal")
+	info, err := os.Stat(personalDir)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+
+	require.NoError(t, driver.Stop(ctx, spec.VMID))
+	require.NoError(t, driver.Cleanup(ctx, spec.VMID))
+}
+
+func TestDockerDriver_NoMemoryMountsWithoutBasePath(t *testing.T) {
+	requireDocker(t)
+
+	driver := orchestrator.NewDockerDriver(orchestrator.DockerDriverConfig{
+		Image:           "alpine:latest",
+		NetworkMode:     "none",
+		DefaultCPUs:     1,
+		DefaultMemoryMB: 128,
+		Cmd:             []string{"sleep", "30"},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	spec := orchestrator.VMSpec{
+		VMID:     "test-no-memory",
+		VsockCID: 301,
+	}
+
+	// Should succeed without memory base path — no mounts added
 	handle, err := driver.Start(ctx, spec)
 	require.NoError(t, err)
 	require.NotEmpty(t, handle.ID)
