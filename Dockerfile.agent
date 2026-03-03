@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 go build -o /valinor-agent ./cmd/valinor-agent
 FROM node:22-slim
 
 # Install OpenClaw (pin version for reproducibility)
-RUN npm install -g openclaw@latest
+RUN npm install -g openclaw@2026.3.1
 
 # Copy valinor-agent binary
 COPY --from=agent-builder /valinor-agent /usr/local/bin/valinor-agent

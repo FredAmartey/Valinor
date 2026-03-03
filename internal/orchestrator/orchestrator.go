@@ -26,7 +26,7 @@ var (
 )
 
 // VMDriver is the pluggable backend for starting/stopping/checking VMs.
-// Implementations: FirecrackerDriver (Linux), DockerDriver (integration tests), MockDriver (unit tests).
+// Implementations: FirecrackerDriver (Linux/Enterprise), DockerDriver (Docker/Teams), MockDriver (unit tests).
 type VMDriver interface {
 	Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 	Stop(ctx context.Context, id string) error

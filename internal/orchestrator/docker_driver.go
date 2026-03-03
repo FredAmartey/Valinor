@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,7 +66,11 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 	}
 
 	containerName := fmt.Sprintf("valinor-%s", spec.VMID)
-	hostPort := strconv.Itoa(dockerAgentPort + int(spec.VsockCID))
+	hostPortNum := dockerAgentPort + int(spec.VsockCID)
+	if hostPortNum < 1024 || hostPortNum > 65535 {
+		return VMHandle{}, fmt.Errorf("computed host port %d out of valid range for CID %d", hostPortNum, spec.VsockCID)
+	}
+	hostPort := strconv.Itoa(hostPortNum)
 	agentPort := nat.Port(fmt.Sprintf("%d/tcp", dockerAgentPort))
 
 	cpus := d.cfg.DefaultCPUs
@@ -232,6 +237,19 @@ func (d *DockerDriver) ensureTenantNetwork(ctx context.Context, tenantID string)
 		},
 	})
 	if err != nil {
+		// Handle TOCTOU race: another goroutine may have created the network
+		// between our list and create calls.
+		if strings.Contains(err.Error(), "already exists") {
+			networks, listErr := d.cli.NetworkList(ctx, network.ListOptions{})
+			if listErr != nil {
+				return "", fmt.Errorf("re-listing networks after race: %w", listErr)
+			}
+			for _, n := range networks {
+				if n.Name == networkName {
+					return n.ID, nil
+				}
+			}
+		}
 		return "", fmt.Errorf("creating network %s: %w", networkName, err)
 	}
 

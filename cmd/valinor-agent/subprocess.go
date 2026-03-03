@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const subprocessStopTimeout = 5 * time.Second
+
 // Subprocess manages a child process lifecycle.
 type Subprocess struct {
 	Name      string
@@ -24,6 +26,7 @@ type Subprocess struct {
 	mu      sync.Mutex
 	cmd     *exec.Cmd
 	running bool
+	done    chan struct{} // closed when cmd.Wait() returns
 }
 
 // Start launches the subprocess.
@@ -45,6 +48,7 @@ func (s *Subprocess) Start(ctx context.Context) error {
 	}
 
 	s.running = true
+	s.done = make(chan struct{})
 	slog.Info("subprocess started", "name", s.Name, "pid", s.cmd.Process.Pid)
 
 	go func() {
@@ -52,6 +56,7 @@ func (s *Subprocess) Start(ctx context.Context) error {
 		s.mu.Lock()
 		s.running = false
 		s.mu.Unlock()
+		close(s.done)
 		slog.Info("subprocess exited", "name", s.Name)
 	}()
 
@@ -98,22 +103,33 @@ func (s *Subprocess) WaitForReady(ctx context.Context) error {
 	}
 }
 
-// Stop sends SIGTERM to the process group, then SIGKILL if needed.
+// Stop sends SIGTERM to the process group, waits for exit, then SIGKILL if needed.
 func (s *Subprocess) Stop() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if !s.running || s.cmd == nil || s.cmd.Process == nil {
+		s.mu.Unlock()
 		return nil
 	}
+	pid := s.cmd.Process.Pid
+	done := s.done
+	s.mu.Unlock()
 
-	// Send SIGTERM to process group
-	if err := syscall.Kill(-s.cmd.Process.Pid, syscall.SIGTERM); err != nil {
+	// Send SIGTERM to process group.
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
 		slog.Warn("SIGTERM failed, sending SIGKILL", "name", s.Name, "error", err)
-		_ = s.cmd.Process.Kill()
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 
-	s.running = false
+	// Wait for process to exit or timeout.
+	select {
+	case <-done:
+		// Process exited cleanly.
+	case <-time.After(subprocessStopTimeout):
+		slog.Warn("subprocess did not exit after SIGTERM, sending SIGKILL", "name", s.Name)
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		<-done // Wait for the kill to take effect.
+	}
+
 	return nil
 }
 

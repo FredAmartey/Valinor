@@ -24,8 +24,7 @@ func TestSubprocess_StartStop(t *testing.T) {
 	err = sp.Stop()
 	require.NoError(t, err)
 
-	// Give the goroutine a moment to update running state
-	time.Sleep(100 * time.Millisecond)
+	// Stop() now waits for the process to exit, so Running() is immediately false.
 	require.False(t, sp.Running())
 }
 
