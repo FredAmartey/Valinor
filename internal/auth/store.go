@@ -109,6 +109,36 @@ func (s *Store) FindUserIDByEmail(ctx context.Context, email string) (string, er
 	return userID, nil
 }
 
+// UpdateUserTenant assigns a tenant to a tenantless user (post-signup).
+func (s *Store) UpdateUserTenant(ctx context.Context, userID, tenantID string) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE users SET tenant_id = $1 WHERE id = $2 AND tenant_id IS NULL`,
+		tenantID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating user tenant: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("user not found or already has a tenant")
+	}
+	return nil
+}
+
+// AssignRole inserts a role assignment for a user in a tenant.
+func (s *Store) AssignRole(ctx context.Context, userID, tenantID, roleName string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO user_roles (user_id, role_id, scope_type, scope_id)
+		 SELECT $1, r.id, 'org', $2
+		 FROM roles r WHERE r.tenant_id = $2 AND r.name = $3
+		 ON CONFLICT DO NOTHING`,
+		userID, tenantID, roleName,
+	)
+	if err != nil {
+		return fmt.Errorf("assigning role: %w", err)
+	}
+	return nil
+}
+
 // GetIdentityWithRoles fetches a user's full identity including roles and departments.
 func (s *Store) GetIdentityWithRoles(ctx context.Context, userID string) (*Identity, error) {
 	// Get user base info

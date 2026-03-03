@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { useSession } from "next-auth/react"
+import { getWsToken } from "@/lib/actions/get-ws-token"
 import type { ChatMessage, WsServerMessage } from "@/lib/types"
 
 type WsStatus = "connecting" | "connected" | "disconnected" | "error"
@@ -14,7 +14,6 @@ const MAX_RECONNECT_ATTEMPTS = 3
 const RECONNECT_BASE_DELAY = 1000
 
 export function useAgentWebSocket(agentId: string, enabled: boolean) {
-  const { data: session } = useSession()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [status, setStatus] = useState<WsStatus>("disconnected")
   const [error, setError] = useState<string | null>(null)
@@ -22,10 +21,13 @@ export function useAgentWebSocket(agentId: string, enabled: boolean) {
   const reconnectAttempts = useRef(0)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  const connect = useCallback(() => {
-    if (!session?.accessToken || !enabled) return
+  const connect = useCallback(async () => {
+    if (!enabled) return
 
-    const url = `${WS_BASE_URL}/api/v1/agents/${agentId}/ws?access_token=${session.accessToken}`
+    const accessToken = await getWsToken()
+    if (!accessToken) return
+
+    const url = `${WS_BASE_URL}/api/v1/agents/${agentId}/ws?access_token=${accessToken}`
     const ws = new WebSocket(url)
     wsRef.current = ws
     setStatus("connecting")
@@ -169,13 +171,13 @@ export function useAgentWebSocket(agentId: string, enabled: boolean) {
           RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts.current)
         reconnectAttempts.current++
         setStatus("connecting")
-        reconnectTimer.current = setTimeout(connect, delay)
+        reconnectTimer.current = setTimeout(() => { connect() }, delay)
       } else {
         setStatus("error")
         setError("Connection lost. Refresh to retry.")
       }
     }
-  }, [agentId, enabled, session?.accessToken])
+  }, [agentId, enabled])
 
   useEffect(() => {
     connect()

@@ -75,6 +75,24 @@ func (s *Store) GetStats(ctx context.Context, tenantID string) (*Stats, error) {
 	return &stats, nil
 }
 
+// SeedDefaultRoles inserts the standard system roles for a new tenant.
+// Idempotent via ON CONFLICT DO NOTHING.
+func (s *Store) SeedDefaultRoles(ctx context.Context, tenantID string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO roles (tenant_id, name, permissions, is_system) VALUES
+			($1, 'org_admin',     '["*"]', true),
+			($1, 'dept_head',     '["users:read","users:write","departments:read","departments:write","agents:read","agents:write","connectors:read","audit:read","invites:read","invites:write"]', true),
+			($1, 'standard_user', '["agents:read","agents:write","connectors:read","channels:read"]', true),
+			($1, 'read_only',     '["agents:read","connectors:read","channels:read","audit:read"]', true)
+		 ON CONFLICT (tenant_id, name) DO NOTHING`,
+		tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("seeding default roles: %w", err)
+	}
+	return nil
+}
+
 // List returns all tenants.
 func (s *Store) List(ctx context.Context) ([]Tenant, error) {
 	rows, err := s.pool.Query(ctx,

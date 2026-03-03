@@ -49,7 +49,17 @@ export function UserMenu() {
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={async () => {
+            const isClerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+            if (isClerkEnabled) {
+              const { getClerkSync } = await import("@/lib/clerk")
+              const clerk = getClerkSync()
+              if (clerk) {
+                await clerk.signOut()
+              }
+            }
+            await signOut({ redirectTo: "/login" })
+          }}
           className="text-zinc-600"
         >
           <SignOut size={16} className="mr-2" />

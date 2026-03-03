@@ -11,11 +11,10 @@ describe("connector query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchConnectors } = await import("./connectors")
-    await fetchConnectors("test-token")
+    await fetchConnectors()
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/connectors",
-      "test-token",
       undefined,
     )
   })
@@ -26,7 +25,7 @@ describe("connector query functions", () => {
     mockedClient.mockResolvedValueOnce({ id: "c-1" })
 
     const { createConnector } = await import("./connectors")
-    await createConnector("test-token", {
+    await createConnector({
       name: "test-mcp",
       endpoint: "https://example.com/mcp",
       tools: ["search", "fetch"],
@@ -34,7 +33,6 @@ describe("connector query functions", () => {
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/connectors",
-      "test-token",
       {
         method: "POST",
         body: JSON.stringify({
@@ -52,11 +50,10 @@ describe("connector query functions", () => {
     mockedClient.mockResolvedValueOnce(undefined)
 
     const { deleteConnector } = await import("./connectors")
-    await deleteConnector("test-token", "c-1")
+    await deleteConnector("c-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/connectors/c-1",
-      "test-token",
       { method: "DELETE" },
     )
   })

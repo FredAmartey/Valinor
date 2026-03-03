@@ -130,9 +130,16 @@ func run() error {
 
 	// Tenant provisioning
 	var tenantHandler *tenant.Handler
+	var inviteHandler *tenant.InviteHandler
+	var onboardingHandler *tenant.OnboardingHandler
+	var inviteRedeemHandler *auth.InviteRedeemHandler
 	if pool != nil {
 		tenantStore := tenant.NewStore(pool)
 		tenantHandler = tenant.NewHandler(tenantStore, auditLogger)
+		inviteStore := tenant.NewInviteStore(pool)
+		inviteHandler = tenant.NewInviteHandler(inviteStore)
+		onboardingHandler = tenant.NewOnboardingHandler(tenantStore, authStore)
+		inviteRedeemHandler = auth.NewInviteRedeemHandler(authStore, &inviteRedeemAdapter{store: inviteStore}, tokenSvc)
 	}
 
 	// RBAC
@@ -325,24 +332,27 @@ func run() error {
 	// Create and start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := server.New(addr, server.Dependencies{
-		Pool:               pool,
-		Auth:               tokenSvc,
-		AuthHandler:        authHandler,
-		RBAC:               rbacEngine,
-		TenantHandler:      tenantHandler,
-		DepartmentHandler:  deptHandler,
-		UserHandler:        userHandler,
-		RoleHandler:        roleHandler,
-		AgentHandler:       agentHandler,
-		ProxyHandler:       proxyHandler,
-		AuditHandler:       auditHandler,
-		ConnectorHandler:   connectorHandler,
-		ChannelHandler:     channelHandler,
-		RBACAuditLogger:    &rbacAuditAdapter{l: auditLogger},
-		DevMode:            cfg.Auth.DevMode,
-		DevIdentity:        devIdentity,
-		Logger:             logger,
-		CORSAllowedOrigins: cfg.CORS.AllowedOrigins,
+		Pool:                pool,
+		Auth:                tokenSvc,
+		AuthHandler:         authHandler,
+		RBAC:                rbacEngine,
+		TenantHandler:       tenantHandler,
+		DepartmentHandler:   deptHandler,
+		UserHandler:         userHandler,
+		RoleHandler:         roleHandler,
+		AgentHandler:        agentHandler,
+		ProxyHandler:        proxyHandler,
+		AuditHandler:        auditHandler,
+		ConnectorHandler:    connectorHandler,
+		ChannelHandler:      channelHandler,
+		InviteHandler:       inviteHandler,
+		OnboardingHandler:   onboardingHandler,
+		InviteRedeemHandler: inviteRedeemHandler,
+		RBACAuditLogger:     &rbacAuditAdapter{l: auditLogger},
+		DevMode:             cfg.Auth.DevMode,
+		DevIdentity:         devIdentity,
+		Logger:              logger,
+		CORSAllowedOrigins:  cfg.CORS.AllowedOrigins,
 	})
 
 	// Graceful shutdown on SIGINT/SIGTERM
@@ -661,6 +671,31 @@ func (a *auditAdapter) Log(ctx context.Context, event proxy.AuditEvent) {
 		Metadata:     event.Metadata,
 		Source:       event.Source,
 	})
+}
+
+// inviteRedeemAdapter bridges tenant.InviteStore to auth.InviteRedeemer,
+// converting tenant.Invite to auth.InviteInfo to break the import cycle.
+type inviteRedeemAdapter struct {
+	store *tenant.InviteStore
+}
+
+func (a *inviteRedeemAdapter) Redeem(ctx context.Context, code, userID string) (*auth.InviteInfo, error) {
+	inv, err := a.store.Redeem(ctx, code, userID)
+	if err != nil {
+		// Translate tenant sentinel errors to auth sentinels so the auth
+		// package can switch on them without importing tenant.
+		switch {
+		case errors.Is(err, tenant.ErrInviteNotFound):
+			return nil, auth.ErrInviteNotFound
+		case errors.Is(err, tenant.ErrInviteExpired):
+			return nil, auth.ErrInviteExpired
+		case errors.Is(err, tenant.ErrInviteUsed):
+			return nil, auth.ErrInviteUsed
+		default:
+			return nil, err
+		}
+	}
+	return &auth.InviteInfo{TenantID: inv.TenantID, Role: inv.Role}, nil
 }
 
 // rbacAuditAdapter bridges audit.Logger to rbac.AuditLogger.

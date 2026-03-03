@@ -3,13 +3,21 @@
 import { signIn } from "next-auth/react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { AuthCard } from "@/components/auth/auth-card"
+import { SocialButtons } from "@/components/auth/social-buttons"
+import { AuthDivider } from "@/components/auth/auth-divider"
+import { getClerk } from "@/lib/clerk"
+import Link from "next/link"
 
 const isDevMode = process.env.NEXT_PUBLIC_VALINOR_DEV_MODE === "true"
-const isClerkEnabled = !!process.env.NEXT_PUBLIC_AUTH_CLERK_ENABLED
+const isClerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+const tenantSlug = process.env.NEXT_PUBLIC_TENANT_SLUG
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [devEmail, setDevEmail] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -18,101 +26,199 @@ export default function LoginPage() {
     setError("")
     setLoading(true)
 
-    const result = await signIn("credentials", {
-      email,
-      redirect: false,
-    })
-
+    const result = await signIn("credentials", { email: devEmail, redirect: false })
     setLoading(false)
 
     if (result?.error) {
       setError("Invalid email or user not found.")
       return
     }
-
     router.push("/")
     router.refresh()
   }
 
-  async function handleClerkLogin() {
+  async function handleClerkLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
     setLoading(true)
-    await signIn("clerk", { redirectTo: "/" })
+
+    try {
+      const clerk = await getClerk()
+      if (!clerk.client) {
+        setError("Failed to initialize authentication.")
+        setLoading(false)
+        return
+      }
+      const signInAttempt = await clerk.client.signIn.create({
+        identifier: email,
+        password,
+      })
+
+      if (signInAttempt.status !== "complete") {
+        setError("Sign-in could not be completed. Try again.")
+        setLoading(false)
+        return
+      }
+
+      await clerk.setActive({ session: signInAttempt.createdSessionId })
+
+      const token = await clerk.session?.getToken()
+      if (!token) {
+        setError("Failed to get session token.")
+        setLoading(false)
+        return
+      }
+
+      const result = await signIn("clerk-token", {
+        token,
+        tenantSlug: tenantSlug ?? "",
+        redirect: false,
+      })
+
+      setLoading(false)
+      if (result?.error) {
+        setError("Authentication failed. Please try again.")
+        return
+      }
+      router.push("/")
+      router.refresh()
+    } catch (err: unknown) {
+      setLoading(false)
+      const message = err instanceof Error ? err.message : "Sign-in failed"
+      if (message.includes("identifier") || message.includes("password")) {
+        setError("Invalid email or password.")
+      } else if (message.includes("rate")) {
+        setError("Too many attempts. Try again in a few minutes.")
+      } else {
+        setError("Sign-in failed. Please try again.")
+      }
+    }
+  }
+
+  async function handleSocialLogin(strategy: "oauth_google" | "oauth_github") {
+    setError("")
+    setLoading(true)
+    try {
+      const clerk = await getClerk()
+      if (!clerk.client) {
+        setLoading(false)
+        return
+      }
+      await clerk.client.signIn.authenticateWithRedirect({
+        strategy,
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: "/sso-callback",
+      })
+    } catch {
+      setLoading(false)
+      setError("Social sign-in failed. Please try again.")
+    }
   }
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Valinor Dashboard
-          </h1>
-          <p className="mt-2 text-sm text-zinc-500">
-            Sign in to manage your AI agent infrastructure.
-          </p>
-        </div>
+    <AuthCard>
+      <p className="text-center text-sm text-zinc-500">
+        Sign in to manage your AI agent infrastructure.
+      </p>
 
-        {isClerkEnabled && (
-          <>
-            <button
-              type="button"
-              onClick={handleClerkLogin}
-              disabled={loading}
-              className="w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Redirecting..." : "Sign in"}
-            </button>
-            {isDevMode && (
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-zinc-200" />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="bg-zinc-50 px-2 text-zinc-400">or</span>
-                </div>
+      {isClerkEnabled && (
+        <>
+          <form onSubmit={handleClerkLogin} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-zinc-700">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-zinc-700">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </div>
+            {error && !isDevMode && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                <p className="text-sm text-rose-700">{error}</p>
               </div>
             )}
-          </>
-        )}
+            <button
+              type="submit"
+              disabled={loading || !email || !password}
+              className="w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
 
-        {isDevMode && (
-          <>
-            <form onSubmit={handleDevLogin} className="space-y-4">
-              <div className="space-y-2">
-                <label
-                  htmlFor="email"
-                  className="text-sm font-medium text-zinc-700"
-                >
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                />
+          <AuthDivider />
+
+          <SocialButtons
+            onGoogle={() => handleSocialLogin("oauth_google")}
+            onGitHub={() => handleSocialLogin("oauth_github")}
+            disabled={loading}
+          />
+
+          <p className="text-center text-sm text-zinc-500">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="font-medium text-zinc-900 hover:underline">
+              Sign up
+            </Link>
+          </p>
+        </>
+      )}
+
+      {isDevMode && (
+        <>
+          {isClerkEnabled && <AuthDivider />}
+          <form onSubmit={handleDevLogin} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="dev-email" className="text-sm font-medium text-zinc-700">
+                Email {isClerkEnabled && "(Dev Mode)"}
+              </label>
+              <input
+                id="dev-email"
+                type="email"
+                value={devEmail}
+                onChange={(e) => setDevEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </div>
+            {error && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                <p className="text-sm text-rose-700">{error}</p>
               </div>
-              {error && (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
-                  <p className="text-sm text-rose-700">{error}</p>
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={loading || !email}
-                className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Signing in..." : "Sign in (Dev Mode)"}
-              </button>
-            </form>
-            <p className="text-center text-xs text-zinc-400">
-              Dev mode authentication. Enter any existing user email.
-            </p>
-          </>
-        )}
-      </div>
-    </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Signing in..." : "Sign in (Dev Mode)"}
+            </button>
+          </form>
+          <p className="text-center text-xs text-zinc-400">
+            Dev mode — enter any existing user email.
+          </p>
+        </>
+      )}
+    </AuthCard>
   )
 }

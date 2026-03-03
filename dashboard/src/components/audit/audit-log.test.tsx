@@ -4,7 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react"
 // Mock next-auth
 vi.mock("next-auth/react", () => ({
   useSession: () => ({
-    data: { accessToken: "test-token", user: { isPlatformAdmin: false, roles: [] } },
+    data: { user: { isPlatformAdmin: false, roles: [] } },
   }),
 }))
 

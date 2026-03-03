@@ -18,12 +18,12 @@ describe("apiClient", () => {
     })
 
     const { apiClient } = await import("./api-client")
-    const result = await apiClient("/api/v1/tenants", "test-token")
+    const result = await apiClient("/api/v1/tenants")
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/v1/tenants"),
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: "Bearer test-token",
+          "Content-Type": "application/json",
         }),
       }),
     )
@@ -39,7 +39,7 @@ describe("apiClient", () => {
     })
 
     const { apiClient } = await import("./api-client")
-    await expect(apiClient("/api/v1/tenants", "test-token")).rejects.toThrow(ApiError)
+    await expect(apiClient("/api/v1/tenants")).rejects.toThrow(ApiError)
   })
 
   it("sends POST body as JSON", async () => {
@@ -50,7 +50,7 @@ describe("apiClient", () => {
     })
 
     const { apiClient } = await import("./api-client")
-    await apiClient("/api/v1/tenants", "test-token", {
+    await apiClient("/api/v1/tenants", {
       method: "POST",
       body: JSON.stringify({ name: "New Tenant", slug: "new-tenant" }),
     })

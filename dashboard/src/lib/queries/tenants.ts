@@ -14,24 +14,21 @@ export const tenantKeys = {
 
 // Fetch functions (exported for testing)
 export async function fetchTenants(
-  accessToken: string,
   params?: Record<string, string>,
 ): Promise<Tenant[]> {
-  return apiClient<Tenant[]>("/api/v1/tenants", accessToken, params ? { params } : undefined)
+  return apiClient<Tenant[]>("/api/v1/tenants", params ? { params } : undefined)
 }
 
 export async function fetchTenant(
-  accessToken: string,
   id: string,
 ): Promise<Tenant> {
-  return apiClient<Tenant>(`/api/v1/tenants/${id}`, accessToken, undefined)
+  return apiClient<Tenant>(`/api/v1/tenants/${id}`, undefined)
 }
 
 export async function createTenant(
-  accessToken: string,
   data: TenantCreateRequest,
 ): Promise<Tenant> {
-  return apiClient<Tenant>("/api/v1/tenants", accessToken, {
+  return apiClient<Tenant>("/api/v1/tenants", {
     method: "POST",
     body: JSON.stringify(data),
   })
@@ -42,8 +39,8 @@ export function useTenantsQuery() {
   const { data: session } = useSession()
   return useQuery({
     queryKey: tenantKeys.list(),
-    queryFn: () => fetchTenants(session!.accessToken),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchTenants(),
+    enabled: !!session,
     staleTime: 30_000,
   })
 }
@@ -52,17 +49,16 @@ export function useTenantQuery(id: string) {
   const { data: session } = useSession()
   return useQuery({
     queryKey: tenantKeys.detail(id),
-    queryFn: () => fetchTenant(session!.accessToken, id),
-    enabled: !!session?.accessToken && !!id,
+    queryFn: () => fetchTenant(id),
+    enabled: !!session && !!id,
   })
 }
 
 export function useCreateTenantMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: TenantCreateRequest) =>
-      createTenant(session!.accessToken, data),
+      createTenant(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: tenantKeys.all })
     },

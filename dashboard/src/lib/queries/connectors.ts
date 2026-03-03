@@ -12,22 +12,21 @@ export const connectorKeys = {
 
 // --- Fetch functions ---
 
-export async function fetchConnectors(accessToken: string): Promise<Connector[]> {
-  return apiClient<Connector[]>("/api/v1/connectors", accessToken, undefined)
+export async function fetchConnectors(): Promise<Connector[]> {
+  return apiClient<Connector[]>("/api/v1/connectors", undefined)
 }
 
 export async function createConnector(
-  accessToken: string,
   data: CreateConnectorRequest,
 ): Promise<Connector> {
-  return apiClient<Connector>("/api/v1/connectors", accessToken, {
+  return apiClient<Connector>("/api/v1/connectors", {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
-export async function deleteConnector(accessToken: string, id: string): Promise<void> {
-  return apiClient<void>(`/api/v1/connectors/${id}`, accessToken, {
+export async function deleteConnector(id: string): Promise<void> {
+  return apiClient<void>(`/api/v1/connectors/${id}`, {
     method: "DELETE",
   })
 }
@@ -38,8 +37,8 @@ export function useConnectorsQuery() {
   const { data: session } = useSession()
   return useQuery({
     queryKey: connectorKeys.list(),
-    queryFn: () => fetchConnectors(session!.accessToken),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchConnectors(),
+    enabled: !!session,
     staleTime: 30_000,
   })
 }
@@ -47,11 +46,10 @@ export function useConnectorsQuery() {
 // --- Mutation hooks ---
 
 export function useCreateConnectorMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: CreateConnectorRequest) =>
-      createConnector(session!.accessToken, data),
+      createConnector(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: connectorKeys.all })
     },
@@ -59,10 +57,9 @@ export function useCreateConnectorMutation() {
 }
 
 export function useDeleteConnectorMutation() {
-  const { data: session } = useSession()
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => deleteConnector(session!.accessToken, id),
+    mutationFn: (id: string) => deleteConnector(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: connectorKeys.all })
     },

@@ -1,20 +1,18 @@
 import { ApiError } from "@/lib/api-error"
 import type { ApiErrorResponse } from "@/lib/types"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_VALINOR_API_URL ?? "http://localhost:8080"
-
 /**
  * Client-side API function. Used in "use client" components via TanStack Query.
- * Caller must pass the access token (from useSession).
+ * Calls the BFF proxy at /api/v/... which attaches the access token server-side.
+ * No token needed from the caller.
  */
 export async function apiClient<T>(
   path: string,
-  accessToken: string,
   options?: RequestInit & { params?: Record<string, string> },
 ): Promise<T> {
   const { params, ...fetchOptions } = options ?? {}
 
-  const url = new URL(path, API_BASE_URL)
+  const url = new URL(`/api/v${path}`, window.location.origin)
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== "") {
@@ -27,7 +25,6 @@ export async function apiClient<T>(
     ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
       ...fetchOptions.headers,
     },
   })

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,28 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
 var reservedSlugs = map[string]bool{
 	"api": true, "app": true, "www": true, "admin": true,
 	"platform": true, "auth": true, "static": true, "assets": true,
+}
+
+// GenerateSlug creates a URL-safe slug from a team name.
+func GenerateSlug(name string) string {
+	slug := strings.ToLower(name)
+	slug = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, slug)
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	slug = strings.Trim(slug, "-")
+	if len(slug) < 3 {
+		slug = slug + "-team"
+	}
+	if len(slug) > 63 {
+		slug = slug[:63]
+	}
+	return slug
 }
 
 // ValidateSlug checks that a slug conforms to DNS label rules and is not reserved.

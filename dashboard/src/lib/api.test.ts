@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 
 // Mock auth module before any imports that reference it
 vi.mock("./auth", () => ({
-  auth: vi.fn().mockResolvedValue({ accessToken: "test-token" }),
+  getAccessToken: vi.fn().mockResolvedValue("test-token"),
 }))
 
 describe("ApiError", () => {

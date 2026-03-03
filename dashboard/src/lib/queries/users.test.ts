@@ -11,11 +11,10 @@ describe("user query functions", () => {
     mockedClient.mockResolvedValueOnce([])
 
     const { fetchUsers } = await import("./users")
-    await fetchUsers("test-token")
+    await fetchUsers()
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users",
-      "test-token",
       undefined,
     )
   })
@@ -26,11 +25,10 @@ describe("user query functions", () => {
     mockedClient.mockResolvedValueOnce({ id: "u-1", email: "a@b.com" })
 
     const { fetchUser } = await import("./users")
-    await fetchUser("test-token", "u-1")
+    await fetchUser("u-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1",
-      "test-token",
       undefined,
     )
   })
@@ -41,11 +39,10 @@ describe("user query functions", () => {
     mockedClient.mockResolvedValueOnce({ id: "u-2", email: "new@b.com" })
 
     const { createUser } = await import("./users")
-    await createUser("test-token", { email: "new@b.com", display_name: "New User" })
+    await createUser({ email: "new@b.com", display_name: "New User" })
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users",
-      "test-token",
       {
         method: "POST",
         body: JSON.stringify({ email: "new@b.com", display_name: "New User" }),
@@ -59,11 +56,10 @@ describe("user query functions", () => {
     mockedClient.mockResolvedValueOnce([{ id: "d-1", name: "Engineering" }])
 
     const { fetchUserDepartments } = await import("./users")
-    await fetchUserDepartments("test-token", "u-1")
+    await fetchUserDepartments("u-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1/departments",
-      "test-token",
       undefined,
     )
   })
@@ -74,11 +70,10 @@ describe("user query functions", () => {
     mockedClient.mockResolvedValueOnce({ status: "ok" })
 
     const { addUserToDepartment } = await import("./users")
-    await addUserToDepartment("test-token", "u-1", "d-1")
+    await addUserToDepartment("u-1", "d-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1/departments",
-      "test-token",
       {
         method: "POST",
         body: JSON.stringify({ department_id: "d-1" }),
@@ -92,11 +87,10 @@ describe("user query functions", () => {
     mockedClient.mockResolvedValueOnce({ status: "ok" })
 
     const { removeUserFromDepartment } = await import("./users")
-    await removeUserFromDepartment("test-token", "u-1", "d-1")
+    await removeUserFromDepartment("u-1", "d-1")
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/users/u-1/departments/d-1",
-      "test-token",
       { method: "DELETE" },
     )
   })

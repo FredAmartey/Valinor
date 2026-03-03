@@ -21,16 +21,16 @@ export function PlatformOverview({ initialTenants, initialAgents }: PlatformOver
 
   const { data: tenants, isLoading: tenantsLoading } = useQuery({
     queryKey: tenantKeys.list(),
-    queryFn: () => apiClient<Tenant[]>("/api/v1/tenants", session!.accessToken),
-    enabled: !!session?.accessToken,
+    queryFn: () => apiClient<Tenant[]>("/api/v1/tenants"),
+    enabled: !!session,
     initialData: initialTenants,
     refetchInterval: 30_000,
   })
 
   const { data: agentData, isLoading: agentsLoading } = useQuery({
     queryKey: agentKeys.list(),
-    queryFn: () => fetchAgents(session!.accessToken),
-    enabled: !!session?.accessToken,
+    queryFn: () => fetchAgents(),
+    enabled: !!session,
     initialData: { agents: initialAgents },
     refetchInterval: 30_000,
   })

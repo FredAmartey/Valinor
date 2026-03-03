@@ -24,24 +24,27 @@ import (
 
 // Dependencies holds all injected dependencies for the server.
 type Dependencies struct {
-	Pool               *pgxpool.Pool
-	Auth               *auth.TokenService
-	AuthHandler        *auth.Handler
-	RBAC               *rbac.Evaluator
-	TenantHandler      *tenant.Handler
-	DepartmentHandler  *tenant.DepartmentHandler
-	UserHandler        *tenant.UserHandler
-	RoleHandler        *tenant.RoleHandler
-	AgentHandler       *orchestrator.Handler
-	ProxyHandler       *proxy.Handler
-	AuditHandler       *audit.Handler
-	ConnectorHandler   *connectors.Handler
-	ChannelHandler     *channels.Handler
-	RBACAuditLogger    rbac.AuditLogger
-	DevMode            bool
-	DevIdentity        *auth.Identity
-	Logger             *slog.Logger
-	CORSAllowedOrigins []string
+	Pool                *pgxpool.Pool
+	Auth                *auth.TokenService
+	AuthHandler         *auth.Handler
+	RBAC                *rbac.Evaluator
+	TenantHandler       *tenant.Handler
+	DepartmentHandler   *tenant.DepartmentHandler
+	UserHandler         *tenant.UserHandler
+	RoleHandler         *tenant.RoleHandler
+	AgentHandler        *orchestrator.Handler
+	ProxyHandler        *proxy.Handler
+	AuditHandler        *audit.Handler
+	ConnectorHandler    *connectors.Handler
+	ChannelHandler      *channels.Handler
+	InviteHandler       *tenant.InviteHandler
+	OnboardingHandler   *tenant.OnboardingHandler
+	InviteRedeemHandler *auth.InviteRedeemHandler
+	RBACAuditLogger     rbac.AuditLogger
+	DevMode             bool
+	DevIdentity         *auth.Identity
+	Logger              *slog.Logger
+	CORSAllowedOrigins  []string
 }
 
 type Server struct {
@@ -167,6 +170,13 @@ func New(addr string, deps Dependencies) *Server {
 		)
 	}
 
+	// Self-service tenant creation (authenticated, tenantless users)
+	if deps.OnboardingHandler != nil {
+		protectedMux.HandleFunc("POST /api/v1/tenants/self-service",
+			deps.OnboardingHandler.HandleSelfServiceCreate,
+		)
+	}
+
 	// Department routes (tenant-scoped, RBAC-protected)
 	if deps.DepartmentHandler != nil && deps.RBAC != nil {
 		protectedMux.Handle("POST /api/v1/departments",
@@ -276,6 +286,32 @@ func New(addr string, deps Dependencies) *Server {
 			rbac.RequirePermission(deps.RBAC, "users:read", rbacOpts...)(
 				http.HandlerFunc(deps.RoleHandler.HandleListUserRoles),
 			),
+		)
+	}
+
+	// Invite routes (tenant-scoped, RBAC-protected)
+	if deps.InviteHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("POST /api/v1/invites",
+			rbac.RequirePermission(deps.RBAC, "invites:write", rbacOpts...)(
+				http.HandlerFunc(deps.InviteHandler.HandleCreate),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/invites",
+			rbac.RequirePermission(deps.RBAC, "invites:read", rbacOpts...)(
+				http.HandlerFunc(deps.InviteHandler.HandleList),
+			),
+		)
+		protectedMux.Handle("DELETE /api/v1/invites/{id}",
+			rbac.RequirePermission(deps.RBAC, "invites:write", rbacOpts...)(
+				http.HandlerFunc(deps.InviteHandler.HandleDelete),
+			),
+		)
+	}
+
+	// Invite redemption (authenticated, no RBAC — any authed user can redeem)
+	if deps.InviteRedeemHandler != nil {
+		protectedMux.HandleFunc("POST /auth/invite/redeem",
+			deps.InviteRedeemHandler.HandleRedeem,
 		)
 	}
 

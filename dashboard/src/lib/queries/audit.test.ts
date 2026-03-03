@@ -11,11 +11,10 @@ describe("audit query functions", () => {
     mockedClient.mockResolvedValueOnce({ events: [], count: 0 })
 
     const { fetchAuditEvents } = await import("./audit")
-    await fetchAuditEvents("test-token")
+    await fetchAuditEvents()
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/audit/events",
-      "test-token",
       { params: {} },
     )
   })
@@ -26,7 +25,7 @@ describe("audit query functions", () => {
     mockedClient.mockResolvedValueOnce({ events: [], count: 0 })
 
     const { fetchAuditEvents } = await import("./audit")
-    await fetchAuditEvents("test-token", {
+    await fetchAuditEvents({
       action: "user.created",
       resource_type: "user",
       limit: "25",
@@ -34,7 +33,6 @@ describe("audit query functions", () => {
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/audit/events",
-      "test-token",
       {
         params: {
           action: "user.created",
@@ -51,14 +49,13 @@ describe("audit query functions", () => {
     mockedClient.mockResolvedValueOnce({ events: [], count: 0 })
 
     const { fetchAuditEvents } = await import("./audit")
-    await fetchAuditEvents("test-token", {
+    await fetchAuditEvents({
       action: "role.created",
       resource_type: undefined,
     })
 
     expect(mockedClient).toHaveBeenCalledWith(
       "/api/v1/audit/events",
-      "test-token",
       {
         params: {
           action: "role.created",

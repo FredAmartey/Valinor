@@ -12,6 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@clerk/clerk-js": "^5.125.4",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.90.21",
     "class-variance-authority": "^0.7.1",

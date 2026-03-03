@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { getAccessToken } from "@/lib/auth"
 import { ApiError } from "@/lib/api-error"
 import type { ApiErrorResponse } from "@/lib/types"
 
@@ -20,13 +20,13 @@ export function buildUrl(path: string, params?: Record<string, string>): string 
 
 /**
  * Server-side API client. Used in Server Components and Server Actions.
- * Gets access token from NextAuth session automatically.
+ * Gets access token from the JWT automatically.
  */
 export async function api<T>(
   path: string,
   options?: RequestInit & { params?: Record<string, string> },
 ): Promise<T> {
-  const session = await auth()
+  const accessToken = await getAccessToken()
   const { params, ...fetchOptions } = options ?? {}
   const url = buildUrl(path, params)
 
@@ -34,8 +34,8 @@ export async function api<T>(
     ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
-      ...(session?.accessToken
-        ? { Authorization: `Bearer ${session.accessToken}` }
+      ...(accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
         : process.env.VALINOR_DEV_TOKEN
           ? { Authorization: `Bearer ${process.env.VALINOR_DEV_TOKEN}` }
           : {}),
