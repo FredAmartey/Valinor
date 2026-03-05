@@ -5,6 +5,9 @@ import { apiClient } from "@/lib/api-client"
 import { useCan } from "@/components/providers/permission-provider"
 import { tenantKeys } from "@/lib/queries/tenants"
 import { agentKeys, fetchAgents } from "@/lib/queries/agents"
+import { userKeys, fetchUsers } from "@/lib/queries/users"
+import { channelKeys, fetchChannelLinks } from "@/lib/queries/channels"
+import type { ChannelLink } from "@/lib/types"
 import { StatCard } from "./stat-card"
 import { RecentEvents } from "./recent-events"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -51,6 +54,20 @@ export function Overview({
     refetchInterval: 30_000,
   })
 
+  const { data: users, isLoading: usersLoading } = useQuery({
+    queryKey: userKeys.list(),
+    queryFn: () => fetchUsers(),
+    refetchInterval: 30_000,
+    enabled: !isPlatformAdmin && hasTenant,
+  })
+
+  const { data: channelLinks, isLoading: channelsLoading } = useQuery({
+    queryKey: channelKeys.links(),
+    queryFn: () => fetchChannelLinks(),
+    refetchInterval: 30_000,
+    enabled: !isPlatformAdmin && hasTenant,
+  })
+
   const agents = agentData?.agents ?? []
   const firstName = userName.split(" ")[0] || userName
 
@@ -60,9 +77,14 @@ export function Overview({
     canReadConnectors,
     tenants: tenants ?? [],
     agents,
+    userCount: users?.length,
+    activeChannelCount: channelLinks?.filter((l: ChannelLink) => l.status === "verified").length,
   })
 
-  const isLoading = (isPlatformAdmin && tenantsLoading) || agentsLoading
+  const isLoading =
+    (isPlatformAdmin && tenantsLoading) ||
+    agentsLoading ||
+    (!isPlatformAdmin && hasTenant && (usersLoading || channelsLoading))
 
   return (
     <div className="space-y-8">
@@ -129,12 +151,16 @@ function buildStatCards({
   canReadConnectors,
   tenants,
   agents,
+  userCount,
+  activeChannelCount,
 }: {
   isPlatformAdmin: boolean
   canReadUsers: boolean
   canReadConnectors: boolean
   tenants: Tenant[]
   agents: AgentInstance[]
+  userCount?: number
+  activeChannelCount?: number
 }) {
   const totalAgents = agents.length
   const healthyAgents = agents.filter((a) => a.status === "running" || a.status === "warm").length
@@ -154,8 +180,8 @@ function buildStatCards({
     return [
       { label: "Running Agents", value: totalAgents, icon: <Robot size={20} /> },
       { label: "Unhealthy Agents", value: unhealthyAgents, icon: <Warning size={20} /> },
-      { label: "Total Users", value: "\u2014" as string | number, icon: <Users size={20} /> },
-      ...(canReadConnectors ? [{ label: "Active Channels", value: "\u2014" as string | number, icon: <ChatCircle size={20} /> }] : []),
+      { label: "Total Users", value: userCount ?? 0, icon: <Users size={20} /> },
+      ...(canReadConnectors ? [{ label: "Active Channels", value: activeChannelCount ?? 0, icon: <ChatCircle size={20} /> }] : []),
     ]
   }
 
