@@ -67,10 +67,10 @@ func (h *Handler) RegisterDevRoutes(mux *http.ServeMux) {
 }
 
 type devLoginResponse struct {
-	AccessToken  string           `json:"access_token"`
-	RefreshToken string           `json:"refresh_token"`
-	TokenType    string           `json:"token_type"`
-	ExpiresIn    int              `json:"expires_in"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	TokenType    string        `json:"token_type"`
+	ExpiresIn    int           `json:"expires_in"`
 	User         tokenUserInfo `json:"user"`
 }
 
@@ -83,11 +83,11 @@ type tokenUserInfo struct {
 }
 
 type exchangeResponse struct {
-	AccessToken  string           `json:"access_token"`
-	RefreshToken string           `json:"refresh_token"`
-	TokenType    string           `json:"token_type"`
-	ExpiresIn    int              `json:"expires_in"`
-	Created      bool             `json:"created"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	TokenType    string        `json:"token_type"`
+	ExpiresIn    int           `json:"expires_in"`
+	Created      bool          `json:"created"`
 	User         tokenUserInfo `json:"user"`
 }
 
