@@ -68,6 +68,15 @@ func tenantExists(ctx context.Context, pool *pgxpool.Pool, tenantID string) (boo
 	return exists, nil
 }
 
+func tenantNameByID(ctx context.Context, pool *pgxpool.Pool, tenantID string) (string, error) {
+	var name string
+	err := pool.QueryRow(ctx, "SELECT name FROM tenants WHERE id = $1", tenantID).Scan(&name)
+	if err != nil {
+		return "", fmt.Errorf("get tenant name: %w", err)
+	}
+	return name, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

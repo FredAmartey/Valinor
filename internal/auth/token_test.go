@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/auth"
@@ -172,4 +173,62 @@ func TestTokenService_LegacyTokenLacksFamilyClaims(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, got.FamilyID)
 	assert.Equal(t, 0, got.Generation)
+}
+
+func TestCreateImpersonationToken(t *testing.T) {
+	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+
+	identity := &auth.Identity{
+		UserID:          "admin-user-id",
+		IsPlatformAdmin: true,
+		Email:           "admin@platform.test",
+	}
+
+	tokenStr, err := svc.CreateImpersonationToken(identity, "target-tenant-id")
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenStr)
+
+	parsed, err := svc.ValidateToken(tokenStr)
+	require.NoError(t, err)
+
+	assert.Equal(t, "admin-user-id", parsed.UserID)
+	assert.Equal(t, "target-tenant-id", parsed.TenantID)
+	assert.True(t, parsed.IsPlatformAdmin)
+	assert.Equal(t, []string{"org_admin"}, parsed.Roles)
+	assert.Equal(t, "admin-user-id", parsed.ImpersonatorID)
+	assert.Equal(t, "access", parsed.TokenType)
+}
+
+func TestCreateImpersonationToken_ShortExpiry(t *testing.T) {
+	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+
+	identity := &auth.Identity{
+		UserID:          "admin-user-id",
+		IsPlatformAdmin: true,
+	}
+
+	tokenStr, err := svc.CreateImpersonationToken(identity, "target-tenant-id")
+	require.NoError(t, err)
+
+	token, _ := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
+		return []byte("test-secret-key-32-bytes-long!!"), nil
+	})
+	exp, _ := token.Claims.GetExpirationTime()
+	iat, _ := token.Claims.GetIssuedAt()
+
+	diff := exp.Sub(iat.Time)
+	assert.InDelta(t, 30*time.Minute, diff, float64(5*time.Second))
+}
+
+func TestCreateImpersonationToken_RejectsNonAdmin(t *testing.T) {
+	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+
+	identity := &auth.Identity{
+		UserID:          "regular-user",
+		IsPlatformAdmin: false,
+	}
+
+	_, err := svc.CreateImpersonationToken(identity, "target-tenant-id")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, auth.ErrUnauthorized)
 }

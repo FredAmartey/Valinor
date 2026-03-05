@@ -43,13 +43,24 @@ func (h *ImpersonateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log the impersonation attempt to the audit trail
+	// Validate tenant exists and fetch name before logging or generating tokens
+	var tenantName string
+	if h.pool != nil {
+		name, existsErr := tenantNameByID(r.Context(), h.pool, tenantID)
+		if existsErr != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("tenant %s not found", tenantID)})
+			return
+		}
+		tenantName = name
+	}
+
+	// Log the impersonation to the audit trail (after tenant validation)
 	actorID := audit.ActorIDFromContext(r.Context())
 	if h.auditLog != nil {
 		h.auditLog.Log(r.Context(), audit.Event{
 			TenantID:     parsedTenantID,
 			UserID:       actorID,
-			Action:       "admin.impersonation.attempted",
+			Action:       "admin.impersonation.started",
 			ResourceType: "tenant",
 			ResourceID:   &parsedTenantID,
 			Metadata: map[string]any{
@@ -64,11 +75,17 @@ func (h *ImpersonateHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		"target_tenant_id", tenantID,
 	)
 
-	// TODO: validate tenant exists via pool query
-	// TODO: generate short-lived JWT with tenantID, org_admin roles, 30min TTL
+	// Generate short-lived impersonation token
+	token, err := h.tokenSvc.CreateImpersonationToken(identity, tenantID)
+	if err != nil {
+		slog.Error("failed to create impersonation token", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate token"})
+		return
+	}
 
-	// Placeholder — full implementation depends on TokenService.GenerateImpersonationToken
-	writeJSON(w, http.StatusNotImplemented, map[string]string{
-		"error": fmt.Sprintf("impersonation for tenant %s not yet wired", tenantID),
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":       token,
+		"expires_in":  1800,
+		"tenant_name": tenantName,
 	})
 }

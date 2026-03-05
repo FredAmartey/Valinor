@@ -20,6 +20,7 @@ type valinorClaims struct {
 	FamilyID        string   `json:"fid,omitempty"`
 	Generation      int      `json:"gen,omitempty"`
 	IsPlatformAdmin bool     `json:"pa,omitempty"`
+	ImpersonatorID  string   `json:"imp,omitempty"`
 }
 
 // TokenService handles JWT creation and validation.
@@ -72,6 +73,48 @@ func (s *TokenService) createToken(identity *Identity, tokenType string, expiryH
 		FamilyID:        identity.FamilyID,
 		Generation:      identity.Generation,
 		IsPlatformAdmin: identity.IsPlatformAdmin,
+		ImpersonatorID:  identity.ImpersonatorID,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.signingKey)
+}
+
+// CreateImpersonationToken creates a 30-minute access token scoped to a target
+// tenant with org_admin privileges. The caller's user ID is preserved as the
+// impersonator for audit purposes. Only platform admins may call this.
+func (s *TokenService) CreateImpersonationToken(identity *Identity, targetTenantID string) (string, error) {
+	if !identity.IsPlatformAdmin {
+		return "", fmt.Errorf("impersonation requires platform admin: %w", ErrUnauthorized)
+	}
+
+	imp := &Identity{
+		UserID:          identity.UserID,
+		TenantID:        targetTenantID,
+		Email:           identity.Email,
+		DisplayName:     identity.DisplayName,
+		Roles:           []string{"org_admin"},
+		IsPlatformAdmin: true,
+		ImpersonatorID:  identity.UserID,
+		TokenType:       "access",
+	}
+
+	now := time.Now()
+	claims := valinorClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    s.issuer,
+			Subject:   imp.UserID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(30 * time.Minute)),
+		},
+		UserID:          imp.UserID,
+		TenantID:        imp.TenantID,
+		Email:           imp.Email,
+		DisplayName:     imp.DisplayName,
+		Roles:           imp.Roles,
+		TokenType:       imp.TokenType,
+		IsPlatformAdmin: imp.IsPlatformAdmin,
+		ImpersonatorID:  imp.ImpersonatorID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -109,5 +152,6 @@ func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
 		FamilyID:        claims.FamilyID,
 		Generation:      claims.Generation,
 		IsPlatformAdmin: claims.IsPlatformAdmin,
+		ImpersonatorID:  claims.ImpersonatorID,
 	}, nil
 }

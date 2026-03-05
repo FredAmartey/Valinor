@@ -16,10 +16,35 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Users, TreeStructure, Robot, Plugs, Warning } from "@phosphor-icons/react"
+import { signIn } from "next-auth/react"
+import { apiClient } from "@/lib/api-client"
 
 export function TenantDetail({ id }: { id: string }) {
   const { data: tenant, isLoading, isError } = useTenantQuery(id)
   const [showImpersonateDialog, setShowImpersonateDialog] = useState(false)
+  const [isImpersonating, setIsImpersonating] = useState(false)
+
+  const handleImpersonate = async () => {
+    setIsImpersonating(true)
+    try {
+      const data = await apiClient<{ token: string; expires_in: number; tenant_name: string }>(
+        `/api/v1/tenants/${id}/impersonate`,
+        { method: "POST" },
+      )
+
+      await signIn("impersonate", {
+        token: data.token,
+        tenantName: data.tenant_name,
+        redirect: false,
+      })
+
+      // Reload to pick up the new impersonation session
+      window.location.href = "/"
+    } catch (err) {
+      console.error("Impersonation failed:", err)
+      setIsImpersonating(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -71,10 +96,6 @@ export function TenantDetail({ id }: { id: string }) {
                   privileges. All actions will be logged in the audit trail.
                 </DialogDescription>
               </DialogHeader>
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                Impersonation endpoint is not yet wired. This button will be functional
-                once JWT generation is implemented.
-              </p>
               <DialogFooter>
                 <button
                   onClick={() => setShowImpersonateDialog(false)}
@@ -83,10 +104,11 @@ export function TenantDetail({ id }: { id: string }) {
                   Cancel
                 </button>
                 <button
-                  disabled
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white opacity-50 cursor-not-allowed"
+                  onClick={handleImpersonate}
+                  disabled={isImpersonating}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Enter Tenant
+                  {isImpersonating ? "Entering..." : "Enter Tenant"}
                 </button>
               </DialogFooter>
             </DialogContent>

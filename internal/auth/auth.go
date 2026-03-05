@@ -28,4 +28,5 @@ type Identity struct {
 	FamilyID        string   `json:"family_id,omitempty"`
 	Generation      int      `json:"generation,omitempty"`
 	IsPlatformAdmin bool     `json:"is_platform_admin,omitempty"`
+	ImpersonatorID  string   `json:"impersonator_id,omitempty"`
 }
