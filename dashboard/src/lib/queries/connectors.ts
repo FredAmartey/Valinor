@@ -7,13 +7,14 @@ import type { Connector, CreateConnectorRequest } from "@/lib/types"
 
 export const connectorKeys = {
   all: ["connectors"] as const,
-  list: () => [...connectorKeys.all, "list"] as const,
+  list: (tenantId?: string) => [...connectorKeys.all, "list", tenantId ?? "self"] as const,
 }
 
 // --- Fetch functions ---
 
-export async function fetchConnectors(): Promise<Connector[]> {
-  return apiClient<Connector[]>("/api/v1/connectors", undefined)
+export async function fetchConnectors(tenantId?: string): Promise<Connector[]> {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/connectors` : "/api/v1/connectors"
+  return apiClient<Connector[]>(path, undefined)
 }
 
 export async function createConnector(
@@ -33,11 +34,11 @@ export async function deleteConnector(id: string): Promise<void> {
 
 // --- Query hooks ---
 
-export function useConnectorsQuery() {
+export function useConnectorsQuery(tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: connectorKeys.list(),
-    queryFn: () => fetchConnectors(),
+    queryKey: connectorKeys.list(tenantId),
+    queryFn: () => fetchConnectors(tenantId),
     enabled: !!session,
     staleTime: 30_000,
   })

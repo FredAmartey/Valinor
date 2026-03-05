@@ -7,12 +7,13 @@ import type { Department, CreateDepartmentRequest, UpdateDepartmentRequest } fro
 
 export const departmentKeys = {
   all: ["departments"] as const,
-  list: () => [...departmentKeys.all, "list"] as const,
+  list: (tenantId?: string) => [...departmentKeys.all, "list", tenantId ?? "self"] as const,
   detail: (id: string) => [...departmentKeys.all, "detail", id] as const,
 }
 
-export async function fetchDepartments(): Promise<Department[]> {
-  return apiClient<Department[]>("/api/v1/departments", undefined)
+export async function fetchDepartments(tenantId?: string): Promise<Department[]> {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/departments` : "/api/v1/departments"
+  return apiClient<Department[]>(path, undefined)
 }
 
 export async function fetchDepartment(
@@ -48,11 +49,11 @@ export async function deleteDepartment(
   })
 }
 
-export function useDepartmentsQuery() {
+export function useDepartmentsQuery(tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: departmentKeys.list(),
-    queryFn: () => fetchDepartments(),
+    queryKey: departmentKeys.list(tenantId),
+    queryFn: () => fetchDepartments(tenantId),
     enabled: !!session,
     staleTime: 30_000,
   })

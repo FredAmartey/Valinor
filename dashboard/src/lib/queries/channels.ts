@@ -15,15 +15,16 @@ export type ProviderName = "slack" | "whatsapp" | "telegram"
 
 export const channelKeys = {
   all: ["channels"] as const,
-  links: () => [...channelKeys.all, "links"] as const,
+  links: (tenantId?: string) => [...channelKeys.all, "links", tenantId ?? "self"] as const,
   outbox: (status?: string) => [...channelKeys.all, "outbox", status ?? "all"] as const,
   provider: (name: ProviderName) => [...channelKeys.all, "provider", name] as const,
 }
 
 // --- Fetch functions ---
 
-export async function fetchChannelLinks(): Promise<ChannelLink[]> {
-  return apiClient<ChannelLink[]>("/api/v1/channels/links", undefined)
+export async function fetchChannelLinks(tenantId?: string): Promise<ChannelLink[]> {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/channels/links` : "/api/v1/channels/links"
+  return apiClient<ChannelLink[]>(path, undefined)
 }
 
 export async function fetchOutbox(
@@ -89,11 +90,11 @@ export async function deleteProviderCredential(
 
 // --- Query hooks ---
 
-export function useChannelLinksQuery() {
+export function useChannelLinksQuery(tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: channelKeys.links(),
-    queryFn: () => fetchChannelLinks(),
+    queryKey: channelKeys.links(tenantId),
+    queryFn: () => fetchChannelLinks(tenantId),
     enabled: !!session,
     staleTime: 30_000,
   })

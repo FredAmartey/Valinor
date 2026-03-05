@@ -8,12 +8,13 @@ import type { Role, UserRole, AssignRoleRequest, UpdateRoleRequest } from "@/lib
 
 export const roleKeys = {
   all: ["roles"] as const,
-  list: () => [...roleKeys.all, "list"] as const,
+  list: (tenantId?: string) => [...roleKeys.all, "list", tenantId ?? "self"] as const,
   userRoles: (userId: string) => ["userRoles", userId] as const,
 }
 
-export async function fetchRoles(): Promise<Role[]> {
-  return apiClient<Role[]>("/api/v1/roles", undefined)
+export async function fetchRoles(tenantId?: string): Promise<Role[]> {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/roles` : "/api/v1/roles"
+  return apiClient<Role[]>(path, undefined)
 }
 
 export async function fetchUserRoles(
@@ -42,11 +43,11 @@ export async function removeRole(
   })
 }
 
-export function useRolesQuery() {
+export function useRolesQuery(tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: roleKeys.list(),
-    queryFn: () => fetchRoles(),
+    queryKey: roleKeys.list(tenantId),
+    queryFn: () => fetchRoles(tenantId),
     enabled: !!session,
     staleTime: 60_000,
   })

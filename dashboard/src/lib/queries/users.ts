@@ -7,15 +7,17 @@ import type { User, CreateUserRequest, UpdateUserRequest, Department } from "@/l
 
 export const userKeys = {
   all: ["users"] as const,
-  list: () => [...userKeys.all, "list"] as const,
+  list: (tenantId?: string) => [...userKeys.all, "list", tenantId ?? "self"] as const,
   detail: (id: string) => [...userKeys.all, "detail", id] as const,
   userDepartments: (id: string) => [...userKeys.all, "departments", id] as const,
 }
 
 export async function fetchUsers(
   params?: Record<string, string>,
+  tenantId?: string,
 ): Promise<User[]> {
-  return apiClient<User[]>("/api/v1/users", params ? { params } : undefined)
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/users` : "/api/v1/users"
+  return apiClient<User[]>(path, params ? { params } : undefined)
 }
 
 export async function fetchUser(
@@ -77,11 +79,11 @@ export async function removeUserFromDepartment(
 }
 
 // React hooks
-export function useUsersQuery() {
+export function useUsersQuery(tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: userKeys.list(),
-    queryFn: () => fetchUsers(),
+    queryKey: userKeys.list(tenantId),
+    queryFn: () => fetchUsers(undefined, tenantId),
     enabled: !!session,
     staleTime: 30_000,
   })

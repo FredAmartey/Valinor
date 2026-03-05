@@ -7,11 +7,13 @@ import type { AuditListResponse, AuditFilters } from "@/lib/types"
 
 export const auditKeys = {
   all: ["auditEvents"] as const,
-  list: (filters?: AuditFilters) => [...auditKeys.all, "list", filters ?? {}] as const,
+  list: (filters?: AuditFilters, tenantId?: string) =>
+    [...auditKeys.all, "list", filters ?? {}, tenantId ?? "self"] as const,
 }
 
 export async function fetchAuditEvents(
   filters?: AuditFilters,
+  tenantId?: string,
 ): Promise<AuditListResponse> {
   const params: Record<string, string> = {}
   if (filters) {
@@ -21,14 +23,15 @@ export async function fetchAuditEvents(
       }
     }
   }
-  return apiClient<AuditListResponse>("/api/v1/audit/events", { params })
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/audit/events` : "/api/v1/audit/events"
+  return apiClient<AuditListResponse>(path, { params })
 }
 
-export function useAuditEventsQuery(filters?: AuditFilters) {
+export function useAuditEventsQuery(filters?: AuditFilters, tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: auditKeys.list(filters),
-    queryFn: () => fetchAuditEvents(filters),
+    queryKey: auditKeys.list(filters, tenantId),
+    queryFn: () => fetchAuditEvents(filters, tenantId),
     enabled: !!session,
     staleTime: 30_000,
     placeholderData: keepPreviousData,

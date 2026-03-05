@@ -7,7 +7,7 @@ import type { AgentInstance, ProvisionAgentRequest, ConfigureAgentRequest } from
 
 export const agentKeys = {
   all: ["agents"] as const,
-  list: () => [...agentKeys.all, "list"] as const,
+  list: (tenantId?: string) => [...agentKeys.all, "list", tenantId ?? "self"] as const,
   detail: (id: string) => [...agentKeys.all, "detail", id] as const,
 }
 
@@ -15,8 +15,9 @@ interface AgentListResponse {
   agents: AgentInstance[]
 }
 
-export async function fetchAgents(): Promise<AgentListResponse> {
-  return apiClient<AgentListResponse>("/api/v1/agents", undefined)
+export async function fetchAgents(tenantId?: string): Promise<AgentListResponse> {
+  const path = tenantId ? `/api/v1/tenants/${tenantId}/agents` : "/api/v1/agents"
+  return apiClient<AgentListResponse>(path, undefined)
 }
 
 export async function fetchAgent(id: string): Promise<AgentInstance> {
@@ -50,11 +51,11 @@ export async function configureAgent(
   })
 }
 
-export function useAgentsQuery(statusFilter?: string) {
+export function useAgentsQuery(statusFilter?: string, tenantId?: string) {
   const { data: session } = useSession()
   return useQuery({
-    queryKey: agentKeys.list(),
-    queryFn: () => fetchAgents(),
+    queryKey: agentKeys.list(tenantId),
+    queryFn: () => fetchAgents(tenantId),
     select: (data) => {
       if (statusFilter && statusFilter !== "all") {
         return { agents: data.agents.filter((a) => a.status === statusFilter) }
