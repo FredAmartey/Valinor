@@ -184,6 +184,163 @@ func TestStore_GetIdentityWithRoles(t *testing.T) {
 	assert.Contains(t, identity.Departments, deptID)
 }
 
+func TestStore_FindOrCreateByOIDC_EmailConflict_LinksOIDC(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	// Create tenant
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Chelsea FC", "chelsea-fc",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	// Create a dev-seeded user with NO OIDC credentials
+	var existingUserID string
+	err = pool.QueryRow(ctx,
+		"INSERT INTO users (tenant_id, email, display_name) VALUES ($1, $2, $3) RETURNING id",
+		tenantID, "scout@chelsea.com", "Scout A",
+	).Scan(&existingUserID)
+	require.NoError(t, err)
+
+	// OIDC login with the same email — should link OIDC creds to existing user
+	identity, created, err := store.FindOrCreateByOIDC(ctx, auth.OIDCUserInfo{
+		Issuer:  "https://accounts.google.com",
+		Subject: "google-123",
+		Email:   "scout@chelsea.com",
+		Name:    "Scout A",
+	}, tenantID)
+	require.NoError(t, err)
+
+	assert.False(t, created, "should not be marked as created — user already existed")
+	assert.Equal(t, existingUserID, identity.UserID, "should link to existing user")
+}
+
+func TestStore_FindOrCreateByOIDC_EmailConflict_DifferentOIDC_Errors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	// Create tenant
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Chelsea FC", "chelsea-fc",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	// Create user with existing OIDC credentials (different provider)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO users (tenant_id, email, display_name, oidc_issuer, oidc_subject)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		tenantID, "scout@chelsea.com", "Scout A", "https://github.com", "github-456",
+	)
+	require.NoError(t, err)
+
+	// Try to create with different OIDC creds but same email — should error
+	_, _, err = store.FindOrCreateByOIDC(ctx, auth.OIDCUserInfo{
+		Issuer:  "https://accounts.google.com",
+		Subject: "google-123",
+		Email:   "scout@chelsea.com",
+		Name:    "Scout A",
+	}, tenantID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "email conflict")
+}
+
+func TestStore_AssignRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	// Create tenant, user, and role
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Chelsea FC", "chelsea-fc",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var userID string
+	err = pool.QueryRow(ctx,
+		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		tenantID, "scout@chelsea.com", "Scout A", "google-123", "https://accounts.google.com",
+	).Scan(&userID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO roles (tenant_id, name, permissions) VALUES ($1, $2, $3)`,
+		tenantID, "standard_user", `["agents:read","agents:message"]`,
+	)
+	require.NoError(t, err)
+
+	// Assign role
+	err = store.AssignRole(ctx, userID, tenantID, "standard_user")
+	require.NoError(t, err)
+
+	// Verify role was assigned
+	identity, err := store.GetIdentityWithRoles(ctx, userID)
+	require.NoError(t, err)
+	assert.Contains(t, identity.Roles, "standard_user")
+}
+
+func TestStore_AssignRole_NonexistentRole(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx,
+		"INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id",
+		"Chelsea FC", "chelsea-fc",
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	var userID string
+	err = pool.QueryRow(ctx,
+		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		tenantID, "scout@chelsea.com", "Scout A", "google-123", "https://accounts.google.com",
+	).Scan(&userID)
+	require.NoError(t, err)
+
+	// Assign role that doesn't exist — should not error but has no effect
+	err = store.AssignRole(ctx, userID, tenantID, "nonexistent_role")
+	require.NoError(t, err)
+
+	// Verify no roles assigned
+	identity, err := store.GetIdentityWithRoles(ctx, userID)
+	require.NoError(t, err)
+	assert.Empty(t, identity.Roles)
+}
+
 func TestStore_GetIdentityWithRoles_PlatformAdmin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

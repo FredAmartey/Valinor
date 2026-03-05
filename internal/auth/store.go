@@ -4,10 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// isUniqueViolation checks if err is a PostgreSQL unique_violation (23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
 
 // OIDCUserInfo represents user info returned from an OIDC provider.
 type OIDCUserInfo struct {
@@ -28,11 +36,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // FindOrCreateByOIDC atomically finds or creates a user by OIDC credentials.
 // Uses INSERT ... ON CONFLICT to avoid TOCTOU race conditions.
+// Handles two unique constraints: (oidc_issuer, oidc_subject) and (tenant_id, email).
 // Returns the identity, whether the user was created, and any error.
 func (s *Store) FindOrCreateByOIDC(ctx context.Context, info OIDCUserInfo, defaultTenantID string) (*Identity, bool, error) {
-	// Attempt atomic upsert — ON CONFLICT DO NOTHING means RETURNING is empty on conflict
 	var userID string
 	created := false
+
+	// Attempt atomic insert — ON CONFLICT handles the OIDC uniqueness constraint.
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO users (tenant_id, email, display_name, oidc_issuer, oidc_subject)
 		 VALUES ($1, $2, $3, $4, $5)
@@ -42,16 +52,26 @@ func (s *Store) FindOrCreateByOIDC(ctx context.Context, info OIDCUserInfo, defau
 	).Scan(&userID)
 
 	if err == nil {
+		// Insert succeeded — new user created.
 		created = true
 	} else if errors.Is(err, pgx.ErrNoRows) {
-		// Conflict fired — user already exists, look them up
+		// OIDC conflict — user already exists with these OIDC credentials.
 		err = s.pool.QueryRow(ctx,
 			"SELECT id FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2",
 			info.Issuer, info.Subject,
 		).Scan(&userID)
 		if err != nil {
-			return nil, false, fmt.Errorf("querying existing user: %w", err)
+			return nil, false, fmt.Errorf("querying existing OIDC user: %w", err)
 		}
+	} else if isUniqueViolation(err) {
+		// Hit the (tenant_id, email) constraint. Two possible causes:
+		//   a) Race condition: concurrent INSERT with same OIDC subject already won.
+		//   b) Existing user with this email but no OIDC credentials (e.g. dev-seeded).
+		resolved, resolveErr := s.resolveEmailConflict(ctx, info, defaultTenantID)
+		if resolveErr != nil {
+			return nil, false, fmt.Errorf("resolving email conflict: %w", resolveErr)
+		}
+		userID = resolved
 	} else {
 		return nil, false, fmt.Errorf("upserting user: %w", err)
 	}
@@ -61,6 +81,41 @@ func (s *Store) FindOrCreateByOIDC(ctx context.Context, info OIDCUserInfo, defau
 		return nil, false, fmt.Errorf("getting identity: %w", err)
 	}
 	return identity, created, nil
+}
+
+// resolveEmailConflict handles the (tenant_id, email) unique violation.
+// First checks if the OIDC user was created by a concurrent request (race condition).
+// Otherwise, links OIDC credentials to the existing email-matched user.
+func (s *Store) resolveEmailConflict(ctx context.Context, info OIDCUserInfo, tenantID string) (string, error) {
+	// Check for race condition: another request already inserted with these OIDC creds.
+	var userID string
+	err := s.pool.QueryRow(ctx,
+		"SELECT id FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2",
+		info.Issuer, info.Subject,
+	).Scan(&userID)
+	if err == nil {
+		return userID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("checking for race condition: %w", err)
+	}
+
+	// No race — existing user with same (tenant_id, email) but no OIDC creds.
+	// Link OIDC credentials to that user.
+	err = s.pool.QueryRow(ctx,
+		`UPDATE users
+		 SET oidc_issuer = $1, oidc_subject = $2, display_name = COALESCE(NULLIF(display_name, ''), $3)
+		 WHERE tenant_id = $4 AND email = $5 AND (oidc_issuer = '' OR oidc_issuer IS NULL)
+		 RETURNING id`,
+		info.Issuer, info.Subject, info.Name, tenantID, info.Email,
+	).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("email conflict but user already has different OIDC credentials")
+		}
+		return "", fmt.Errorf("linking OIDC to existing user: %w", err)
+	}
+	return userID, nil
 }
 
 // LookupPlatformAdminByOIDC looks up a platform admin by OIDC credentials.
@@ -126,7 +181,7 @@ func (s *Store) UpdateUserTenant(ctx context.Context, userID, tenantID string) e
 
 // AssignRole inserts a role assignment for a user in a tenant.
 func (s *Store) AssignRole(ctx context.Context, userID, tenantID, roleName string) error {
-	_, err := s.pool.Exec(ctx,
+	tag, err := s.pool.Exec(ctx,
 		`INSERT INTO user_roles (user_id, role_id, scope_type, scope_id)
 		 SELECT $1, r.id, 'org', $2
 		 FROM roles r WHERE r.tenant_id = $2 AND r.name = $3
@@ -135,6 +190,10 @@ func (s *Store) AssignRole(ctx context.Context, userID, tenantID, roleName strin
 	)
 	if err != nil {
 		return fmt.Errorf("assigning role: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		slog.Warn("role assignment had no effect — role may not exist for tenant",
+			"role", roleName, "tenant_id", tenantID, "user_id", userID)
 	}
 	return nil
 }

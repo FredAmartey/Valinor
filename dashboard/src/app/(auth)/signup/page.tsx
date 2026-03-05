@@ -61,17 +61,29 @@ export default function SignUpPage() {
   async function handleSocialSignUp(strategy: "oauth_google" | "oauth_github") {
     setError("")
     setLoading(true)
+
     try {
       const clerk = await getClerk()
-      if (!clerk.client) return
+      if (!clerk.client) {
+        setError("Failed to initialize authentication.")
+        setLoading(false)
+        return
+      }
+
+      if (clerk.session) {
+        await clerk.signOut()
+      }
+
+      const callbackUrl = `${window.location.origin}/sso-callback`
+
       await clerk.client.signUp.authenticateWithRedirect({
         strategy,
-        redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/sso-callback",
+        redirectUrl: callbackUrl,
+        redirectUrlComplete: callbackUrl,
       })
     } catch {
-      setLoading(false)
       setError("Social sign-up failed. Please try again.")
+      setLoading(false)
     }
   }
 

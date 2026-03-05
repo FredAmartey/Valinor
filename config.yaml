@@ -20,7 +20,7 @@ auth:
   oidc:
     enabled: true
     issuerurl: "https://free-cow-74.clerk.accounts.dev"
-    clientid: "SMGALHI3UVMTc4Xe"
+    clientid: ""
     clientsecret: ""
     jwksurl: "https://free-cow-74.clerk.accounts.dev/.well-known/jwks.json"
     redirecturl: "http://localhost:8080/auth/callback"

@@ -72,6 +72,7 @@ export default function LoginPage() {
       const result = await signIn("clerk-token", {
         token,
         tenantSlug: tenantSlug ?? "",
+        emailHint: email,
         redirect: false,
       })
 
@@ -98,20 +99,30 @@ export default function LoginPage() {
   async function handleSocialLogin(strategy: "oauth_google" | "oauth_github") {
     setError("")
     setLoading(true)
+
     try {
       const clerk = await getClerk()
       if (!clerk.client) {
+        setError("Failed to initialize authentication.")
         setLoading(false)
         return
       }
+
+      // Clear any stale session
+      if (clerk.session) {
+        await clerk.signOut()
+      }
+
+      const callbackUrl = `${window.location.origin}/sso-callback`
+
       await clerk.client.signIn.authenticateWithRedirect({
         strategy,
-        redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/sso-callback",
+        redirectUrl: callbackUrl,
+        redirectUrlComplete: callbackUrl,
       })
     } catch {
-      setLoading(false)
       setError("Social sign-in failed. Please try again.")
+      setLoading(false)
     }
   }
 

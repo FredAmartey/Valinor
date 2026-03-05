@@ -11,6 +11,7 @@ declare module "next-auth" {
       name: string
       tenantId: string | null
       isPlatformAdmin: boolean
+      isNewUser: boolean
       roles: string[]
     }
   }
@@ -21,6 +22,7 @@ declare module "next-auth" {
     name: string
     tenantId: string | null
     isPlatformAdmin: boolean
+    isNewUser: boolean
     accessToken: string
     refreshToken: string
     expiresIn: number
@@ -36,6 +38,7 @@ declare module "@auth/core/jwt" {
     userId: string
     tenantId: string | null
     isPlatformAdmin: boolean
+    isNewUser: boolean
     roles: string[]
   }
 }
@@ -65,10 +68,11 @@ const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
 // Exchange an external OIDC id_token for Valinor platform tokens.
 // tenantSlug is passed explicitly because server-side fetches lack a browser
 // Origin header, so the backend cannot resolve the tenant from the request alone.
-async function exchangeIDToken(idToken: string, tenantSlug?: string): Promise<{
+async function exchangeIDToken(idToken: string, tenantSlug?: string, emailHint?: string): Promise<{
   access_token: string
   refresh_token: string
   expires_in: number
+  created: boolean
   user: { id: string; email: string; display_name: string; tenant_id: string; is_platform_admin: boolean }
 } | null> {
   const res = await fetch(`${VALINOR_API_URL}/auth/exchange`, {
@@ -77,6 +81,7 @@ async function exchangeIDToken(idToken: string, tenantSlug?: string): Promise<{
     body: JSON.stringify({
       id_token: idToken,
       ...(tenantSlug && { tenant_slug: tenantSlug }),
+      ...(emailHint && { email_hint: emailHint }),
     }),
   })
   if (!res.ok) {
@@ -117,6 +122,7 @@ export const authConfig: NextAuthConfig = {
                 name: data.user.display_name ?? data.user.email,
                 tenantId: data.user.tenant_id ?? null,
                 isPlatformAdmin: data.user.is_platform_admin ?? false,
+                isNewUser: false,
                 accessToken: data.access_token,
                 refreshToken: data.refresh_token,
                 expiresIn: data.expires_in ?? 86400,
@@ -135,6 +141,7 @@ export const authConfig: NextAuthConfig = {
             credentials: {
               token: { label: "Clerk Session Token", type: "text" },
               tenantSlug: { label: "Tenant Slug", type: "text" },
+              emailHint: { label: "Email Hint", type: "text" },
             },
             async authorize(credentials) {
               if (!credentials?.token) return null
@@ -142,6 +149,7 @@ export const authConfig: NextAuthConfig = {
               const data = await exchangeIDToken(
                 credentials.token as string,
                 (credentials.tenantSlug as string) || undefined,
+                (credentials.emailHint as string) || undefined,
               )
               if (!data) return null
 
@@ -152,6 +160,7 @@ export const authConfig: NextAuthConfig = {
                 name: data.user.display_name ?? data.user.email,
                 tenantId: data.user.tenant_id ?? null,
                 isPlatformAdmin: data.user.is_platform_admin ?? false,
+                isNewUser: data.created ?? false,
                 accessToken: data.access_token,
                 refreshToken: data.refresh_token,
                 expiresIn: data.expires_in ?? 3600,
@@ -182,6 +191,7 @@ export const authConfig: NextAuthConfig = {
         token.userId = user.id ?? ""
         token.tenantId = user.tenantId ?? null
         token.isPlatformAdmin = user.isPlatformAdmin ?? false
+        token.isNewUser = user.isNewUser ?? false
         token.roles = user.roles ?? []
         return token
       }
@@ -194,6 +204,7 @@ export const authConfig: NextAuthConfig = {
         token.userId = user.id ?? ""
         token.tenantId = user.tenantId ?? null
         token.isPlatformAdmin = user.isPlatformAdmin ?? false
+        token.isNewUser = user.isNewUser ?? false
         token.roles = user.roles ?? []
         return token
       }
@@ -227,6 +238,7 @@ export const authConfig: NextAuthConfig = {
       session.user.id = token.userId
       session.user.tenantId = token.tenantId
       session.user.isPlatformAdmin = token.isPlatformAdmin
+      session.user.isNewUser = token.isNewUser ?? false
       session.user.roles = token.roles
       return session
     },
@@ -247,18 +259,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth(authConfig)
  * that need the raw token (e.g. the BFF proxy).
  */
 export async function getAccessToken(): Promise<string | null> {
-  const session = await auth()
-  if (!session) return null
-  // The JWT callback stores the accessToken on the token object.
-  // We read it via the internal auth() call which decodes the JWT.
-  // Since we removed accessToken from the Session type (to keep it off the client),
-  // we access the underlying JWT by re-importing getToken.
   const { cookies } = await import("next/headers")
-  const { getToken } = await import("next-auth/jwt")
+  const { decode } = await import("next-auth/jwt")
   const cookieStore = await cookies()
-  const token = await getToken({
-    req: { cookies: cookieStore } as any,
-    secret: process.env.AUTH_SECRET,
+
+  // NextAuth v5 uses "authjs.session-token" in dev, "__Secure-authjs.session-token" in prod
+  const cookieName =
+    process.env.NODE_ENV === "production"
+      ? "__Secure-authjs.session-token"
+      : "authjs.session-token"
+
+  const sessionToken = cookieStore.get(cookieName)?.value
+  if (!sessionToken) return null
+
+  const token = await decode({
+    token: sessionToken,
+    secret: process.env.AUTH_SECRET!,
+    salt: cookieName,
   })
-  return token?.accessToken ?? null
+  return (token as { accessToken?: string } | null)?.accessToken ?? null
 }

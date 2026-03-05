@@ -109,3 +109,97 @@ func TestIDTokenValidator_WrongAudience(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "audience")
 }
+
+func TestIDTokenValidator_EmptyAudience_AcceptsAnyAud(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	kid := "test-kid"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
+	}))
+	t.Cleanup(srv.Close)
+
+	v := NewIDTokenValidator(IDTokenValidatorConfig{
+		JWKSUrl:  srv.URL,
+		Issuer:   "https://clerk.example.com",
+		Audience: "", // empty — skips aud validation
+		CacheTTL: 1 * time.Hour,
+	})
+
+	tok := signIDToken(t, priv, kid, jwt.MapClaims{
+		"iss": "https://clerk.example.com",
+		"sub": "user_abc",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	})
+
+	info, err := v.Validate(context.Background(), tok)
+	require.NoError(t, err)
+	assert.Equal(t, "user_abc", info.Subject)
+}
+
+func TestIDTokenValidator_EmptyAudience_WithAZP_Valid(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	kid := "test-kid"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
+	}))
+	t.Cleanup(srv.Close)
+
+	v := NewIDTokenValidator(IDTokenValidatorConfig{
+		JWKSUrl:  srv.URL,
+		Issuer:   "https://clerk.example.com",
+		Audience: "",
+		AZP:      "clerk_app_123",
+		CacheTTL: 1 * time.Hour,
+	})
+
+	tok := signIDToken(t, priv, kid, jwt.MapClaims{
+		"iss": "https://clerk.example.com",
+		"sub": "user_abc",
+		"azp": "clerk_app_123",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	})
+
+	info, err := v.Validate(context.Background(), tok)
+	require.NoError(t, err)
+	assert.Equal(t, "user_abc", info.Subject)
+}
+
+func TestIDTokenValidator_EmptyAudience_WithAZP_Mismatch(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	kid := "test-kid"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(buildJWKS(t, kid, &priv.PublicKey))
+	}))
+	t.Cleanup(srv.Close)
+
+	v := NewIDTokenValidator(IDTokenValidatorConfig{
+		JWKSUrl:  srv.URL,
+		Issuer:   "https://clerk.example.com",
+		Audience: "",
+		AZP:      "clerk_app_123",
+		CacheTTL: 1 * time.Hour,
+	})
+
+	tok := signIDToken(t, priv, kid, jwt.MapClaims{
+		"iss": "https://clerk.example.com",
+		"sub": "user_abc",
+		"azp": "different_app",
+		"exp": time.Now().Add(1 * time.Hour).Unix(),
+		"iat": time.Now().Unix(),
+	})
+
+	_, err = v.Validate(context.Background(), tok)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "azp mismatch")
+}

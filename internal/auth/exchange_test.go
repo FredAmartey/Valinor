@@ -190,11 +190,12 @@ func TestHandleExchange_TenantSlug_NoOrigin(t *testing.T) {
 	// Should succeed — tenant resolved via slug, user found.
 	assert.Equal(t, http.StatusOK, rec.Code, "expected 200 when tenant_slug is provided; got body: %s", rec.Body.String())
 
-	var resp devLoginResponse
+	var resp exchangeResponse
 	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.AccessToken)
 	assert.Equal(t, tenantID, resp.User.TenantID)
+	assert.False(t, resp.Created, "existing user should not be marked as created")
 }
 
 func TestHandleExchange_NotConfigured(t *testing.T) {

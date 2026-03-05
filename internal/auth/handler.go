@@ -67,19 +67,28 @@ func (h *Handler) RegisterDevRoutes(mux *http.ServeMux) {
 }
 
 type devLoginResponse struct {
-	AccessToken  string           `json:"access_token"`
-	RefreshToken string           `json:"refresh_token"`
-	TokenType    string           `json:"token_type"`
-	ExpiresIn    int              `json:"expires_in"`
-	User         devLoginUserInfo `json:"user"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	TokenType    string        `json:"token_type"`
+	ExpiresIn    int           `json:"expires_in"`
+	User         tokenUserInfo `json:"user"`
 }
 
-type devLoginUserInfo struct {
+type tokenUserInfo struct {
 	ID              string `json:"id"`
 	Email           string `json:"email"`
 	DisplayName     string `json:"display_name"`
 	TenantID        string `json:"tenant_id"`
 	IsPlatformAdmin bool   `json:"is_platform_admin"`
+}
+
+type exchangeResponse struct {
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token"`
+	TokenType    string        `json:"token_type"`
+	ExpiresIn    int           `json:"expires_in"`
+	Created      bool          `json:"created"`
+	User         tokenUserInfo `json:"user"`
 }
 
 // HandleDevLogin authenticates by email in dev mode.
@@ -167,7 +176,7 @@ func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: refreshToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    h.tokenSvc.AccessTokenExpirySeconds(),
-		User: devLoginUserInfo{
+		User: tokenUserInfo{
 			ID:              identity.UserID,
 			Email:           identity.Email,
 			DisplayName:     identity.DisplayName,
@@ -192,6 +201,7 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IDToken    string `json:"id_token"`
 		TenantSlug string `json:"tenant_slug,omitempty"`
+		EmailHint  string `json:"email_hint,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.IDToken == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
@@ -207,6 +217,19 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 			"error": "invalid id_token",
 		})
 		return
+	}
+
+	// Clerk session tokens lack an email claim; use the hint from the frontend.
+	// Validate the hint is a well-formed email to prevent injection of arbitrary values.
+	if userInfo.Email == "" && req.EmailHint != "" {
+		if !isValidEmail(req.EmailHint) {
+			slog.Warn("exchange: invalid email_hint rejected", "hint", req.EmailHint, "subject", userInfo.Subject)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "invalid email_hint",
+			})
+			return
+		}
+		userInfo.Email = req.EmailHint
 	}
 
 	if h.store == nil {
@@ -252,13 +275,20 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 		// Platform admin — proceed without tenant scope.
 	}
 
-	identity, _, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, tenantID)
+	identity, created, err := h.store.FindOrCreateByOIDC(r.Context(), *userInfo, tenantID)
 	if err != nil {
 		slog.Error("exchange: user resolution failed", "error", err, "subject", userInfo.Subject)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "user resolution failed",
 		})
 		return
+	}
+
+	// Assign default role when a new user is provisioned into a tenant.
+	if created && tenantID != "" {
+		if roleErr := h.store.AssignRole(r.Context(), identity.UserID, tenantID, "standard_user"); roleErr != nil {
+			slog.Warn("exchange: default role assignment failed", "error", roleErr, "user_id", identity.UserID)
+		}
 	}
 
 	fullIdentity, err := h.store.GetIdentityWithRoles(r.Context(), identity.UserID)
@@ -311,14 +341,16 @@ func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 		"subject", userInfo.Subject,
 		"email", userInfo.Email,
 		"user_id", fullIdentity.UserID,
+		"created", created,
 	)
 
-	writeJSON(w, http.StatusOK, devLoginResponse{
+	writeJSON(w, http.StatusOK, exchangeResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    h.tokenSvc.AccessTokenExpirySeconds(),
-		User: devLoginUserInfo{
+		Created:      created,
+		User: tokenUserInfo{
 			ID:              fullIdentity.UserID,
 			Email:           fullIdentity.Email,
 			DisplayName:     fullIdentity.DisplayName,
@@ -721,6 +753,24 @@ func classifyRotationError(err error) (int, string) {
 	default:
 		return http.StatusInternalServerError, "token rotation failed"
 	}
+}
+
+// isValidEmail performs basic structural validation of an email address.
+// This is intentionally simple — we need a trust boundary check, not RFC 5322 compliance.
+func isValidEmail(email string) bool {
+	if len(email) > 254 {
+		return false
+	}
+	at := -1
+	for i, c := range email {
+		if c == '@' {
+			if at >= 0 {
+				return false // multiple @
+			}
+			at = i
+		}
+	}
+	return at > 0 && at < len(email)-1
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

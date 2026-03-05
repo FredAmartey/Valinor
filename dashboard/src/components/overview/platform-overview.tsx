@@ -1,6 +1,5 @@
 "use client"
 
-import { useSession } from "next-auth/react"
 import { useQuery } from "@tanstack/react-query"
 import { apiClient } from "@/lib/api-client"
 import { tenantKeys } from "@/lib/queries/tenants"
@@ -17,12 +16,9 @@ interface PlatformOverviewProps {
 }
 
 export function PlatformOverview({ initialTenants, initialAgents }: PlatformOverviewProps) {
-  const { data: session } = useSession()
-
   const { data: tenants, isLoading: tenantsLoading } = useQuery({
     queryKey: tenantKeys.list(),
     queryFn: () => apiClient<Tenant[]>("/api/v1/tenants"),
-    enabled: !!session,
     initialData: initialTenants,
     refetchInterval: 30_000,
   })
@@ -30,7 +26,6 @@ export function PlatformOverview({ initialTenants, initialAgents }: PlatformOver
   const { data: agentData, isLoading: agentsLoading } = useQuery({
     queryKey: agentKeys.list(),
     queryFn: () => fetchAgents(),
-    enabled: !!session,
     initialData: { agents: initialAgents },
     refetchInterval: 30_000,
   })

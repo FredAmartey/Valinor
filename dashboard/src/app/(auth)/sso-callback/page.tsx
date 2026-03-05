@@ -26,11 +26,13 @@ export default function SSOCallbackPage() {
       try {
         const clerk = await getClerk()
 
-        // Handle the OAuth callback — Clerk processes the URL params
-        await clerk.handleRedirectCallback({
-          afterSignInUrl: "/",
-          afterSignUpUrl: "/signup/team",
-        })
+        // Handle the OAuth callback — Clerk processes the URL params.
+        // Pass a no-op navigator to prevent Clerk from navigating away
+        // before we can exchange the token with our backend.
+        await clerk.handleRedirectCallback(
+          { afterSignInUrl: "/", afterSignUpUrl: "/signup/team" },
+          () => Promise.resolve(),
+        )
 
         // If there's an active session, exchange for Valinor tokens
         if (clerk.session) {
@@ -40,9 +42,12 @@ export default function SSOCallbackPage() {
             return
           }
 
+          const email = clerk.user?.primaryEmailAddress?.emailAddress ?? ""
+
           const signInResult = await signIn("clerk-token", {
             token,
             tenantSlug: tenantSlug ?? "",
+            emailHint: email,
             redirect: false,
           })
 
