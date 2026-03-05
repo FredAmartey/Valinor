@@ -210,6 +210,12 @@ func New(addr string, deps Dependencies) *Server {
 				tenantProxy.Wrap(http.HandlerFunc(deps.AuditHandler.HandleListEvents)),
 			)
 		}
+
+		// Emergency impersonation
+		impersonateHandler := admin.NewImpersonateHandler(deps.Auth, deps.Pool)
+		protectedMux.Handle("POST /api/v1/tenants/{id}/impersonate",
+			auth.RequirePlatformAdmin(http.HandlerFunc(impersonateHandler.Handle)),
+		)
 	}
 
 	// Self-service tenant creation (authenticated, tenantless users)
