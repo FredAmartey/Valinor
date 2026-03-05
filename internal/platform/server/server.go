@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/platform/admin"
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
@@ -168,6 +169,47 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("GET /api/v1/tenants",
 			auth.RequirePlatformAdmin(http.HandlerFunc(deps.TenantHandler.HandleList)),
 		)
+	}
+
+	// Platform admin tenant drill-down (read-only)
+	if deps.Pool != nil {
+		tenantProxy := admin.NewTenantProxy(deps.Pool)
+
+		if deps.UserHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/users",
+				tenantProxy.Wrap(http.HandlerFunc(deps.UserHandler.HandleList)),
+			)
+		}
+		if deps.DepartmentHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/departments",
+				tenantProxy.Wrap(http.HandlerFunc(deps.DepartmentHandler.HandleList)),
+			)
+		}
+		if deps.AgentHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/agents",
+				tenantProxy.Wrap(http.HandlerFunc(deps.AgentHandler.HandleListAgents)),
+			)
+		}
+		if deps.ChannelHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/channels/links",
+				tenantProxy.Wrap(http.HandlerFunc(deps.ChannelHandler.HandleListLinks)),
+			)
+		}
+		if deps.ConnectorHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/connectors",
+				tenantProxy.Wrap(http.HandlerFunc(deps.ConnectorHandler.HandleList)),
+			)
+		}
+		if deps.RoleHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/roles",
+				tenantProxy.Wrap(http.HandlerFunc(deps.RoleHandler.HandleList)),
+			)
+		}
+		if deps.AuditHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/audit/events",
+				tenantProxy.Wrap(http.HandlerFunc(deps.AuditHandler.HandleListEvents)),
+			)
+		}
 	}
 
 	// Self-service tenant creation (authenticated, tenantless users)
