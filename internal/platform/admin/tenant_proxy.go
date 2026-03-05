@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -40,9 +42,30 @@ func (p *TenantProxy) Wrap(inner http.Handler) http.Handler {
 			return
 		}
 
+		if p.pool != nil {
+			exists, err := tenantExists(r.Context(), p.pool, tenantID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to validate tenant"})
+				return
+			}
+			if !exists {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("tenant %s not found", tenantID)})
+				return
+			}
+		}
+
 		ctx := middleware.WithTenantID(r.Context(), tenantID)
 		inner.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func tenantExists(ctx context.Context, pool *pgxpool.Pool, tenantID string) (bool, error) {
+	var exists bool
+	err := pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM tenants WHERE id = $1)", tenantID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check tenant exists: %w", err)
+	}
+	return exists, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

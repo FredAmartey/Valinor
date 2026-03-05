@@ -6,6 +6,15 @@ import { useTenantQuery } from "@/lib/queries/tenants"
 import { formatDate } from "@/lib/format"
 import { TenantStatusBadge } from "./tenant-status-badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Users, TreeStructure, Robot, Plugs, Warning } from "@phosphor-icons/react"
 
 export function TenantDetail({ id }: { id: string }) {
@@ -45,49 +54,49 @@ export function TenantDetail({ id }: { id: string }) {
             </h1>
             <TenantStatusBadge status={tenant.status} />
           </div>
-          <button
-            onClick={() => setShowImpersonateDialog(true)}
-            className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 active:scale-[0.98]"
-          >
-            <Warning size={16} />
-            Enter Tenant
-          </button>
+          <Dialog open={showImpersonateDialog} onOpenChange={setShowImpersonateDialog}>
+            <DialogTrigger asChild>
+              <button
+                className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 active:scale-[0.98]"
+              >
+                <Warning size={16} />
+                Enter Tenant
+              </button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Emergency Access</DialogTitle>
+                <DialogDescription>
+                  You are about to enter <strong>{tenant.name}</strong> with full admin
+                  privileges. All actions will be logged in the audit trail.
+                </DialogDescription>
+              </DialogHeader>
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Impersonation endpoint is not yet wired. This button will be functional
+                once JWT generation is implemented.
+              </p>
+              <DialogFooter>
+                <button
+                  onClick={() => setShowImpersonateDialog(false)}
+                  className="rounded-lg px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white opacity-50 cursor-not-allowed"
+                >
+                  Enter Tenant
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
         <div className="mt-2 flex items-center gap-4 text-sm text-zinc-500">
           <span className="font-mono">{tenant.slug}</span>
           <span>Created {formatDate(tenant.created_at, "long")}</span>
         </div>
       </div>
-
-      {showImpersonateDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-zinc-900">Emergency Access</h3>
-            <p className="mt-2 text-sm text-zinc-600">
-              You are about to enter <strong>{tenant.name}</strong> with full admin
-              privileges. All actions will be logged in the audit trail.
-            </p>
-            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Impersonation endpoint is not yet wired. This button will be functional
-              once JWT generation is implemented.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setShowImpersonateDialog(false)}
-                className="rounded-lg px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                disabled
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white opacity-50 cursor-not-allowed"
-              >
-                Enter Tenant
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Link

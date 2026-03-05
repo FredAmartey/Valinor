@@ -41,6 +41,7 @@ type Dependencies struct {
 	InviteHandler       *tenant.InviteHandler
 	OnboardingHandler   *tenant.OnboardingHandler
 	InviteRedeemHandler *auth.InviteRedeemHandler
+	AuditLogger         audit.Logger
 	RBACAuditLogger     rbac.AuditLogger
 	DevMode             bool
 	DevIdentity         *auth.Identity
@@ -212,7 +213,7 @@ func New(addr string, deps Dependencies) *Server {
 		}
 
 		// Emergency impersonation
-		impersonateHandler := admin.NewImpersonateHandler(deps.Auth, deps.Pool)
+		impersonateHandler := admin.NewImpersonateHandler(deps.Auth, deps.Pool, deps.AuditLogger)
 		protectedMux.Handle("POST /api/v1/tenants/{id}/impersonate",
 			auth.RequirePlatformAdmin(http.HandlerFunc(impersonateHandler.Handle)),
 		)

@@ -348,6 +348,7 @@ func run() error {
 		InviteHandler:       inviteHandler,
 		OnboardingHandler:   onboardingHandler,
 		InviteRedeemHandler: inviteRedeemHandler,
+		AuditLogger:         auditLogger,
 		RBACAuditLogger:     &rbacAuditAdapter{l: auditLogger},
 		DevMode:             cfg.Auth.DevMode,
 		DevIdentity:         devIdentity,

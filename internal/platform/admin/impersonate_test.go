@@ -10,7 +10,7 @@ import (
 )
 
 func TestHandleImpersonate_NotPlatformAdmin(t *testing.T) {
-	h := NewImpersonateHandler(nil, nil)
+	h := NewImpersonateHandler(nil, nil, nil)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/tenants/{id}/impersonate", http.HandlerFunc(h.Handle))
@@ -26,7 +26,7 @@ func TestHandleImpersonate_NotPlatformAdmin(t *testing.T) {
 }
 
 func TestHandleImpersonate_InvalidTenantID(t *testing.T) {
-	h := NewImpersonateHandler(nil, nil)
+	h := NewImpersonateHandler(nil, nil, nil)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/tenants/{id}/impersonate", http.HandlerFunc(h.Handle))
@@ -42,7 +42,7 @@ func TestHandleImpersonate_InvalidTenantID(t *testing.T) {
 }
 
 func TestHandleImpersonate_Scaffold(t *testing.T) {
-	h := NewImpersonateHandler(nil, nil)
+	h := NewImpersonateHandler(nil, nil, nil)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/tenants/{id}/impersonate", http.HandlerFunc(h.Handle))
