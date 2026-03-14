@@ -58,7 +58,7 @@ Companies deploying agents to their own customers who need hard customer isolati
 
 ### 3. Regulated industries
 
-Healthcare, finance, legal, and other compliance-heavy environments where agent interactions must be logged, access controlled, and data isolated. Valinor's RLS, audit trail, and credential encryption address compliance requirements.
+Healthcare, finance, legal, and other compliance-heavy environments where agent interactions must be logged, access controlled, and data isolated. Valinor's role-based access control, row-level security, audit trail and credential encryption address compliance requirements.
 
 ### 4. High-trust businesses
 
