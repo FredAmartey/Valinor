@@ -131,10 +131,22 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		})
 	}
 
+	a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+		EventType:     "run.started",
+		Kind:          "run.started",
+		Title:         "Run started",
+		Summary:       "OpenClaw accepted the prompt and started processing.",
+		Status:        "pending",
+		RuntimeSource: "openclaw",
+	})
+
 	// Agentic tool execution loop
 	for iteration := 0; iteration < maxToolIterations; iteration++ {
 		ocResp, err := a.callOpenClaw(ctx, messages)
 		if err != nil {
+			a.emitRunFailed(ctx, conn, frame.ID, "Run failed while calling OpenClaw.", map[string]any{
+				"code": "openclaw_error",
+			})
 			a.sendError(ctx, conn, frame.ID, "openclaw_error", err.Error())
 			return
 		}
@@ -144,6 +156,10 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		// Check for canary token leak in content
 		if found, token := a.checkCanary(choice.Message.Content); found {
 			slog.Error("canary token detected in OpenClaw response", "token", token)
+			a.emitRunFailed(ctx, conn, frame.ID, "Run halted after a canary leak was detected in model output.", map[string]any{
+				"code":   "canary_leak",
+				"source": "model_output",
+			})
 			haltPayload, marshalErr := json.Marshal(map[string]string{
 				"reason": "canary_leak",
 				"token":  token,
@@ -164,6 +180,14 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 
 		// No tool calls → final text response
 		if len(choice.Message.ToolCalls) == 0 {
+			a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+				EventType:     "task_completion",
+				Kind:          "run.completed",
+				Title:         "Task completed",
+				Summary:       "OpenClaw produced a final response.",
+				Status:        "completed",
+				RuntimeSource: "openclaw",
+			})
 			a.sendDoneChunk(ctx, conn, frame.ID, choice.Message.Content)
 			return
 		}
@@ -191,6 +215,19 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 				return
 			}
 		}
+
+		a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+			EventType:     "sessions_yield",
+			Kind:          "run.yielded",
+			Title:         "Session yielded",
+			Summary:       fmt.Sprintf("OpenClaw requested %d tool action(s).", len(choice.Message.ToolCalls)),
+			Status:        "pending",
+			Binding:       "tool_execution",
+			RuntimeSource: "openclaw",
+			Metadata: map[string]any{
+				"tool_count": len(choice.Message.ToolCalls),
+			},
+		})
 
 		// Append assistant message (with tool_calls) to conversation
 		messages = append(messages, map[string]any{
@@ -236,6 +273,10 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 			// Check tool result for canary token leak
 			if found, token := a.checkCanary(toolResult); found {
 				slog.Error("canary token detected in tool result", "tool", tc.Function.Name, "token", token)
+				a.emitRunFailed(ctx, conn, frame.ID, "Run halted after a canary leak was detected in tool output.", map[string]any{
+					"code":   "canary_leak",
+					"source": "tool:" + tc.Function.Name,
+				})
 				haltPayload, marshalErr := json.Marshal(map[string]string{
 					"reason": "canary_leak",
 					"token":  token,
@@ -265,6 +306,9 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		// Loop continues with updated messages
 	}
 
+	a.emitRunFailed(ctx, conn, frame.ID, "Run exceeded the maximum allowed tool iterations.", map[string]any{
+		"code": "max_iterations",
+	})
 	a.sendError(ctx, conn, frame.ID, "max_iterations", "tool call loop exceeded maximum iterations")
 }
 
@@ -286,6 +330,33 @@ func (a *Agent) sendDoneChunk(ctx context.Context, conn *proxy.AgentConn, reqID,
 	if err := conn.Send(ctx, chunk); err != nil {
 		slog.Error("chunk send failed", "error", err)
 	}
+}
+
+func (a *Agent) emitRuntimeEvent(ctx context.Context, conn *proxy.AgentConn, reqID string, event proxy.RuntimeEventPayload) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("marshal runtime event payload failed", "event_type", event.EventType, "error", err)
+		return
+	}
+	if err := conn.Send(ctx, proxy.Frame{
+		Type:    proxy.TypeRuntimeEvent,
+		ID:      reqID,
+		Payload: payload,
+	}); err != nil {
+		slog.Warn("failed to send runtime event", "event_type", event.EventType, "error", err)
+	}
+}
+
+func (a *Agent) emitRunFailed(ctx context.Context, conn *proxy.AgentConn, reqID, summary string, metadata map[string]any) {
+	a.emitRuntimeEvent(ctx, conn, reqID, proxy.RuntimeEventPayload{
+		EventType:     "run.failed",
+		Kind:          "run.failed",
+		Title:         "Run failed",
+		Summary:       summary,
+		Status:        "failed",
+		RuntimeSource: "openclaw",
+		Metadata:      metadata,
+	})
 }
 
 // emitToolAudit sends a fire-and-forget audit frame to the control plane.

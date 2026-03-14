@@ -1,6 +1,7 @@
 import { render, screen, cleanup } from "@testing-library/react"
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { Session } from "next-auth"
 import { SessionProvider } from "next-auth/react"
 
 vi.mock("@/lib/queries/roles", () => ({
@@ -23,8 +24,20 @@ afterEach(() => cleanup())
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const session: Session = {
+    user: {
+      id: "u-1",
+      email: "test@example.com",
+      name: "test",
+      tenantId: "t-1",
+      isPlatformAdmin: false,
+      isNewUser: false,
+      roles: [],
+    },
+    expires: "2099-01-01",
+  }
   return (
-    <SessionProvider session={{ user: { name: "test" }, expires: "2099-01-01" } as any}>
+    <SessionProvider session={session}>
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     </SessionProvider>
   )

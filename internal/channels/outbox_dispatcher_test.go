@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valinor-ai/valinor/internal/activity"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
@@ -19,10 +21,11 @@ type fakeOutboxStore struct {
 	recoveredAt    time.Time
 	recoveredLimit int
 
-	markSentIDs []uuid.UUID
-	markRetry   []retryCall
-	markDead    []deadCall
-	callOrder   []string
+	markSentIDs  []uuid.UUID
+	markRetry    []retryCall
+	markDead     []deadCall
+	markApproval []approvalCall
+	callOrder    []string
 }
 
 type retryCall struct {
@@ -32,6 +35,11 @@ type retryCall struct {
 }
 
 type deadCall struct {
+	id        uuid.UUID
+	lastError string
+}
+
+type approvalCall struct {
 	id        uuid.UUID
 	lastError string
 }
@@ -65,6 +73,11 @@ func (f *fakeOutboxStore) MarkOutboxDead(_ context.Context, _ database.Querier, 
 	return nil
 }
 
+func (f *fakeOutboxStore) MarkOutboxPendingApproval(_ context.Context, _ database.Querier, outboxID uuid.UUID, lastError string) error {
+	f.markApproval = append(f.markApproval, approvalCall{id: outboxID, lastError: lastError})
+	return nil
+}
+
 func (f *fakeOutboxStore) RecoverStaleSending(_ context.Context, _ database.Querier, staleBefore time.Time, limit int) ([]ChannelOutbox, error) {
 	f.callOrder = append(f.callOrder, "recover")
 	f.recoveredAt = staleBefore
@@ -84,6 +97,42 @@ func (f *fakeOutboxSender) Send(_ context.Context, job ChannelOutbox) error {
 	}
 	return nil
 }
+
+type fakeOutboundScanner struct {
+	reports map[uuid.UUID]OutboundScanReport
+	errs    map[uuid.UUID]error
+}
+
+func (f *fakeOutboundScanner) Scan(_ context.Context, job ChannelOutbox) (OutboundScanReport, error) {
+	if err, ok := f.errs[job.ID]; ok {
+		return OutboundScanReport{}, err
+	}
+	if report, ok := f.reports[job.ID]; ok {
+		return report, nil
+	}
+	return OutboundScanReport{}, nil
+}
+
+type fakeReviewSink struct {
+	requests []OutboundReviewRequest
+}
+
+func (f *fakeReviewSink) CreateReview(_ context.Context, _ database.Querier, request OutboundReviewRequest) error {
+	f.requests = append(f.requests, request)
+	return nil
+}
+
+type fakeActivityLogger struct {
+	events []activity.Event
+	ctxs   []context.Context
+}
+
+func (f *fakeActivityLogger) Log(ctx context.Context, event activity.Event) {
+	f.ctxs = append(f.ctxs, ctx)
+	f.events = append(f.events, event)
+}
+
+func (f *fakeActivityLogger) Close() error { return nil }
 
 func TestOutboxDispatcher_SendsPendingJob(t *testing.T) {
 	jobID := uuid.New()
@@ -109,6 +158,245 @@ func TestOutboxDispatcher_SendsPendingJob(t *testing.T) {
 	assert.Equal(t, []uuid.UUID{jobID}, store.markSentIDs)
 	assert.Empty(t, store.markRetry)
 	assert.Empty(t, store.markDead)
+	assert.Empty(t, store.markApproval)
+}
+
+func TestOutboxDispatcher_BlocksDeterministicOutboundFindings(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{{
+				ID:          jobID,
+				Provider:    "slack",
+				RecipientID: "C123",
+				Payload:     json.RawMessage(`{"content":"send secret sk_live_123"}`),
+				MaxAttempts: 5,
+			}},
+			{},
+		},
+	}
+	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
+	scanner := &fakeOutboundScanner{
+		reports: map[uuid.UUID]OutboundScanReport{
+			jobID: {
+				Findings: []OutboundScanFinding{{
+					Category: "secret_leak",
+					Path:     "content",
+					Preview:  "sk_live_123",
+					Action:   OutboundActionBlock,
+				}},
+			},
+		},
+	}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 1})
+	dispatcher.scanner = scanner
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Empty(t, sender.sentIDs)
+	require.Len(t, store.markDead, 1)
+	assert.Contains(t, store.markDead[0].lastError, "secret_leak")
+	assert.Empty(t, store.markApproval)
+}
+
+func TestOutboxDispatcher_QueuesAmbiguousFindingsForReview(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{{
+				ID:          jobID,
+				Provider:    "telegram",
+				RecipientID: "chat-1",
+				Payload:     json.RawMessage(`{"content":"customer said call 555-1212"}`),
+				MaxAttempts: 5,
+			}},
+			{},
+		},
+	}
+	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
+	scanner := &fakeOutboundScanner{
+		reports: map[uuid.UUID]OutboundScanReport{
+			jobID: {
+				Findings: []OutboundScanFinding{{
+					Category: "pii",
+					Path:     "content",
+					Preview:  "555-1212",
+					Action:   OutboundActionReview,
+				}},
+			},
+		},
+	}
+	reviews := &fakeReviewSink{}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 1})
+	dispatcher.scanner = scanner
+	dispatcher.reviewSink = reviews
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	assert.Empty(t, sender.sentIDs)
+	require.Len(t, store.markApproval, 1)
+	require.Len(t, reviews.requests, 1)
+	assert.Equal(t, jobID, reviews.requests[0].OutboxID)
+	assert.Equal(t, "telegram", reviews.requests[0].Provider)
+	assert.Empty(t, store.markDead)
+}
+
+func TestOutboxDispatcher_ReviewFindingWithoutReviewSinkReturnsError(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{{
+				ID:          jobID,
+				Provider:    "telegram",
+				RecipientID: "chat-1",
+				Payload:     json.RawMessage(`{"content":"customer said call 555-1212"}`),
+				MaxAttempts: 5,
+			}},
+		},
+	}
+	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
+	scanner := &fakeOutboundScanner{
+		reports: map[uuid.UUID]OutboundScanReport{
+			jobID: {
+				Findings: []OutboundScanFinding{{
+					Category: "pii",
+					Path:     "content",
+					Preview:  "555-1212",
+					Action:   OutboundActionReview,
+				}},
+			},
+		},
+	}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 1})
+	dispatcher.scanner = scanner
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.Error(t, err)
+	assert.Equal(t, 0, processed)
+	assert.Empty(t, store.markApproval)
+	assert.Empty(t, store.markDead)
+	assert.Empty(t, sender.sentIDs)
+}
+
+func TestOutboxDispatcher_RedactsScanPreviewInActivityLog(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{{
+				ID:               jobID,
+				TenantID:         uuid.MustParse("00000000-0000-4000-8000-000000000123"),
+				ChannelMessageID: uuid.New(),
+				Provider:         "slack",
+				RecipientID:      "C123",
+				Payload:          json.RawMessage(`{"content":"send secret sk_live_123","correlation_id":"corr-123"}`),
+				MaxAttempts:      5,
+			}},
+			{},
+		},
+	}
+	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
+	scanner := &fakeOutboundScanner{
+		reports: map[uuid.UUID]OutboundScanReport{
+			jobID: {
+				Findings: []OutboundScanFinding{{
+					Category: "secret_leak",
+					Path:     "content",
+					Preview:  "sk_live_123",
+					Action:   OutboundActionBlock,
+				}},
+			},
+		},
+	}
+	activityLogger := &fakeActivityLogger{}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 1})
+	dispatcher.scanner = scanner
+	dispatcher.activity = activityLogger
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, activityLogger.events, 1)
+	findings, ok := activityLogger.events[0].Metadata["findings"].([]OutboundScanFinding)
+	require.True(t, ok)
+	require.Len(t, findings, 1)
+	assert.Empty(t, findings[0].Preview)
+	assert.Equal(t, "corr-123", activityLogger.events[0].CorrelationID)
+}
+
+func TestOutboxDispatcher_ScannerErrorAbortsDispatch(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{{ID: jobID, Provider: "slack", RecipientID: "C123", Payload: json.RawMessage(`{"content":"hello"}`), MaxAttempts: 5}},
+		},
+	}
+	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
+	scanner := &fakeOutboundScanner{
+		errs: map[uuid.UUID]error{
+			jobID: errors.New("scanner unavailable"),
+		},
+	}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 1})
+	dispatcher.scanner = scanner
+
+	processed, err := dispatcher.DispatchOnce(context.Background(), nil)
+	require.Error(t, err)
+	assert.Equal(t, 0, processed)
+	assert.Empty(t, sender.sentIDs)
+	assert.Empty(t, store.markDead)
+	assert.Empty(t, store.markApproval)
+}
+
+func TestOutboxDispatcher_PreservesDispatchContextInActivityLog(t *testing.T) {
+	jobID := uuid.New()
+	store := &fakeOutboxStore{
+		claimBatches: [][]ChannelOutbox{
+			{{
+				ID:               jobID,
+				TenantID:         uuid.MustParse("00000000-0000-4000-8000-000000000123"),
+				ChannelMessageID: uuid.New(),
+				Provider:         "slack",
+				RecipientID:      "C123",
+				Payload:          json.RawMessage(`{"content":"send secret sk_live_123"}`),
+				MaxAttempts:      5,
+			}},
+			{},
+		},
+	}
+	sender := &fakeOutboxSender{sendErr: map[uuid.UUID]error{}}
+	scanner := &fakeOutboundScanner{
+		reports: map[uuid.UUID]OutboundScanReport{
+			jobID: {
+				Findings: []OutboundScanFinding{{
+					Category: "secret_leak",
+					Path:     "content",
+					Preview:  "sk_live_123",
+					Action:   OutboundActionBlock,
+				}},
+			},
+		},
+	}
+	activityLogger := &fakeActivityLogger{}
+
+	dispatcher := NewOutboxDispatcher(store, sender, OutboxDispatcherConfig{ClaimBatchSize: 1})
+	dispatcher.scanner = scanner
+	dispatcher.activity = activityLogger
+
+	type ctxKey string
+	ctx := context.WithValue(context.Background(), ctxKey("request_id"), "req-123")
+
+	processed, err := dispatcher.DispatchOnce(ctx, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, processed)
+	require.Len(t, activityLogger.ctxs, 1)
+	assert.Equal(t, "req-123", activityLogger.ctxs[0].Value(ctxKey("request_id")))
 }
 
 func TestOutboxDispatcher_RetriesWithBoundedBackoff(t *testing.T) {

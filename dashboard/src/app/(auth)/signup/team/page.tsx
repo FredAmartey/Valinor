@@ -6,6 +6,17 @@ import { useRouter } from "next/navigation"
 import { AuthCard } from "@/components/auth/auth-card"
 import { apiClient } from "@/lib/api-client"
 
+type APIError = {
+  body?: {
+    error?: string
+  }
+}
+
+function getErrorMessage(err: unknown): string {
+  if (typeof err !== "object" || err === null) return ""
+  return ((err as APIError).body?.error ?? "").trim()
+}
+
 export default function TeamPage() {
   const { data: session, update } = useSession()
   const router = useRouter()
@@ -34,9 +45,9 @@ export default function TeamPage() {
       await update()
       router.push("/")
       router.refresh()
-    } catch (err: any) {
+    } catch (err) {
       setLoading(false)
-      setError(err?.body?.error ?? "Failed to create team. Please try again.")
+      setError(getErrorMessage(err) || "Failed to create team. Please try again.")
     }
   }
 
@@ -54,9 +65,9 @@ export default function TeamPage() {
       await update()
       router.push("/")
       router.refresh()
-    } catch (err: any) {
+    } catch (err) {
       setLoading(false)
-      const msg = err?.body?.error ?? ""
+      const msg = getErrorMessage(err)
       if (msg.includes("expired")) {
         setError("This invite has expired. Ask your admin for a new one.")
       } else if (msg.includes("used")) {

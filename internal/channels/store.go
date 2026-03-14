@@ -1228,6 +1228,31 @@ func (s *Store) MarkOutboxDead(ctx context.Context, q database.Querier, outboxID
 	return nil
 }
 
+// MarkOutboxPendingApproval moves a sending job into human review.
+func (s *Store) MarkOutboxPendingApproval(ctx context.Context, q database.Querier, outboxID uuid.UUID, lastError string) error {
+	cmd, err := q.Exec(ctx,
+		`UPDATE channel_outbox
+		 SET status = $2,
+		     last_error = $3,
+		     locked_at = NULL,
+		     updated_at = now()
+		 WHERE tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		   AND id = $1
+		   AND status = $4`,
+		outboxID,
+		OutboxStatusPendingApproval,
+		strings.TrimSpace(lastError),
+		OutboxStatusSending,
+	)
+	if err != nil {
+		return fmt.Errorf("marking outbox job pending approval: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrOutboxNotFound
+	}
+	return nil
+}
+
 // RecoverStaleSending resets stale sending jobs back to pending for re-claim.
 func (s *Store) RecoverStaleSending(ctx context.Context, q database.Querier, staleBefore time.Time, limit int) ([]ChannelOutbox, error) {
 	if staleBefore.IsZero() {

@@ -20,6 +20,7 @@ export function useAgentWebSocket(agentId: string, enabled: boolean) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectAttempts = useRef(0)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const connectRef = useRef<(() => Promise<void>) | null>(null)
 
   const connect = useCallback(async () => {
     if (!enabled) return
@@ -171,7 +172,9 @@ export function useAgentWebSocket(agentId: string, enabled: boolean) {
           RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts.current)
         reconnectAttempts.current++
         setStatus("connecting")
-        reconnectTimer.current = setTimeout(() => { connect() }, delay)
+        reconnectTimer.current = setTimeout(() => {
+          void connectRef.current?.()
+        }, delay)
       } else {
         setStatus("error")
         setError("Connection lost. Refresh to retry.")
@@ -180,8 +183,15 @@ export function useAgentWebSocket(agentId: string, enabled: boolean) {
   }, [agentId, enabled])
 
   useEffect(() => {
-    connect()
+    connectRef.current = connect
+  }, [connect])
+
+  useEffect(() => {
+    const initialConnect = setTimeout(() => {
+      void connectRef.current?.()
+    }, 0)
     return () => {
+      clearTimeout(initialConnect)
       clearTimeout(reconnectTimer.current)
       wsRef.current?.close(1000, "component unmounted")
       wsRef.current = null

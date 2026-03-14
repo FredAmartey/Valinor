@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -150,4 +151,24 @@ func TestHandleWebSocket_AllowsOrgAdmin(t *testing.T) {
 	// (websocket.Accept writes its own status). The key assertion is it does NOT return 403.
 	assert.NotEqual(t, http.StatusForbidden, rec.Code)
 	assert.NotEqual(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestRuntimeEventToWSMessage(t *testing.T) {
+	msg, err := runtimeEventToWSMessage("req-1", json.RawMessage(`{
+		"event_type":"sessions_yield",
+		"title":"Session yielded",
+		"summary":"OpenClaw yielded for an external action.",
+		"status":"pending",
+		"binding":"slack",
+		"delivery_target":"channel:C123"
+	}`))
+	assert.NoError(t, err)
+	assert.Equal(t, "runtime_event", msg.Type)
+	assert.Equal(t, "req-1", msg.RequestID)
+	assert.Equal(t, "sessions_yield", msg.EventType)
+	assert.Equal(t, "Session yielded", msg.Title)
+	assert.Equal(t, "OpenClaw yielded for an external action.", msg.Summary)
+	assert.Equal(t, "pending", msg.Status)
+	assert.Equal(t, "slack", msg.Binding)
+	assert.Equal(t, "channel:C123", msg.DeliveryTarget)
 }

@@ -69,6 +69,7 @@ func TestFrameTypeConstants(t *testing.T) {
 		proxy.TypePing,
 		proxy.TypeHeartbeat,
 		proxy.TypeChunk,
+		proxy.TypeRuntimeEvent,
 		proxy.TypeConfigAck,
 		proxy.TypeToolBlocked,
 		proxy.TypePong,

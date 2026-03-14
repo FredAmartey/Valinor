@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valinor-ai/valinor/internal/activity"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
@@ -93,6 +94,19 @@ func (m *mockUserContextStore) GetUserContext(_ context.Context, tenantID, agent
 	}
 	return value, nil
 }
+
+type mockActivityLogger struct {
+	mu     sync.Mutex
+	events []activity.Event
+}
+
+func (m *mockActivityLogger) Log(_ context.Context, event activity.Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, event)
+}
+
+func (m *mockActivityLogger) Close() error { return nil }
 
 func TestHandleMessage_Success(t *testing.T) {
 	transport := proxy.NewTCPTransport(9800)
@@ -310,6 +324,223 @@ func TestHandleStream_SSE(t *testing.T) {
 	assert.Contains(t, respBody, "event: done")
 	assert.Contains(t, respBody, `"content":"Hello "`)
 	assert.Contains(t, respBody, `"content":"World"`)
+}
+
+func TestHandleMessage_LogsRuntimeEvent(t *testing.T) {
+	transport := proxy.NewTCPTransport(9834)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(11)
+	agentID := "agent-runtime-event"
+	tenantID := "0f000000-0000-4000-8000-000000000011"
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	activityLogger := &mockActivityLogger{}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil).WithActivityLogger(activityLogger)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type: proxy.TypeRuntimeEvent,
+			ID:   frame.ID,
+			Payload: json.RawMessage(`{
+				"event_type":"sessions_yield",
+				"title":"Session yielded",
+				"summary":"OpenClaw yielded for an external action.",
+				"status":"pending",
+				"binding":"slack",
+				"delivery_target":"channel:C123",
+				"metadata":{"topic":"support"}
+			}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"ok","done":true}`),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"role":"user","content":"hello"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, activityLogger.events, 2)
+	runtimeEvent := activityLogger.events[1]
+	assert.Equal(t, activity.ProvenanceRuntimeVsock, runtimeEvent.Provenance)
+	assert.Equal(t, "sessions_yield", runtimeEvent.InternalEventType)
+	assert.Equal(t, "slack", runtimeEvent.Binding)
+	assert.Equal(t, "channel:C123", runtimeEvent.DeliveryTarget)
+	assert.Equal(t, "openclaw", runtimeEvent.RuntimeSource)
+}
+
+func TestHandleMessage_LogsSessionHaltReasonOnly(t *testing.T) {
+	transport := proxy.NewTCPTransport(9835)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(12)
+	agentID := "agent-session-halt"
+	tenantID := "0f000000-0000-4000-8000-000000000012"
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	activityLogger := &mockActivityLogger{}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil).WithActivityLogger(activityLogger)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeSessionHalt,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"reason":"canary_leak","token":"secret"}`),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"role":"user","content":"hello"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Len(t, activityLogger.events, 2)
+	haltEvent := activityLogger.events[1]
+	assert.Equal(t, activity.KindSecurityFlagged, haltEvent.Kind)
+	assert.Equal(t, activity.StatusHalted, haltEvent.Status)
+	assert.Equal(t, "canary_leak", haltEvent.Summary)
+}
+
+func TestHandleStream_ForwardsRuntimeEvent(t *testing.T) {
+	transport := proxy.NewTCPTransport(9831)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(4)
+	agentID := "agent-runtime-stream"
+	tenantID := "tenant-1"
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type: proxy.TypeRuntimeEvent,
+			ID:   frame.ID,
+			Payload: json.RawMessage(`{
+				"event_type":"task_completion",
+				"title":"Task completed",
+				"summary":"OpenClaw produced a final response.",
+				"status":"completed"
+			}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type:    proxy.TypeChunk,
+			ID:      frame.ID,
+			Payload: json.RawMessage(`{"content":"ok","done":true}`),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/stream", bytes.NewBufferString(`{"role":"user","content":"hello"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleStream(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "event: runtime_event")
+	assert.Contains(t, body, `"event_type":"task_completion"`)
 }
 
 func TestHandleContext_PersistsSnapshot(t *testing.T) {

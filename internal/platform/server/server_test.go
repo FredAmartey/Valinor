@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valinor-ai/valinor/internal/activity"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/channels"
 	"github.com/valinor-ai/valinor/internal/connectors"
@@ -73,7 +74,7 @@ func TestServer_StartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-const testTenant = "test-tenant"
+const testTenant = "00000000-0000-0000-0000-000000000123"
 
 func newTestDeps() (server.Dependencies, *auth.TokenService) {
 	tokenSvc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
@@ -88,6 +89,7 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 		rbacEngine.RegisterRole(tid, "channels_user", []string{"channels:links:read", "channels:links:write"})
 		rbacEngine.RegisterRole(tid, "channels_provider_user", []string{"channels:providers:read", "channels:providers:write"})
 		rbacEngine.RegisterRole(tid, "channels_outbox_user", []string{"channels:outbox:read", "channels:outbox:write"})
+		rbacEngine.RegisterRole(tid, "audit_user", []string{"audit:read"})
 	}
 
 	// Wire a minimal agent handler (nil pool — will fail on DB calls but routes exist)
@@ -102,6 +104,7 @@ func newTestDeps() (server.Dependencies, *auth.TokenService) {
 		Auth:             tokenSvc,
 		RBAC:             rbacEngine,
 		AgentHandler:     agentHandler,
+		ActivityHandler:  activity.NewHandler(nil),
 		ConnectorHandler: connectorHandler,
 		ChannelHandler:   channelHandler,
 	}, tokenSvc
@@ -355,4 +358,70 @@ func TestServer_ChannelsWebhook_LegacyPathNotRegistered(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Contains(t, w.Body.String(), "404 page not found")
+}
+
+func TestServer_AgentActivity_RouteRegistered(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID:   "user-agent-activity",
+		TenantID: testTenant,
+		Roles:    []string{"standard_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/190f3a21-3b2c-42ce-b26e-2f448a58ec14/activity", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"events":[]`)
+}
+
+func TestServer_TenantActivity_RouteRegistered(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID:   "user-audit-activity",
+		TenantID: testTenant,
+		Roles:    []string{"audit_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/activity", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"events":[]`)
+}
+
+func TestServer_SecurityEvents_RouteRegistered(t *testing.T) {
+	deps, tokenSvc := newTestDeps()
+	srv := server.New(":0", deps)
+
+	identity := &auth.Identity{
+		UserID:   "user-security-events",
+		TenantID: testTenant,
+		Roles:    []string{"audit_user"},
+	}
+	token, err := tokenSvc.CreateAccessToken(identity)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/security/events", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"events":[]`)
 }

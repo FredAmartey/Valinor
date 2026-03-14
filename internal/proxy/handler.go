@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/valinor-ai/valinor/internal/activity"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
@@ -73,6 +74,7 @@ type Handler struct {
 	cfg              HandlerConfig
 	sentinel         Sentinel
 	audit            AuditLogger
+	activity         activity.Logger
 	userContextStore UserContextStore
 	tokenValidator   TokenValidator
 	rbacEval         *rbac.Evaluator
@@ -90,6 +92,15 @@ func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig, sentinel 
 		cfg.PingTimeout = 3 * time.Second
 	}
 	return &Handler{pool: pool, agents: agents, cfg: cfg, sentinel: sentinel, audit: audit}
+}
+
+// WithActivityLogger wires timeline/security activity logging into handler flows.
+func (h *Handler) WithActivityLogger(logger activity.Logger) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.activity = logger
+	return h
 }
 
 // WithUserContextStore wires persistent per-user context snapshots into handler flows.
@@ -196,6 +207,16 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
 				h.audit.Log(r.Context(), evt)
 			}
+			if h.activity != nil {
+				event := activityFromRequest(r, agentID, agentTenant)
+				event.Kind = activity.KindSecurityFlagged
+				event.Status = activity.StatusBlocked
+				event.InternalEventType = "sentinel.blocked"
+				event.Title = "Prompt blocked by security scan"
+				event.Summary = scanResult.Reason
+				event.Metadata = map[string]any{"score": scanResult.Score}
+				h.activity.Log(r.Context(), event)
+			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error":  "message blocked: potential prompt injection",
 				"reason": scanResult.Reason,
@@ -241,6 +262,16 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			evt.ResourceID = &agentUUID
 		}
 		h.audit.Log(r.Context(), evt)
+	}
+	if h.activity != nil {
+		event := activityFromRequest(r, agentID, agentTenant)
+		event.Kind = activity.KindPromptReceived
+		event.Status = activity.StatusAllowed
+		event.InternalEventType = "message.accepted"
+		event.Title = "Prompt received"
+		event.Summary = "User prompt delivered to agent"
+		event.Metadata = map[string]any{"transport": "http"}
+		h.activity.Log(r.Context(), event)
 	}
 
 	// Collect chunks until done
@@ -294,10 +325,24 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			_ = json.Unmarshal(reply.Payload, &blocked)
 			if h.audit != nil {
 				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
 				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
 				h.audit.Log(r.Context(), evt)
+			}
+			if h.activity != nil {
+				event := activityFromRequest(r, agentID, agentTenant)
+				event.Kind = activity.KindToolBlocked
+				event.Status = activity.StatusBlocked
+				event.Provenance = activity.ProvenanceRuntimeVsock
+				event.Binding = "vsock"
+				event.RuntimeSource = "openclaw"
+				event.InternalEventType = TypeToolBlocked
+				event.Title = "Tool blocked"
+				event.Summary = blocked.ToolName
+				event.Metadata = map[string]any{"reason": blocked.Reason}
+				h.activity.Log(r.Context(), event)
 			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error": "tool blocked: " + blocked.ToolName,
@@ -307,13 +352,28 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		case TypeSessionHalt:
 			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
 			h.pool.Remove(agentID)
+			reason := sessionHaltReason(reply.Payload)
 			if h.audit != nil {
 				evt := auditFromRequest(r, "session.halted", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
-				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
+				evt.Metadata = map[string]any{"reason": reason}
 				evt.Source = "system"
 				h.audit.Log(r.Context(), evt)
+			}
+			if h.activity != nil {
+				event := activityFromRequest(r, agentID, agentTenant)
+				event.Kind = activity.KindSecurityFlagged
+				event.Status = activity.StatusHalted
+				event.Source = "system"
+				event.Provenance = activity.ProvenanceRuntimeVsock
+				event.Binding = "vsock"
+				event.RuntimeSource = "openclaw"
+				event.InternalEventType = TypeSessionHalt
+				event.Title = "Session halted"
+				event.Summary = reason
+				h.activity.Log(r.Context(), event)
 			}
 			writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"error": "session terminated for security reasons",
@@ -326,6 +386,10 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 		case TypeToolFailed:
 			h.logToolAudit(r, "tool.failed", agentID, agentTenant, reply.Payload)
+			continue
+
+		case TypeRuntimeEvent:
+			h.logRuntimeEvent(r, agentID, agentTenant, reply.Payload)
 			continue
 		}
 	}
@@ -405,6 +469,16 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
 				h.audit.Log(r.Context(), evt)
 			}
+			if h.activity != nil {
+				event := activityFromRequest(r, agentID, agentTenant)
+				event.Kind = activity.KindSecurityFlagged
+				event.Status = activity.StatusBlocked
+				event.InternalEventType = "sentinel.blocked"
+				event.Title = "Prompt blocked by security scan"
+				event.Summary = scanResult.Reason
+				event.Metadata = map[string]any{"score": scanResult.Score}
+				h.activity.Log(r.Context(), event)
+			}
 			writeProxyJSON(w, http.StatusForbidden, map[string]string{
 				"error":  "message blocked: potential prompt injection",
 				"reason": scanResult.Reason,
@@ -447,6 +521,16 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 			evt.ResourceID = &agentUUID
 		}
 		h.audit.Log(r.Context(), evt)
+	}
+	if h.activity != nil {
+		event := activityFromRequest(r, agentID, agentTenant)
+		event.Kind = activity.KindPromptReceived
+		event.Status = activity.StatusAllowed
+		event.InternalEventType = "message.accepted"
+		event.Title = "Prompt received"
+		event.Summary = "User prompt delivered to agent"
+		event.Metadata = map[string]any{"transport": "sse"}
+		h.activity.Log(r.Context(), event)
 	}
 
 	// Set SSE headers
@@ -506,10 +590,29 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 				}
 				_ = json.Unmarshal(reply.Payload, &blocked)
 				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
 				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
 				h.audit.Log(r.Context(), evt)
+			}
+			if h.activity != nil {
+				var blocked struct {
+					ToolName string `json:"tool_name"`
+					Reason   string `json:"reason"`
+				}
+				_ = json.Unmarshal(reply.Payload, &blocked)
+				event := activityFromRequest(r, agentID, agentTenant)
+				event.Kind = activity.KindToolBlocked
+				event.Status = activity.StatusBlocked
+				event.Provenance = activity.ProvenanceRuntimeVsock
+				event.Binding = "vsock"
+				event.RuntimeSource = "openclaw"
+				event.InternalEventType = TypeToolBlocked
+				event.Title = "Tool blocked"
+				event.Summary = blocked.ToolName
+				event.Metadata = map[string]any{"reason": blocked.Reason}
+				h.activity.Log(r.Context(), event)
 			}
 			writeSSE(w, "tool_blocked", reply.Payload)
 			if flusher != nil {
@@ -520,13 +623,28 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		case TypeSessionHalt:
 			slog.Error("session halted by agent", "agent", agentID, "payload", string(reply.Payload))
 			h.pool.Remove(agentID)
+			reason := sessionHaltReason(reply.Payload)
 			if h.audit != nil {
 				evt := auditFromRequest(r, "session.halted", "agent", agentTenant)
-				agentUUID, _ := uuid.Parse(agentID)
-				evt.ResourceID = &agentUUID
-				evt.Metadata = map[string]any{"reason": string(reply.Payload)}
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					evt.ResourceID = &agentUUID
+				}
+				evt.Metadata = map[string]any{"reason": reason}
 				evt.Source = "system"
 				h.audit.Log(r.Context(), evt)
+			}
+			if h.activity != nil {
+				event := activityFromRequest(r, agentID, agentTenant)
+				event.Kind = activity.KindSecurityFlagged
+				event.Status = activity.StatusHalted
+				event.Source = "system"
+				event.Provenance = activity.ProvenanceRuntimeVsock
+				event.Binding = "vsock"
+				event.RuntimeSource = "openclaw"
+				event.InternalEventType = TypeSessionHalt
+				event.Title = "Session halted"
+				event.Summary = reason
+				h.activity.Log(r.Context(), event)
 			}
 			writeSSE(w, "error", json.RawMessage(`{"error":"session terminated for security reasons"}`))
 			if flusher != nil {
@@ -540,6 +658,14 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 
 		case TypeToolFailed:
 			h.logToolAudit(r, "tool.failed", agentID, agentTenant, reply.Payload)
+			continue
+
+		case TypeRuntimeEvent:
+			h.logRuntimeEvent(r, agentID, agentTenant, reply.Payload)
+			writeSSE(w, "runtime_event", reply.Payload)
+			if flusher != nil {
+				flusher.Flush()
+			}
 			continue
 		}
 	}
@@ -636,6 +762,38 @@ func auditFromRequest(r *http.Request, action, resourceType, agentTenantID strin
 		}
 	}
 	return evt
+}
+
+func activityFromRequest(r *http.Request, agentID, agentTenantID string) activity.Event {
+	event := activity.Event{
+		Kind:          activity.KindRuntimeEvent,
+		Status:        activity.StatusPending,
+		Source:        "api",
+		Provenance:    activity.ProvenanceControlPlaneHTTP,
+		Binding:       "http",
+		RuntimeSource: "openclaw",
+		Title:         "Agent activity",
+		Summary:       "Agent interaction recorded",
+		OccurredAt:    time.Now().UTC(),
+	}
+	if agentTenantID != "" {
+		if tenantID, err := uuid.Parse(agentTenantID); err == nil {
+			event.TenantID = tenantID
+		}
+	} else if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if tenantID, err := uuid.Parse(identity.TenantID); err == nil {
+			event.TenantID = tenantID
+		}
+	}
+	if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if userID, err := uuid.Parse(identity.UserID); err == nil {
+			event.UserID = &userID
+		}
+	}
+	if parsedAgentID, err := uuid.Parse(agentID); err == nil {
+		event.AgentID = &parsedAgentID
+	}
+	return event
 }
 
 // verifyTenantOwnership checks that the caller owns the agent. Returns true if OK to proceed.
@@ -744,15 +902,137 @@ func writeProxyJSON(w http.ResponseWriter, status int, v any) {
 
 // logToolAudit emits an audit event for tool execution (success or failure).
 func (h *Handler) logToolAudit(r *http.Request, action, agentID, agentTenant string, payload json.RawMessage) {
-	if h.audit == nil {
+	if h.audit == nil && h.activity == nil {
 		return
 	}
 	var meta map[string]any
 	_ = json.Unmarshal(payload, &meta)
-	evt := auditFromRequest(r, action, "agent", agentTenant)
-	agentUUID, _ := uuid.Parse(agentID)
-	evt.ResourceID = &agentUUID
-	evt.Metadata = meta
-	evt.Source = "agent"
-	h.audit.Log(r.Context(), evt)
+	if h.audit != nil {
+		evt := auditFromRequest(r, action, "agent", agentTenant)
+		if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+			evt.ResourceID = &agentUUID
+		}
+		evt.Metadata = meta
+		evt.Source = "agent"
+		h.audit.Log(r.Context(), evt)
+	}
+
+	if h.activity != nil {
+		event := activityFromRequest(r, agentID, agentTenant)
+		event.Kind = activity.KindToolCalled
+		event.Source = "agent"
+		event.Provenance = activity.ProvenanceRuntimeVsock
+		event.Binding = "vsock"
+		event.RuntimeSource = "openclaw"
+		event.InternalEventType = action
+		event.Title = "Tool executed"
+		event.Summary = action
+		event.Metadata = meta
+		event.Status = activity.StatusCompleted
+		if action == "tool.failed" {
+			event.Title = "Tool failed"
+			event.Status = activity.StatusFailed
+		}
+		h.activity.Log(r.Context(), event)
+	}
+}
+
+func (h *Handler) logRuntimeEvent(r *http.Request, agentID, agentTenant string, payload json.RawMessage) {
+	if h == nil || h.activity == nil {
+		return
+	}
+
+	var runtimeEvent RuntimeEventPayload
+	if err := json.Unmarshal(payload, &runtimeEvent); err != nil {
+		slog.Warn("failed to decode runtime event payload", "agent", agentID, "error", err)
+		return
+	}
+
+	event := activityFromRequest(r, agentID, agentTenant)
+	event.Kind = normalizeRuntimeEventKind(runtimeEvent)
+	event.Status = normalizeRuntimeEventStatus(runtimeEvent, event.Kind)
+	event.Source = "agent"
+	event.Provenance = activity.ProvenanceRuntimeVsock
+	event.Binding = strings.TrimSpace(runtimeEvent.Binding)
+	if event.Binding == "" {
+		event.Binding = "vsock"
+	}
+	event.DeliveryTarget = strings.TrimSpace(runtimeEvent.DeliveryTarget)
+	event.RuntimeSource = strings.TrimSpace(runtimeEvent.RuntimeSource)
+	if event.RuntimeSource == "" {
+		event.RuntimeSource = "openclaw"
+	}
+	event.InternalEventType = strings.TrimSpace(runtimeEvent.EventType)
+	event.RiskClass = strings.TrimSpace(runtimeEvent.RiskClass)
+	event.Title = strings.TrimSpace(runtimeEvent.Title)
+	if event.Title == "" {
+		event.Title = fallbackRuntimeEventTitle(runtimeEvent.EventType)
+	}
+	event.Summary = strings.TrimSpace(runtimeEvent.Summary)
+	if event.Summary == "" {
+		event.Summary = event.Title
+	}
+	event.Metadata = runtimeEvent.Metadata
+	h.activity.Log(r.Context(), event)
+}
+
+func normalizeRuntimeEventKind(event RuntimeEventPayload) string {
+	kind := strings.TrimSpace(event.Kind)
+	if kind != "" {
+		return kind
+	}
+	switch strings.TrimSpace(event.EventType) {
+	case activity.KindRunStarted:
+		return activity.KindRunStarted
+	case activity.KindRunFailed:
+		return activity.KindRunFailed
+	case "sessions_yield":
+		return activity.KindRunYielded
+	case "task_completion", activity.KindRunCompleted:
+		return activity.KindRunCompleted
+	default:
+		return activity.KindRuntimeEvent
+	}
+}
+
+func normalizeRuntimeEventStatus(event RuntimeEventPayload, kind string) string {
+	status := strings.TrimSpace(event.Status)
+	if status != "" {
+		return status
+	}
+	switch kind {
+	case activity.KindRunCompleted:
+		return activity.StatusCompleted
+	case activity.KindRunFailed:
+		return activity.StatusFailed
+	default:
+		return activity.StatusPending
+	}
+}
+
+func fallbackRuntimeEventTitle(eventType string) string {
+	switch strings.TrimSpace(eventType) {
+	case activity.KindRunStarted:
+		return "Run started"
+	case activity.KindRunFailed:
+		return "Run failed"
+	case "sessions_yield":
+		return "Session yielded"
+	case "task_completion", activity.KindRunCompleted:
+		return "Task completed"
+	default:
+		return "Runtime event"
+	}
+}
+
+func sessionHaltReason(payload json.RawMessage) string {
+	var halt struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(payload, &halt); err == nil {
+		if reason := strings.TrimSpace(halt.Reason); reason != "" {
+			return reason
+		}
+	}
+	return strings.TrimSpace(string(payload))
 }

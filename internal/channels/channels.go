@@ -45,10 +45,11 @@ const (
 type OutboxStatus string
 
 const (
-	OutboxStatusPending OutboxStatus = "pending"
-	OutboxStatusSending OutboxStatus = "sending"
-	OutboxStatusSent    OutboxStatus = "sent"
-	OutboxStatusDead    OutboxStatus = "dead"
+	OutboxStatusPending         OutboxStatus = "pending"
+	OutboxStatusSending         OutboxStatus = "sending"
+	OutboxStatusPendingApproval OutboxStatus = "pending_approval"
+	OutboxStatusSent            OutboxStatus = "sent"
+	OutboxStatusDead            OutboxStatus = "dead"
 )
 
 // ChannelLink maps an external channel identity to a Valinor user in a tenant.

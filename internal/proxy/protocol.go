@@ -18,6 +18,7 @@ const (
 const (
 	TypeHeartbeat    = "heartbeat"
 	TypeChunk        = "chunk"
+	TypeRuntimeEvent = "runtime_event"
 	TypeConfigAck    = "config_ack"
 	TypeToolBlocked  = "tool_blocked"
 	TypeSessionHalt  = "session_halt"
@@ -32,6 +33,22 @@ type Frame struct {
 	Type    string          `json:"type"`
 	ID      string          `json:"id"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// RuntimeEventPayload carries normalized lifecycle signals from a guest runtime
+// back to the control plane without coupling the wire protocol to every
+// OpenClaw internal event shape.
+type RuntimeEventPayload struct {
+	EventType      string         `json:"event_type"`
+	Kind           string         `json:"kind,omitempty"`
+	Title          string         `json:"title,omitempty"`
+	Summary        string         `json:"summary,omitempty"`
+	Status         string         `json:"status,omitempty"`
+	RiskClass      string         `json:"risk_class,omitempty"`
+	Binding        string         `json:"binding,omitempty"`
+	DeliveryTarget string         `json:"delivery_target,omitempty"`
+	RuntimeSource  string         `json:"runtime_source,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 // MaxFrameSize limits frame payloads to 4 MB.

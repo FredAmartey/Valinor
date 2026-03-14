@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/valinor-ai/valinor/internal/activity"
+	"github.com/valinor-ai/valinor/internal/approvals"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/channels"
@@ -22,6 +24,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/platform/server"
 	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/valinor-ai/valinor/internal/policies"
 	"github.com/valinor-ai/valinor/internal/proxy"
 	"github.com/valinor-ai/valinor/internal/rbac"
 	"github.com/valinor-ai/valinor/internal/sentinel"
@@ -117,6 +120,7 @@ func run() error {
 
 	// Audit
 	var auditLogger audit.Logger = audit.NopLogger{}
+	var activityLogger activity.Logger = activity.NopLogger{}
 	if pool != nil {
 		auditStore := audit.NewStore()
 		auditLogger = audit.NewAsyncLogger(pool, auditStore, audit.LoggerConfig{
@@ -126,6 +130,15 @@ func run() error {
 		})
 		defer auditLogger.Close()
 		slog.Info("audit logger started")
+
+		activityStore := activity.NewStore()
+		activityLogger = activity.NewAsyncLogger(pool, activityStore, activity.LoggerConfig{
+			BufferSize:    cfg.Audit.BufferSize,
+			BatchSize:     cfg.Audit.BatchSize,
+			FlushInterval: time.Duration(cfg.Audit.FlushInterval) * time.Millisecond,
+		})
+		defer activityLogger.Close()
+		slog.Info("activity logger started")
 	}
 
 	// Tenant provisioning
@@ -198,8 +211,27 @@ func run() error {
 
 	// Audit query handler
 	var auditHandler *audit.Handler
+	var activityHandler *activity.Handler
+	var approvalHandler *approvals.Handler
+	var policyHandler *policies.Handler
 	if pool != nil {
 		auditHandler = audit.NewHandler(pool)
+		activityHandler = activity.NewHandler(pool).WithSecurityOverviewConfig(activity.SecurityOverviewConfig{
+			WSAllowedOrigins:        cfg.CORS.AllowedOrigins,
+			WebSocketAuthEnabled:    true,
+			EnabledChannelProviders: enabledChannelProviders(cfg.Channels.Providers),
+		})
+		approvalStore := approvals.NewStore()
+		approvalHandler = approvals.NewHandler(pool, approvalStore)
+		policyHandler = policies.NewHandler(pool, policies.NewStore())
+		if channelOutboxWorker != nil && channelOutboxWorker.dispatcher != nil {
+			channelOutboxWorker.dispatcher.
+				WithScanner(channels.NewStructuredOutboundScanner()).
+				WithReviewSink(&channelOutboxReviewSink{store: approvalStore})
+		}
+	}
+	if channelOutboxWorker != nil && channelOutboxWorker.dispatcher != nil {
+		channelOutboxWorker.dispatcher.WithActivityLogger(activityLogger)
 	}
 
 	// Sentinel
@@ -263,7 +295,7 @@ func run() error {
 			ConfigTimeout:    time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 			PingTimeout:      time.Duration(cfg.Proxy.PingTimeout) * time.Second,
 			WSAllowedOrigins: cfg.CORS.AllowedOrigins,
-		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine)
+		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithActivityLogger(activityLogger).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine)
 	}
 	if connPool != nil {
 		defer connPool.Close()
@@ -343,6 +375,9 @@ func run() error {
 		AgentHandler:        agentHandler,
 		ProxyHandler:        proxyHandler,
 		AuditHandler:        auditHandler,
+		ActivityHandler:     activityHandler,
+		ApprovalHandler:     approvalHandler,
+		PolicyHandler:       policyHandler,
 		ConnectorHandler:    connectorHandler,
 		ChannelHandler:      channelHandler,
 		InviteHandler:       inviteHandler,
@@ -397,6 +432,20 @@ func run() error {
 
 	slog.Info("server ready", "addr", addr, "dev_mode", cfg.Auth.DevMode)
 	return srv.Start(ctx)
+}
+
+func enabledChannelProviders(cfg config.ChannelsProvidersConfig) []string {
+	providers := make([]string, 0, 3)
+	if cfg.Slack.Enabled {
+		providers = append(providers, "slack")
+	}
+	if cfg.Telegram.Enabled {
+		providers = append(providers, "telegram")
+	}
+	if cfg.WhatsApp.Enabled {
+		providers = append(providers, "whatsapp")
+	}
+	return providers
 }
 
 func buildConnectorHandler(pool *database.Pool) *connectors.Handler {

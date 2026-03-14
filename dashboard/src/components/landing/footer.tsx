@@ -1,0 +1,91 @@
+"use client"
+
+import { useTheme, palette, RING_GRADIENT } from "./theme"
+
+export function FooterCta() {
+  const { dark } = useTheme()
+  const c = palette(dark)
+
+  return (
+    <>
+      {/* CTA band */}
+      <section
+        id="contact"
+        className="py-32 flex flex-col items-center text-center px-6"
+      >
+        <h2
+          className="text-3xl md:text-4xl font-semibold tracking-tight"
+          style={{ color: c.textPri, transition: "color 0.5s ease" }}
+        >
+          Ready to deploy your agent fleet?
+        </h2>
+        <p
+          className="mt-4 text-base max-w-[48ch]"
+          style={{ color: c.textSec, transition: "color 0.5s ease" }}
+        >
+          Get started with Valinor and ship enterprise-grade AI agents in days,
+          not months.
+        </p>
+        <button
+          className="relative cursor-pointer border-none bg-transparent p-0 mt-10"
+          style={{ borderRadius: 16 }}
+        >
+          <div
+            className="absolute inset-0 rounded-[16px] overflow-hidden"
+            style={{ opacity: 0.9 }}
+          >
+            <div
+              className="absolute animate-[spin-ring_10s_linear_infinite]"
+              style={{
+                width: "200%",
+                height: "200%",
+                top: "-50%",
+                left: "-50%",
+                background: RING_GRADIENT,
+                willChange: "transform",
+              }}
+            />
+          </div>
+          <div
+            className="relative rounded-[14px] px-10 py-4 text-base font-medium tracking-tight"
+            style={{
+              background: c.plate,
+              color: c.textPri,
+              margin: 2,
+              transition: "background 0.5s ease, color 0.5s ease",
+            }}
+          >
+            Request a Demo
+          </div>
+        </button>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-10 px-6">
+        <div className="mx-auto max-w-[1200px] flex flex-col md:flex-row items-center justify-between gap-4">
+          <span
+            className="text-sm font-semibold"
+            style={{ color: c.textSec }}
+          >
+            Valinor
+          </span>
+          <div className="flex gap-6">
+            {["Docs", "GitHub", "Contact"].map((link) => (
+              <a
+                key={link}
+                href="#"
+                className="text-sm no-underline hover:underline"
+                style={{ color: c.textMuted, transition: "color 0.3s ease" }}
+              >
+                {link}
+              </a>
+            ))}
+          </div>
+          <span className="text-xs" style={{ color: c.textMuted }}>
+            &copy; {new Date().getFullYear()} Valinor. All rights reserved.
+          </span>
+        </div>
+      </footer>
+    </>
+  )
+}

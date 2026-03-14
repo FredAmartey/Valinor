@@ -16,6 +16,23 @@ import (
 	"github.com/valinor-ai/valinor/internal/proxy"
 )
 
+func recvNonRuntimeEvent(t *testing.T, ctx context.Context, conn *proxy.AgentConn) proxy.Frame {
+	t.Helper()
+
+	const maxRuntimeEvents = 64
+	runtimeEventsSeen := 0
+	for {
+		frame, err := conn.Recv(ctx)
+		require.NoError(t, err)
+		if frame.Type == proxy.TypeRuntimeEvent {
+			runtimeEventsSeen++
+			require.LessOrEqual(t, runtimeEventsSeen, maxRuntimeEvents, "saw too many runtime events without a terminal frame")
+			continue
+		}
+		return frame
+	}
+}
+
 func TestOpenClawProxy_Message(t *testing.T) {
 	// Mock OpenClaw HTTP server
 	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,8 +81,7 @@ func TestOpenClawProxy_Message(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should receive a done chunk
-	reply, err := cp.Recv(ctx)
-	require.NoError(t, err)
+	reply := recvNonRuntimeEvent(t, ctx, cp)
 	assert.Equal(t, proxy.TypeChunk, reply.Type)
 
 	var chunk struct {
@@ -76,6 +92,67 @@ func TestOpenClawProxy_Message(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, chunk.Content, "42")
 	assert.True(t, chunk.Done)
+}
+
+func TestOpenClawProxy_EmitsRuntimeEvents(t *testing.T) {
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": "The answer is 42"}},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	agent := &Agent{
+		cfg:        AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	err = cp.Send(ctx, proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-runtime-events",
+		Payload: json.RawMessage(`{"role":"user","content":"What is the meaning of life?"}`),
+	})
+	require.NoError(t, err)
+
+	first, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeRuntimeEvent, first.Type)
+
+	var started struct {
+		EventType string `json:"event_type"`
+	}
+	require.NoError(t, json.Unmarshal(first.Payload, &started))
+	assert.Equal(t, "run.started", started.EventType)
+
+	second, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeRuntimeEvent, second.Type)
+
+	var completed struct {
+		EventType string `json:"event_type"`
+	}
+	require.NoError(t, json.Unmarshal(second.Payload, &completed))
+	assert.Equal(t, "task_completion", completed.EventType)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeChunk, reply.Type)
 }
 
 func TestOpenClawProxy_ToolBlocked(t *testing.T) {
@@ -130,9 +207,25 @@ func TestOpenClawProxy_ToolBlocked(t *testing.T) {
 	err = cp.Send(ctx, msg)
 	require.NoError(t, err)
 
-	reply, err := cp.Recv(ctx)
-	require.NoError(t, err)
+	var sawYield bool
+	var reply proxy.Frame
+	for {
+		reply, err = cp.Recv(ctx)
+		require.NoError(t, err)
+		if reply.Type == proxy.TypeRuntimeEvent {
+			var evt struct {
+				EventType string `json:"event_type"`
+			}
+			require.NoError(t, json.Unmarshal(reply.Payload, &evt))
+			if evt.EventType == "sessions_yield" {
+				sawYield = true
+			}
+			continue
+		}
+		break
+	}
 	assert.Equal(t, proxy.TypeToolBlocked, reply.Type)
+	assert.False(t, sawYield, "blocked tools should not emit sessions_yield before validation passes")
 
 	var blocked struct {
 		ToolName string `json:"tool_name"`
@@ -141,6 +234,52 @@ func TestOpenClawProxy_ToolBlocked(t *testing.T) {
 	err = json.Unmarshal(reply.Payload, &blocked)
 	require.NoError(t, err)
 	assert.Equal(t, "delete_all_data", blocked.ToolName)
+}
+
+func TestOpenClawProxy_EmitsRunFailedOnOpenClawError(t *testing.T) {
+	agent := &Agent{
+		cfg:        AgentConfig{OpenClawURL: "http://127.0.0.1:1"},
+		httpClient: &http.Client{Timeout: 500 * time.Millisecond},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	err = cp.Send(ctx, proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-run-failed",
+		Payload: json.RawMessage(`{"role":"user","content":"hello"}`),
+	})
+	require.NoError(t, err)
+
+	first, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeRuntimeEvent, first.Type)
+
+	second, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeRuntimeEvent, second.Type)
+	var failed struct {
+		EventType string `json:"event_type"`
+		Status    string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(second.Payload, &failed))
+	assert.Equal(t, "run.failed", failed.EventType)
+	assert.Equal(t, "failed", failed.Status)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeError, reply.Type)
 }
 
 func TestOpenClawProxy_CanaryDetected(t *testing.T) {
@@ -185,8 +324,7 @@ func TestOpenClawProxy_CanaryDetected(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should receive session_halt, NOT a chunk
-	reply, err := cp.Recv(ctx)
-	require.NoError(t, err)
+	reply := recvNonRuntimeEvent(t, ctx, cp)
 	assert.Equal(t, proxy.TypeSessionHalt, reply.Type)
 
 	var halt struct {
@@ -255,8 +393,7 @@ func TestOpenClawProxy_MessageArrayForwarded(t *testing.T) {
 	err = cp.Send(ctx, msg)
 	require.NoError(t, err)
 
-	reply, err := cp.Recv(ctx)
-	require.NoError(t, err)
+	reply := recvNonRuntimeEvent(t, ctx, cp)
 	assert.Equal(t, proxy.TypeChunk, reply.Type)
 	require.Len(t, seenMessages, 3)
 	assert.Equal(t, "older request", seenMessages[0]["content"])
@@ -313,8 +450,7 @@ func TestOpenClawProxy_FallbacksToLegacyRoleContent(t *testing.T) {
 	err = cp.Send(ctx, msg)
 	require.NoError(t, err)
 
-	reply, err := cp.Recv(ctx)
-	require.NoError(t, err)
+	reply := recvNonRuntimeEvent(t, ctx, cp)
 	assert.Equal(t, proxy.TypeChunk, reply.Type)
 	require.Len(t, seenMessages, 1)
 	assert.Equal(t, "user", seenMessages[0]["role"])
@@ -403,8 +539,7 @@ func TestOpenClawProxy_AllowsRemoteEndpointWithOverride(t *testing.T) {
 	err = cp.Send(ctx, msg)
 	require.NoError(t, err)
 
-	reply, err := cp.Recv(ctx)
-	require.NoError(t, err)
+	reply := recvNonRuntimeEvent(t, ctx, cp)
 	assert.Equal(t, proxy.TypeChunk, reply.Type)
 }
 
@@ -520,6 +655,8 @@ func TestForwardToOpenClaw_ToolCallLoop(t *testing.T) {
 		require.NoError(t, recvErr)
 
 		switch reply.Type {
+		case proxy.TypeRuntimeEvent:
+			continue
 		case proxy.TypeToolExecuted:
 			gotToolExecuted = true
 			var meta map[string]any
@@ -628,6 +765,8 @@ func TestForwardToOpenClaw_ToolCallLoop_ConnectorNotFound(t *testing.T) {
 		require.NoError(t, recvErr)
 
 		switch reply.Type {
+		case proxy.TypeRuntimeEvent:
+			continue
 		case proxy.TypeToolFailed:
 			gotToolFailed = true
 			continue
@@ -721,6 +860,9 @@ func TestForwardToOpenClaw_MaxIterations(t *testing.T) {
 	for {
 		reply, recvErr := cp.Recv(ctx)
 		require.NoError(t, recvErr)
+		if reply.Type == proxy.TypeRuntimeEvent {
+			continue
+		}
 		if reply.Type == proxy.TypeError {
 			var payload struct {
 				Code string `json:"code"`
@@ -809,6 +951,9 @@ func TestForwardToOpenClaw_CanaryInToolResult(t *testing.T) {
 	for {
 		reply, recvErr := cp.Recv(ctx)
 		require.NoError(t, recvErr)
+		if reply.Type == proxy.TypeRuntimeEvent {
+			continue
+		}
 		if reply.Type == proxy.TypeSessionHalt {
 			var halt struct {
 				Reason string `json:"reason"`

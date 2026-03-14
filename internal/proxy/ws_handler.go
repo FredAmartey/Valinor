@@ -29,13 +29,19 @@ type wsClientMessage struct {
 
 // wsServerMessage is the JSON shape the server sends to clients.
 type wsServerMessage struct {
-	Type      string `json:"type"`
-	RequestID string `json:"request_id,omitempty"`
-	Content   string `json:"content,omitempty"`
-	Done      bool   `json:"done,omitempty"`
-	ToolName  string `json:"tool_name,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Message   string `json:"message,omitempty"`
+	Type           string `json:"type"`
+	RequestID      string `json:"request_id,omitempty"`
+	Content        string `json:"content,omitempty"`
+	Done           bool   `json:"done,omitempty"`
+	ToolName       string `json:"tool_name,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Message        string `json:"message,omitempty"`
+	EventType      string `json:"event_type,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Title          string `json:"title,omitempty"`
+	Summary        string `json:"summary,omitempty"`
+	Binding        string `json:"binding,omitempty"`
+	DeliveryTarget string `json:"delivery_target,omitempty"`
 }
 
 // wsIdleTimeout is the maximum time the server waits for a client message
@@ -316,6 +322,32 @@ func (h *Handler) relayAgentFrames(ctx context.Context, wsConn *websocket.Conn, 
 			})
 			_ = wsConn.Close(websocket.StatusPolicyViolation, halt.Reason)
 			return
+
+		case TypeRuntimeEvent:
+			msg, err := runtimeEventToWSMessage(requestID, frame.Payload)
+			if err != nil {
+				slog.Warn("failed to decode runtime event for websocket relay", "request_id", requestID, "error", err)
+				continue
+			}
+			_ = wsjson.Write(ctx, wsConn, msg)
 		}
 	}
+}
+
+func runtimeEventToWSMessage(requestID string, payload json.RawMessage) (wsServerMessage, error) {
+	var event RuntimeEventPayload
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return wsServerMessage{}, err
+	}
+
+	return wsServerMessage{
+		Type:           "runtime_event",
+		RequestID:      requestID,
+		EventType:      event.EventType,
+		Status:         event.Status,
+		Title:          event.Title,
+		Summary:        event.Summary,
+		Binding:        event.Binding,
+		DeliveryTarget: event.DeliveryTarget,
+	}, nil
 }

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valinor-ai/valinor/internal/activity"
+	"github.com/valinor-ai/valinor/internal/approvals"
 	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/channels"
@@ -18,6 +20,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/admin"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/valinor-ai/valinor/internal/policies"
 	"github.com/valinor-ai/valinor/internal/proxy"
 	"github.com/valinor-ai/valinor/internal/rbac"
 	"github.com/valinor-ai/valinor/internal/tenant"
@@ -36,6 +39,9 @@ type Dependencies struct {
 	AgentHandler        *orchestrator.Handler
 	ProxyHandler        *proxy.Handler
 	AuditHandler        *audit.Handler
+	ActivityHandler     *activity.Handler
+	ApprovalHandler     *approvals.Handler
+	PolicyHandler       *policies.Handler
 	ConnectorHandler    *connectors.Handler
 	ChannelHandler      *channels.Handler
 	InviteHandler       *tenant.InviteHandler
@@ -214,6 +220,22 @@ func New(addr string, deps Dependencies) *Server {
 				tenantProxy.Wrap(http.HandlerFunc(deps.AuditHandler.HandleListEvents)),
 			)
 		}
+		if deps.ActivityHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/activity",
+				tenantProxy.Wrap(http.HandlerFunc(deps.ActivityHandler.HandleListActivity)),
+			)
+			protectedMux.Handle("GET /api/v1/tenants/{id}/security/overview",
+				tenantProxy.Wrap(http.HandlerFunc(deps.ActivityHandler.HandleGetSecurityOverview)),
+			)
+			protectedMux.Handle("GET /api/v1/tenants/{id}/security/events",
+				tenantProxy.Wrap(http.HandlerFunc(deps.ActivityHandler.HandleListSecurityEvents)),
+			)
+		}
+		if deps.ApprovalHandler != nil {
+			protectedMux.Handle("GET /api/v1/tenants/{id}/approvals",
+				tenantProxy.Wrap(http.HandlerFunc(deps.ApprovalHandler.HandleList)),
+			)
+		}
 
 		// Emergency impersonation
 		impersonateHandler := admin.NewImpersonateHandler(deps.Auth, deps.Pool, deps.AuditLogger)
@@ -372,6 +394,70 @@ func New(addr string, deps Dependencies) *Server {
 		protectedMux.Handle("GET /api/v1/audit/events",
 			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
 				http.HandlerFunc(deps.AuditHandler.HandleListEvents),
+			),
+		)
+	}
+
+	if deps.ActivityHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("GET /api/v1/agents/{id}/activity",
+			rbac.RequirePermission(deps.RBAC, "agents:read", rbacOpts...)(
+				http.HandlerFunc(deps.ActivityHandler.HandleListAgentActivity),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/activity",
+			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
+				http.HandlerFunc(deps.ActivityHandler.HandleListActivity),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/security/events",
+			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
+				http.HandlerFunc(deps.ActivityHandler.HandleListSecurityEvents),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/security/overview",
+			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
+				http.HandlerFunc(deps.ActivityHandler.HandleGetSecurityOverview),
+			),
+		)
+	}
+
+	if deps.ApprovalHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("GET /api/v1/approvals",
+			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
+				http.HandlerFunc(deps.ApprovalHandler.HandleList),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/approvals/{id}/approve",
+			rbac.RequirePermission(deps.RBAC, "agents:write", rbacOpts...)(
+				http.HandlerFunc(deps.ApprovalHandler.HandleApprove),
+			),
+		)
+		protectedMux.Handle("POST /api/v1/approvals/{id}/deny",
+			rbac.RequirePermission(deps.RBAC, "agents:write", rbacOpts...)(
+				http.HandlerFunc(deps.ApprovalHandler.HandleDeny),
+			),
+		)
+	}
+
+	if deps.PolicyHandler != nil && deps.RBAC != nil {
+		protectedMux.Handle("GET /api/v1/policies/defaults",
+			rbac.RequirePermission(deps.RBAC, "audit:read", rbacOpts...)(
+				http.HandlerFunc(deps.PolicyHandler.HandleGetDefaults),
+			),
+		)
+		protectedMux.Handle("PUT /api/v1/policies/defaults",
+			rbac.RequirePermission(deps.RBAC, "agents:write", rbacOpts...)(
+				http.HandlerFunc(deps.PolicyHandler.HandlePutDefaults),
+			),
+		)
+		protectedMux.Handle("GET /api/v1/agents/{id}/policy-overrides",
+			rbac.RequirePermission(deps.RBAC, "agents:read", rbacOpts...)(
+				http.HandlerFunc(deps.PolicyHandler.HandleGetAgentOverrides),
+			),
+		)
+		protectedMux.Handle("PUT /api/v1/agents/{id}/policy-overrides",
+			rbac.RequirePermission(deps.RBAC, "agents:write", rbacOpts...)(
+				http.HandlerFunc(deps.PolicyHandler.HandlePutAgentOverrides),
 			),
 		)
 	}
