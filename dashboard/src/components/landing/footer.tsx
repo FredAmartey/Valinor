@@ -1,6 +1,14 @@
 "use client"
 
+import { CONTACT_SECTION_URL, TECHNICAL_ARCHITECTURE_URL } from "@/lib/site-links"
 import { useTheme, palette, RING_GRADIENT } from "./theme"
+
+const FOOTER_LINKS = [
+  { label: "Architecture", href: "/architecture" },
+  { label: "Docs", href: TECHNICAL_ARCHITECTURE_URL },
+  { label: "GitHub", href: "https://github.com/FredAmartey/Valinor" },
+  { label: "Contact", href: CONTACT_SECTION_URL },
+] as const
 
 export function FooterCta() {
   const { dark } = useTheme()
@@ -17,14 +25,14 @@ export function FooterCta() {
           className="text-3xl md:text-4xl font-semibold tracking-tight"
           style={{ color: c.textPri, transition: "color 0.5s ease" }}
         >
-          Ready to deploy your agent fleet?
+          Ready to trust AI agents with real access?
         </h2>
         <p
           className="mt-4 text-base max-w-[48ch]"
           style={{ color: c.textSec, transition: "color 0.5s ease" }}
         >
-          Get started with Valinor and ship enterprise-grade AI agents in days,
-          not months.
+          Give broad-access agents the visibility, isolation, governance, and
+          auditability real teams and enterprises need.
         </p>
         <button
           className="relative cursor-pointer border-none bg-transparent p-0 mt-10"
@@ -58,6 +66,14 @@ export function FooterCta() {
             Request a Demo
           </div>
         </button>
+
+        <a
+          href="/architecture"
+          className="mt-4 text-sm font-medium no-underline hover:underline"
+          style={{ color: c.textMuted, transition: "color 0.3s ease" }}
+        >
+          Read the architecture
+        </a>
       </section>
 
       {/* Footer */}
@@ -70,14 +86,17 @@ export function FooterCta() {
             Valinor
           </span>
           <div className="flex gap-6">
-            {["Docs", "GitHub", "Contact"].map((link) => (
+            {FOOTER_LINKS.map((link) => (
               <a
-                key={link}
-                href="#"
+                key={link.label}
+                href={link.href}
                 className="text-sm no-underline hover:underline"
                 style={{ color: c.textMuted, transition: "color 0.3s ease" }}
+                {...(link.href.startsWith("https://")
+                  ? { target: "_blank", rel: "noreferrer" }
+                  : {})}
               >
-                {link}
+                {link.label}
               </a>
             ))}
           </div>
