@@ -1,6 +1,7 @@
 package approvals
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -66,4 +67,28 @@ func TestHandleApprove_ServiceUnavailableAfterValidation(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	assert.Contains(t, w.Body.String(), "approval store unavailable")
+}
+
+func TestResolveErrorResponse_MapsApprovalErrors(t *testing.T) {
+	t.Parallel()
+
+	status, body := resolveErrorResponse(ErrApprovalNotFound)
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Equal(t, map[string]string{"error": "approval request not found"}, body)
+
+	status, body = resolveErrorResponse(ErrApprovalSelfReview)
+	assert.Equal(t, http.StatusForbidden, status)
+	assert.Equal(t, map[string]string{"error": "approval requester cannot review their own approval"}, body)
+
+	status, body = resolveErrorResponse(ErrApprovalNotPending)
+	assert.Equal(t, http.StatusConflict, status)
+	assert.Equal(t, map[string]string{"error": "approval request is not pending"}, body)
+}
+
+func TestResolveErrorResponse_FallsBackToInternalServerError(t *testing.T) {
+	t.Parallel()
+
+	status, body := resolveErrorResponse(errors.New("boom"))
+	assert.Equal(t, http.StatusInternalServerError, status)
+	assert.Equal(t, map[string]string{"error": "resolution failed"}, body)
 }

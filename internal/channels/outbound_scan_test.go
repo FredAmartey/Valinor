@@ -33,3 +33,27 @@ func TestStructuredOutboundScanner_DoesNotReviewSevenDigitSequences(t *testing.T
 	_, ok := report.FirstByAction(OutboundActionReview)
 	assert.False(t, ok)
 }
+
+func TestStructuredOutboundScanner_DoesNotReviewPlainTenDigitOrderIDs(t *testing.T) {
+	scanner := NewStructuredOutboundScanner()
+	report, err := scanner.Scan(context.Background(), ChannelOutbox{
+		ID:      uuid.New(),
+		Payload: json.RawMessage(`{"content":"order 2125550199 is ready for pickup"}`),
+	})
+	require.NoError(t, err)
+	_, ok := report.FirstByAction(OutboundActionReview)
+	assert.False(t, ok)
+}
+
+func TestStructuredOutboundScanner_ReviewsEmailAddresses(t *testing.T) {
+	scanner := NewStructuredOutboundScanner()
+	report, err := scanner.Scan(context.Background(), ChannelOutbox{
+		ID:      uuid.New(),
+		Payload: json.RawMessage(`{"content":"email scout@example.com with the update"}`),
+	})
+	require.NoError(t, err)
+	finding, ok := report.FirstByAction(OutboundActionReview)
+	require.True(t, ok)
+	assert.Equal(t, "pii", finding.Category)
+	assert.Equal(t, "payload.content", finding.Path)
+}

@@ -69,7 +69,7 @@ func NewStructuredOutboundScanner() *StructuredOutboundScanner {
 			{category: "malicious_payload", pattern: regexp.MustCompile(`(?i)(/dev/tcp/|base64\s+-d\s*\|\s*(sh|bash)|curl\s+[^|]+\|\s*(sh|bash))`), action: OutboundActionBlock},
 		},
 		reviewRules: []scanRule{
-			{category: "pii", pattern: regexp.MustCompile(`\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?){2}\d{4}\b`), action: OutboundActionReview},
+			{category: "pii", pattern: regexp.MustCompile(`\b(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}\b`), action: OutboundActionReview},
 			{category: "pii", pattern: regexp.MustCompile(`(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b`), action: OutboundActionReview},
 		},
 	}

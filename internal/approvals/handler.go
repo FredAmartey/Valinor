@@ -2,7 +2,6 @@ package approvals
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/valinor-ai/valinor/internal/platform/httputil"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
@@ -35,7 +35,7 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n <= 0 || n > 200 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be between 1 and 200"})
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be between 1 and 200"})
 			return
 		}
 		limit = n
@@ -46,7 +46,7 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.pool == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"approvals": []Request{}, "count": 0})
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{"approvals": []Request{}, "count": 0})
 		return
 	}
 
@@ -61,14 +61,14 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return
 	}
 	if requests == nil {
 		requests = []Request{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"approvals": requests, "count": len(requests)})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"approvals": requests, "count": len(requests)})
 }
 
 func (h *Handler) HandleApprove(w http.ResponseWriter, r *http.Request) {
@@ -86,21 +86,21 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, resolution str
 	}
 	approvalID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "approval id must be a valid UUID"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "approval id must be a valid UUID"})
 		return
 	}
 	identity := auth.GetIdentity(r.Context())
 	if identity == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		httputil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 	reviewerID, err := uuid.Parse(identity.UserID)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user identity"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user identity"})
 		return
 	}
 	if h.pool == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "approval store unavailable"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "approval store unavailable"})
 		return
 	}
 
@@ -114,29 +114,33 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, resolution str
 		return err
 	})
 	if err != nil {
-		if errors.Is(err, ErrApprovalNotPending) {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "approval request is not pending"})
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "resolution failed"})
+		status, body := resolveErrorResponse(err)
+		httputil.WriteJSON(w, status, body)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, request)
+	httputil.WriteJSON(w, http.StatusOK, request)
 }
 
 func parseTenant(w http.ResponseWriter, r *http.Request) (uuid.UUID, string, bool) {
 	tenantIDStr := middleware.GetTenantID(r.Context())
 	tenantID, err := uuid.Parse(tenantIDStr)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant context"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant context"})
 		return uuid.Nil, "", false
 	}
 	return tenantID, tenantIDStr, true
 }
 
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+func resolveErrorResponse(err error) (int, map[string]string) {
+	switch {
+	case errors.Is(err, ErrApprovalNotFound):
+		return http.StatusNotFound, map[string]string{"error": "approval request not found"}
+	case errors.Is(err, ErrApprovalSelfReview):
+		return http.StatusForbidden, map[string]string{"error": "approval requester cannot review their own approval"}
+	case errors.Is(err, ErrApprovalNotPending):
+		return http.StatusConflict, map[string]string{"error": "approval request is not pending"}
+	default:
+		return http.StatusInternalServerError, map[string]string{"error": "resolution failed"}
+	}
 }

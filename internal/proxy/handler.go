@@ -80,6 +80,13 @@ type Handler struct {
 	rbacEval         *rbac.Evaluator
 }
 
+type preparedMessageRequest struct {
+	agentID     string
+	agentTenant string
+	inst        *orchestrator.AgentInstance
+	body        json.RawMessage
+}
+
 // NewHandler creates a proxy Handler.
 func NewHandler(pool *ConnPool, agents AgentLookup, cfg HandlerConfig, sentinel Sentinel, audit AuditLogger) *Handler {
 	if cfg.MessageTimeout <= 0 {
@@ -130,30 +137,38 @@ func (h *Handler) WithRBACEvaluator(eval *rbac.Evaluator) *Handler {
 	return h
 }
 
-// HandleMessage sends a user message to an agent and returns the full response.
-// POST /agents/:id/message
-func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
+func buildPromptAcceptedEvent(r *http.Request, agentID, agentTenant, transport string) activity.Event {
+	event := activityFromRequest(r, agentID, agentTenant)
+	event.Kind = activity.KindPromptReceived
+	event.Status = activity.StatusAllowed
+	event.InternalEventType = "message.accepted"
+	event.Title = "Prompt received"
+	event.Summary = "User prompt delivered to agent"
+	event.Metadata = map[string]any{"transport": transport}
+	return event
+}
+
+func (h *Handler) prepareMessageRequest(w http.ResponseWriter, r *http.Request) *preparedMessageRequest {
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
-		return
+		return nil
 	}
 
 	inst, err := h.agents.GetByID(r.Context(), agentID)
 	if err != nil {
 		if errors.Is(err, orchestrator.ErrVMNotFound) {
 			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
-			return
+			return nil
 		}
 		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
-		return
+		return nil
 	}
 
 	if !verifyTenantOwnership(w, r, inst) {
-		return
+		return nil
 	}
 
-	// Use agent's tenant for audit attribution (correct for cross-tenant admin access)
 	agentTenant := ""
 	if inst.TenantID != nil {
 		agentTenant = *inst.TenantID
@@ -161,24 +176,21 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 	if inst.Status != orchestrator.StatusRunning {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
-		return
+		return nil
 	}
 
 	if inst.VsockCID == nil {
 		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
-		return
+		return nil
 	}
 
-	// Read request body
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB max
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var body json.RawMessage
-	err = json.NewDecoder(r.Body).Decode(&body)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
+		return nil
 	}
 
-	// Sentinel scan — extract content field for scanning
 	if h.sentinel != nil {
 		var msg struct {
 			Content string `json:"content"`
@@ -197,7 +209,6 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		scanResult, scanErr := h.sentinel.Scan(r.Context(), scanInput)
 		if scanErr != nil {
 			slog.Error("sentinel scan failed", "error", scanErr)
-			// fail-open: continue to agent
 		} else if !scanResult.Allowed {
 			if h.audit != nil {
 				evt := auditFromRequest(r, "message.blocked", "agent", agentTenant)
@@ -221,11 +232,30 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				"error":  "message blocked: potential prompt injection",
 				"reason": scanResult.Reason,
 			})
-			return
+			return nil
 		}
 	}
 
 	body = h.injectPersistedUserContext(r.Context(), body, agentTenant, agentID)
+	return &preparedMessageRequest{
+		agentID:     agentID,
+		agentTenant: agentTenant,
+		inst:        inst,
+		body:        body,
+	}
+}
+
+// HandleMessage sends a user message to an agent and returns the full response.
+// POST /agents/:id/message
+func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
+	prepared := h.prepareMessageRequest(w, r)
+	if prepared == nil {
+		return
+	}
+	agentID := prepared.agentID
+	agentTenant := prepared.agentTenant
+	inst := prepared.inst
+	body := prepared.body
 
 	// Get or create connection
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
@@ -264,14 +294,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		h.audit.Log(r.Context(), evt)
 	}
 	if h.activity != nil {
-		event := activityFromRequest(r, agentID, agentTenant)
-		event.Kind = activity.KindPromptReceived
-		event.Status = activity.StatusAllowed
-		event.InternalEventType = "message.accepted"
-		event.Title = "Prompt received"
-		event.Summary = "User prompt delivered to agent"
-		event.Metadata = map[string]any{"transport": "http"}
-		h.activity.Log(r.Context(), event)
+		h.activity.Log(r.Context(), buildPromptAcceptedEvent(r, agentID, agentTenant, "http"))
 	}
 
 	// Collect chunks until done
@@ -398,96 +421,14 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 // HandleStream sends a user message and streams response chunks via SSE.
 // POST /agents/:id/stream
 func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
-	agentID := r.PathValue("id")
-	if agentID == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+	prepared := h.prepareMessageRequest(w, r)
+	if prepared == nil {
 		return
 	}
-
-	inst, err := h.agents.GetByID(r.Context(), agentID)
-	if err != nil {
-		if errors.Is(err, orchestrator.ErrVMNotFound) {
-			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
-			return
-		}
-		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
-		return
-	}
-
-	if !verifyTenantOwnership(w, r, inst) {
-		return
-	}
-
-	agentTenant := ""
-	if inst.TenantID != nil {
-		agentTenant = *inst.TenantID
-	}
-
-	if inst.Status != orchestrator.StatusRunning {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
-		return
-	}
-
-	if inst.VsockCID == nil {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
-		return
-	}
-
-	// Read message from POST body
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB max
-	var messageBody json.RawMessage
-	if decodeErr := json.NewDecoder(r.Body).Decode(&messageBody); decodeErr != nil {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
-	}
-
-	// Sentinel scan — extract content field for scanning
-	if h.sentinel != nil {
-		var msg struct {
-			Content string `json:"content"`
-		}
-		scanContent := string(messageBody)
-		if json.Unmarshal(messageBody, &msg) == nil && msg.Content != "" {
-			scanContent = msg.Content
-		}
-		scanInput := SentinelInput{
-			TenantID: middleware.GetTenantID(r.Context()),
-			Content:  scanContent,
-		}
-		if identity := auth.GetIdentity(r.Context()); identity != nil {
-			scanInput.UserID = identity.UserID
-		}
-		scanResult, scanErr := h.sentinel.Scan(r.Context(), scanInput)
-		if scanErr != nil {
-			slog.Error("sentinel scan failed", "error", scanErr)
-		} else if !scanResult.Allowed {
-			if h.audit != nil {
-				evt := auditFromRequest(r, "message.blocked", "agent", agentTenant)
-				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
-					evt.ResourceID = &agentUUID
-				}
-				evt.Metadata = map[string]any{"reason": scanResult.Reason, "score": scanResult.Score}
-				h.audit.Log(r.Context(), evt)
-			}
-			if h.activity != nil {
-				event := activityFromRequest(r, agentID, agentTenant)
-				event.Kind = activity.KindSecurityFlagged
-				event.Status = activity.StatusBlocked
-				event.InternalEventType = "sentinel.blocked"
-				event.Title = "Prompt blocked by security scan"
-				event.Summary = scanResult.Reason
-				event.Metadata = map[string]any{"score": scanResult.Score}
-				h.activity.Log(r.Context(), event)
-			}
-			writeProxyJSON(w, http.StatusForbidden, map[string]string{
-				"error":  "message blocked: potential prompt injection",
-				"reason": scanResult.Reason,
-			})
-			return
-		}
-	}
-
-	messageBody = h.injectPersistedUserContext(r.Context(), messageBody, agentTenant, agentID)
+	agentID := prepared.agentID
+	agentTenant := prepared.agentTenant
+	inst := prepared.inst
+	messageBody := prepared.body
 
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
 	if err != nil {
@@ -523,14 +464,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		h.audit.Log(r.Context(), evt)
 	}
 	if h.activity != nil {
-		event := activityFromRequest(r, agentID, agentTenant)
-		event.Kind = activity.KindPromptReceived
-		event.Status = activity.StatusAllowed
-		event.InternalEventType = "message.accepted"
-		event.Title = "Prompt received"
-		event.Summary = "User prompt delivered to agent"
-		event.Metadata = map[string]any{"transport": "sse"}
-		h.activity.Log(r.Context(), event)
+		h.activity.Log(r.Context(), buildPromptAcceptedEvent(r, agentID, agentTenant, "sse"))
 	}
 
 	// Set SSE headers

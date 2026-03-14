@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/valinor-ai/valinor/internal/platform/httputil"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 )
 
@@ -31,7 +32,7 @@ func (h *Handler) HandleGetDefaults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.pool == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"policies": DefaultPolicySet()})
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{"policies": DefaultPolicySet()})
 		return
 	}
 
@@ -47,11 +48,11 @@ func (h *Handler) HandleGetDefaults(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"policies": policies})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"policies": policies})
 }
 
 func (h *Handler) HandlePutDefaults(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +61,7 @@ func (h *Handler) HandlePutDefaults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.pool == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "policy store unavailable"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "policy store unavailable"})
 		return
 	}
 
@@ -69,11 +70,11 @@ func (h *Handler) HandlePutDefaults(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPolicyBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 	if err := ValidatePolicySet(body.Policies); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -81,11 +82,11 @@ func (h *Handler) HandlePutDefaults(w http.ResponseWriter, r *http.Request) {
 		return h.store.PutTenantDefaults(ctx, q, tenantID, body.Policies)
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"policies": body.Policies})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"policies": body.Policies})
 }
 
 func (h *Handler) HandleGetAgentOverrides(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +99,7 @@ func (h *Handler) HandleGetAgentOverrides(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if h.pool == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"policies": PolicySet{}})
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{"policies": PolicySet{}})
 		return
 	}
 
@@ -109,11 +110,11 @@ func (h *Handler) HandleGetAgentOverrides(w http.ResponseWriter, r *http.Request
 		return err
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"policies": set})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"policies": set})
 }
 
 func (h *Handler) HandlePutAgentOverrides(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +127,7 @@ func (h *Handler) HandlePutAgentOverrides(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if h.pool == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "policy store unavailable"})
+		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "policy store unavailable"})
 		return
 	}
 
@@ -135,11 +136,11 @@ func (h *Handler) HandlePutAgentOverrides(w http.ResponseWriter, r *http.Request
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxPolicyBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 	if err := ValidatePolicySet(body.Policies); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -147,18 +148,18 @@ func (h *Handler) HandlePutAgentOverrides(w http.ResponseWriter, r *http.Request
 		return h.store.PutAgentOverrides(ctx, q, tenantID, agentID, body.Policies)
 	})
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "update failed"})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"policies": body.Policies})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"policies": body.Policies})
 }
 
 func parseTenantID(w http.ResponseWriter, r *http.Request) (uuid.UUID, string, bool) {
 	tenantIDStr := middleware.GetTenantID(r.Context())
 	tenantID, err := uuid.Parse(tenantIDStr)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant context"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid tenant context"})
 		return uuid.Nil, "", false
 	}
 	return tenantID, tenantIDStr, true
@@ -167,14 +168,8 @@ func parseTenantID(w http.ResponseWriter, r *http.Request) (uuid.UUID, string, b
 func parseAgentID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	agentID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "agent id must be a valid UUID"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "agent id must be a valid UUID"})
 		return uuid.Nil, false
 	}
 	return agentID, true
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
 }
