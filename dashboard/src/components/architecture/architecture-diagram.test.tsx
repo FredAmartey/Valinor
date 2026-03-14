@@ -20,6 +20,6 @@ describe("ArchitectureDiagram", () => {
     expect(screen.getByText("Teams runtime")).toBeDefined()
     expect(screen.getByText("Enterprise runtime")).toBeDefined()
     expect(screen.getByText("OpenClaw runtime")).toBeDefined()
-    expect(screen.getByText("Channels and integrations")).toBeDefined()
+    expect(screen.getByText("Channels and external systems")).toBeDefined()
   })
 })
