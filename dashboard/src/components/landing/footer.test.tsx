@@ -13,7 +13,10 @@ describe("FooterCta", () => {
       </ThemeProvider>,
     )
 
-    expect(screen.getByRole("link", { name: "Architecture" }).getAttribute("href")).toBe("/architecture")
-    expect(screen.getByRole("link", { name: "Docs" }).getAttribute("href")).toContain("/docs/architecture.md")
+    expect(screen.getByRole("link", { name: "Architecture" })).toHaveAttribute("href", "/architecture")
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/docs/architecture.md"),
+    )
   })
 })

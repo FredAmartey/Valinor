@@ -77,7 +77,7 @@ export function ArchitectureDiagram() {
             accent
           />
           <Layer
-            title="Channels and external systems"
+            title="Channels and integrations"
             detail="Slack, WhatsApp, Telegram, connectors, and external systems are part of the trust boundary."
             accent
           />

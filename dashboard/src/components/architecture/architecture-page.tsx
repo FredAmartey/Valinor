@@ -1,10 +1,8 @@
 "use client"
 
 import { ArchitectureDiagram } from "@/components/architecture/architecture-diagram"
+import { CONTACT_SECTION_URL, TECHNICAL_ARCHITECTURE_URL } from "@/lib/site-links"
 import { GRAIN_URL, palette, useTheme } from "@/components/landing/theme"
-
-const TECHNICAL_ARCHITECTURE_URL =
-  "https://github.com/FredAmartey/Valinor/blob/master/docs/architecture.md"
 
 const TRUST_BOUNDARIES = [
   {
@@ -206,6 +204,8 @@ export function ArchitecturePage() {
               <a
                 href={TECHNICAL_ARCHITECTURE_URL}
                 className="rounded-xl border px-5 py-3 text-sm font-semibold no-underline"
+                target="_blank"
+                rel="noreferrer"
                 style={{
                   borderColor: c.glassBdr,
                   color: c.textPri,
@@ -216,7 +216,7 @@ export function ArchitecturePage() {
                 Read the technical architecture
               </a>
               <a
-                href="/landing#contact"
+                href={CONTACT_SECTION_URL}
                 className="rounded-xl px-5 py-3 text-sm font-semibold no-underline"
                 style={{
                   background: c.gold,
@@ -390,6 +390,8 @@ export function ArchitecturePage() {
             <a
               href={TECHNICAL_ARCHITECTURE_URL}
               className="rounded-xl border px-5 py-3 text-sm font-semibold no-underline"
+              target="_blank"
+              rel="noreferrer"
               style={{
                 borderColor: c.glassBdr,
                 color: c.textPri,
@@ -399,7 +401,7 @@ export function ArchitecturePage() {
               Read the reference docs
             </a>
             <a
-              href="/landing#contact"
+              href={CONTACT_SECTION_URL}
               className="rounded-xl px-5 py-3 text-sm font-semibold no-underline"
               style={{ background: c.gold, color: "#1a1306" }}
             >

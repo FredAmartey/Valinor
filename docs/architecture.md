@@ -10,7 +10,7 @@ Valinor is OpenClaw-first today. Over time, the trust layer should remain runtim
 
 ```mermaid
 flowchart TD
-    U["Users and operators"] --> C["Channels and external systems"]
+    U["Users and operators"] --> C["Channels and integrations"]
     U --> CP["Valinor control plane"]
     C --> CP
     CP --> P["Policy and approvals"]
