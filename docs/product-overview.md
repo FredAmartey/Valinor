@@ -197,14 +197,16 @@ Current stance:
 - runtime-extensible by design
 - broader runtime support later
 
-## Runtime and Isolation Tiers
+## Product Tiers
 
-Valinor currently supports two runtime/isolation profiles:
+Valinor currently supports two product tiers:
 
-| Tier | Runtime | Isolation | Target |
-| --- | --- | --- | --- |
-| Teams | Docker containers | container-level isolation | small teams and internal deployments |
-| Enterprise | Firecracker microVMs | hardware-virtualized isolation | regulated and high-trust environments |
+| | Teams | Enterprise |
+| --- | --- | --- |
+| **Runtime** | Docker containers on shared hosts | Firecracker MicroVMs (separate kernel per agent) |
+| **Cold start** | 2-5 seconds | ~125 milliseconds |
+| **Isolation** | Container-level | Hardware-virtualized |
+| **Target** | Dev teams, small orgs | Regulated industries, high-security |
 
 Both tiers share the same governance, visibility, audit, channel, and connector model.
 
