@@ -80,12 +80,8 @@ func (h *Handler) HandleDeny(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, resolution string) {
-	_, tenantIDStr, ok := parseTenant(w, r)
+	tenantID, tenantIDStr, ok := parseTenant(w, r)
 	if !ok {
-		return
-	}
-	if h.pool == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "approval store unavailable"})
 		return
 	}
 	approvalID, err := uuid.Parse(r.PathValue("id"))
@@ -103,13 +99,17 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, resolution str
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user identity"})
 		return
 	}
+	if h.pool == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "approval store unavailable"})
+		return
+	}
 
 	var request *Request
 	err = database.WithTenantConnection(r.Context(), h.pool, tenantIDStr, func(ctx context.Context, q database.Querier) error {
 		if resolution == StatusApproved {
-			request, err = h.store.Approve(ctx, q, approvalID, reviewerID)
+			request, err = h.store.Approve(ctx, q, approvalID, reviewerID, tenantID)
 		} else {
-			request, err = h.store.Deny(ctx, q, approvalID, reviewerID)
+			request, err = h.store.Deny(ctx, q, approvalID, reviewerID, tenantID)
 		}
 		return err
 	})

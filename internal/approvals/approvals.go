@@ -177,15 +177,15 @@ func (s *Store) List(ctx context.Context, q database.Querier, params ListParams)
 	return requests, rows.Err()
 }
 
-func (s *Store) Approve(ctx context.Context, q database.Querier, approvalID, reviewerID uuid.UUID) (*Request, error) {
-	return s.resolve(ctx, q, approvalID, reviewerID, StatusApproved)
+func (s *Store) Approve(ctx context.Context, q database.Querier, approvalID, reviewerID, tenantID uuid.UUID) (*Request, error) {
+	return s.resolve(ctx, q, approvalID, reviewerID, tenantID, StatusApproved)
 }
 
-func (s *Store) Deny(ctx context.Context, q database.Querier, approvalID, reviewerID uuid.UUID) (*Request, error) {
-	return s.resolve(ctx, q, approvalID, reviewerID, StatusDenied)
+func (s *Store) Deny(ctx context.Context, q database.Querier, approvalID, reviewerID, tenantID uuid.UUID) (*Request, error) {
+	return s.resolve(ctx, q, approvalID, reviewerID, tenantID, StatusDenied)
 }
 
-func (s *Store) resolve(ctx context.Context, q database.Querier, approvalID, reviewerID uuid.UUID, status string) (*Request, error) {
+func (s *Store) resolve(ctx context.Context, q database.Querier, approvalID, reviewerID, tenantID uuid.UUID, status string) (*Request, error) {
 	var (
 		request      Request
 		metadataJSON json.RawMessage
@@ -193,12 +193,13 @@ func (s *Store) resolve(ctx context.Context, q database.Querier, approvalID, rev
 	err := q.QueryRow(ctx,
 		`UPDATE approval_requests
 		    SET status = $2, reviewed_by = $3, reviewed_at = now()
-		  WHERE id = $1 AND status = 'pending'
+		  WHERE id = $1 AND status = 'pending' AND tenant_id = $4
 		  RETURNING id, tenant_id, agent_id, requested_by, reviewed_by, channel_outbox_id, risk_class,
 		            status, target_type, target_label, action_summary, metadata, created_at, reviewed_at, expires_at`,
 		approvalID,
 		status,
 		reviewerID,
+		tenantID,
 	).Scan(
 		&request.ID,
 		&request.TenantID,

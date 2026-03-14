@@ -365,6 +365,7 @@ export interface ChatMessage {
 export interface WsServerMessage {
   type:
     | "chunk"
+    | "runtime_event"
     | "tool_executed"
     | "tool_failed"
     | "tool_blocked"
@@ -376,4 +377,7 @@ export interface WsServerMessage {
   tool_name?: string;
   reason?: string;
   message?: string;
+  event?: string;
+  title?: string;
+  summary?: string;
 }

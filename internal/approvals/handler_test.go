@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
@@ -31,11 +32,12 @@ func TestHandleApprove_NoIdentity(t *testing.T) {
 
 	h.HandleApprove(w, req)
 
-	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "unauthorized")
 }
 
 func TestHandleDeny_InvalidApprovalID(t *testing.T) {
-	h := NewHandler(nil, nil)
+	h := NewHandler(&pgxpool.Pool{}, nil)
 	req := httptest.NewRequest("POST", "/api/v1/approvals/not-a-uuid/deny", nil)
 	req.SetPathValue("id", "not-a-uuid")
 	req = req.WithContext(auth.WithIdentity(
@@ -46,5 +48,22 @@ func TestHandleDeny_InvalidApprovalID(t *testing.T) {
 
 	h.HandleDeny(w, req)
 
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "approval id must be a valid UUID")
+}
+
+func TestHandleApprove_ServiceUnavailableAfterValidation(t *testing.T) {
+	h := NewHandler(nil, nil)
+	req := httptest.NewRequest("POST", "/api/v1/approvals/190f3a21-3b2c-42ce-b26e-2f448a58ec14/approve", nil)
+	req.SetPathValue("id", "190f3a21-3b2c-42ce-b26e-2f448a58ec14")
+	req = req.WithContext(auth.WithIdentity(
+		middleware.WithTenantID(req.Context(), "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"),
+		&auth.Identity{UserID: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"},
+	))
+	w := httptest.NewRecorder()
+
+	h.HandleApprove(w, req)
+
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "approval store unavailable")
 }
