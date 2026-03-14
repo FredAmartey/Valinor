@@ -203,10 +203,10 @@ Valinor currently supports two product tiers:
 
 | | Teams | Enterprise |
 | --- | --- | --- |
-| **Runtime** | Docker containers on shared hosts | Firecracker MicroVMs (separate kernel per agent) |
+| **Runtime** | Docker containers | Firecracker MicroVMs (separate kernel per agent) |
 | **Cold start** | 2-5 seconds | ~125 milliseconds |
 | **Isolation** | Container-level | Hardware-virtualized |
-| **Target** | Dev teams, small orgs | Regulated industries, high-security |
+| **Target** | Dev teams, small orgs | Regulated industries, high-trust environments |
 
 Both tiers share the same governance, visibility, audit, channel, and connector model.
 
