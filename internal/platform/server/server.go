@@ -18,7 +18,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/admin"
-	"github.com/valinor-ai/valinor/internal/platform/httputil"
+	httpjson "github.com/valinor-ai/valinor/internal/platform/httputil"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/policies"
 	"github.com/valinor-ai/valinor/internal/proxy"
@@ -590,12 +590,12 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpjson.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	if s.pool == nil {
-		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
+		httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "not ready",
 			"reason": "database not connected",
 		})
@@ -603,12 +603,12 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.pool.Ping(r.Context()); err != nil {
-		httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
+		httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "not ready",
 			"reason": "database ping failed",
 		})
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	httpjson.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }

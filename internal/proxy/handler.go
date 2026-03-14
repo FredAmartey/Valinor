@@ -14,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/activity"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
+	httpjson "github.com/valinor-ai/valinor/internal/platform/httputil"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/rbac"
 )
@@ -151,17 +152,17 @@ func buildPromptAcceptedEvent(r *http.Request, agentID, agentTenant, transport s
 func (h *Handler) prepareMessageRequest(w http.ResponseWriter, r *http.Request) *preparedMessageRequest {
 	agentID := r.PathValue("id")
 	if agentID == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
 		return nil
 	}
 
 	inst, err := h.agents.GetByID(r.Context(), agentID)
 	if err != nil {
 		if errors.Is(err, orchestrator.ErrVMNotFound) {
-			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
+			httpjson.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
 			return nil
 		}
-		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
+		httpjson.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
 		return nil
 	}
 
@@ -175,19 +176,19 @@ func (h *Handler) prepareMessageRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if inst.Status != orchestrator.StatusRunning {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
+		httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent not running"})
 		return nil
 	}
 
 	if inst.VsockCID == nil {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
+		httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "agent has no vsock CID"})
 		return nil
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var body json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return nil
 	}
 
@@ -228,7 +229,7 @@ func (h *Handler) prepareMessageRequest(w http.ResponseWriter, r *http.Request) 
 				event.Metadata = map[string]any{"score": scanResult.Score}
 				h.activity.Log(r.Context(), event)
 			}
-			writeProxyJSON(w, http.StatusForbidden, map[string]string{
+			httpjson.WriteJSON(w, http.StatusForbidden, map[string]string{
 				"error":  "message blocked: potential prompt injection",
 				"reason": scanResult.Reason,
 			})
@@ -261,7 +262,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
 	if err != nil {
 		slog.Error("proxy dial failed", "agent", agentID, "cid", *inst.VsockCID, "error", err)
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
+		httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
 		return
 	}
 
@@ -280,7 +281,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.pool.Remove(agentID)
 		slog.Error("proxy send failed", "agent", agentID, "error", err)
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
+		httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
 	}
 	defer request.Close()
@@ -304,7 +305,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			h.pool.Remove(agentID)
 			slog.Error("proxy recv failed", "agent", agentID, "error", err)
-			writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "recv failed"})
+			httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "recv failed"})
 			return
 		}
 
@@ -315,12 +316,12 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				Done    bool   `json:"done"`
 			}
 			if err := json.Unmarshal(reply.Payload, &chunk); err != nil {
-				writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "invalid chunk"})
+				httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "invalid chunk"})
 				return
 			}
 			contentParts = append(contentParts, chunk.Content)
 			if chunk.Done {
-				writeProxyJSON(w, http.StatusOK, map[string]string{
+				httpjson.WriteJSON(w, http.StatusOK, map[string]string{
 					"content": strings.Join(contentParts, ""),
 				})
 				return
@@ -332,10 +333,10 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				Message string `json:"message"`
 			}
 			if err := json.Unmarshal(reply.Payload, &agentErr); err != nil {
-				writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent error"})
+				httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "agent error"})
 				return
 			}
-			writeProxyJSON(w, http.StatusBadGateway, map[string]string{
+			httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{
 				"error": "agent error: " + agentErr.Message,
 			})
 			return
@@ -367,7 +368,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				event.Metadata = map[string]any{"reason": blocked.Reason}
 				h.activity.Log(r.Context(), event)
 			}
-			writeProxyJSON(w, http.StatusForbidden, map[string]string{
+			httpjson.WriteJSON(w, http.StatusForbidden, map[string]string{
 				"error": "tool blocked: " + blocked.ToolName,
 			})
 			return
@@ -398,7 +399,7 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 				event.Summary = reason
 				h.activity.Log(r.Context(), event)
 			}
-			writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{
+			httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"error": "session terminated for security reasons",
 			})
 			return
@@ -433,7 +434,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.pool.Get(r.Context(), agentID, *inst.VsockCID)
 	if err != nil {
 		slog.Error("proxy dial failed", "agent", agentID, "error", err)
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
+		httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "agent unreachable"})
 		return
 	}
 
@@ -450,7 +451,7 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	request, err := conn.SendRequest(ctx, frame)
 	if err != nil {
 		h.pool.Remove(agentID)
-		writeProxyJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
+		httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "send failed"})
 		return
 	}
 	defer request.Close()
@@ -610,17 +611,17 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 	if agentID == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
 		return
 	}
 
 	inst, err := h.agents.GetByID(r.Context(), agentID)
 	if err != nil {
 		if errors.Is(err, orchestrator.ErrVMNotFound) {
-			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
+			httpjson.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
 			return
 		}
-		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
+		httpjson.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup failed"})
 		return
 	}
 
@@ -629,13 +630,13 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.userContextStore == nil {
-		writeProxyJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "context store unavailable"})
+		httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "context store unavailable"})
 		return
 	}
 
 	identity := auth.GetIdentity(r.Context())
 	if identity == nil || strings.TrimSpace(identity.UserID) == "" {
-		writeProxyJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		httpjson.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		return
 	}
 
@@ -644,7 +645,7 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 		tenantID = strings.TrimSpace(*inst.TenantID)
 	}
 	if tenantID == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
+		httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "tenant context required"})
 		return
 	}
 
@@ -654,22 +655,22 @@ func (h *Handler) HandleContext(w http.ResponseWriter, r *http.Request) {
 	}
 	err = json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 	contextText := strings.TrimSpace(body.Context)
 	if contextText == "" {
-		writeProxyJSON(w, http.StatusBadRequest, map[string]string{"error": "context is required"})
+		httpjson.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "context is required"})
 		return
 	}
 
 	if err := h.userContextStore.UpsertUserContext(r.Context(), tenantID, agentID, identity.UserID, contextText); err != nil {
 		slog.Error("persisting user context failed", "agent", agentID, "tenant", tenantID, "user", identity.UserID, "error", err)
-		writeProxyJSON(w, http.StatusInternalServerError, map[string]string{"error": "context update failed"})
+		httpjson.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "context update failed"})
 		return
 	}
 
-	writeProxyJSON(w, http.StatusOK, map[string]string{"status": "applied"})
+	httpjson.WriteJSON(w, http.StatusOK, map[string]string{"status": "applied"})
 }
 
 // auditFromRequest builds a base AuditEvent from the request context.
@@ -734,13 +735,13 @@ func activityFromRequest(r *http.Request, agentID, agentTenantID string) activit
 func verifyTenantOwnership(w http.ResponseWriter, r *http.Request, inst *orchestrator.AgentInstance) bool {
 	identity := auth.GetIdentity(r.Context())
 	if identity == nil {
-		writeProxyJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		httpjson.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		return false
 	}
 	if !identity.IsPlatformAdmin {
 		tenantID := middleware.GetTenantID(r.Context())
 		if inst.TenantID == nil || *inst.TenantID != tenantID {
-			writeProxyJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
+			httpjson.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "agent not found"})
 			return false
 		}
 	}
@@ -826,12 +827,6 @@ func prependSystemContext(body json.RawMessage, contextText string) (json.RawMes
 		return nil, err
 	}
 	return updated, nil
-}
-
-func writeProxyJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }
 
 // logToolAudit emits an audit event for tool execution (success or failure).

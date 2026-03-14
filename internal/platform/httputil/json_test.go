@@ -1,4 +1,4 @@
-package httputil
+package httpjson
 
 import (
 	"net/http"
