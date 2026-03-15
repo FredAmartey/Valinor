@@ -9,23 +9,25 @@ import (
 
 // Frame type constants — Control Plane → Agent
 const (
-	TypeConfigUpdate = "config_update"
-	TypeMessage      = "message"
-	TypePing         = "ping"
+	TypeConfigUpdate          = "config_update"
+	TypeMessage               = "message"
+	TypePing                  = "ping"
+	TypeConnectorActionResume = "connector_action_resume"
 )
 
 // Frame type constants — Agent → Control Plane
 const (
-	TypeHeartbeat    = "heartbeat"
-	TypeChunk        = "chunk"
-	TypeRuntimeEvent = "runtime_event"
-	TypeConfigAck    = "config_ack"
-	TypeToolBlocked  = "tool_blocked"
-	TypeSessionHalt  = "session_halt"
-	TypePong         = "pong"
-	TypeError        = "error"
-	TypeToolExecuted = "tool_executed"
-	TypeToolFailed   = "tool_failed"
+	TypeHeartbeat        = "heartbeat"
+	TypeChunk            = "chunk"
+	TypeRuntimeEvent     = "runtime_event"
+	TypeApprovalRequired = "approval_required"
+	TypeConfigAck        = "config_ack"
+	TypeToolBlocked      = "tool_blocked"
+	TypeSessionHalt      = "session_halt"
+	TypePong             = "pong"
+	TypeError            = "error"
+	TypeToolExecuted     = "tool_executed"
+	TypeToolFailed       = "tool_failed"
 )
 
 // Frame is the envelope for all vsock wire messages.
@@ -49,6 +51,26 @@ type RuntimeEventPayload struct {
 	DeliveryTarget string         `json:"delivery_target,omitempty"`
 	RuntimeSource  string         `json:"runtime_source,omitempty"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
+}
+
+type ApprovalRequiredPayload struct {
+	ConnectorID             string `json:"connector_id,omitempty"`
+	ConnectorName           string `json:"connector_name,omitempty"`
+	ToolName                string `json:"tool_name"`
+	Arguments               string `json:"arguments,omitempty"`
+	RiskClass               string `json:"risk_class,omitempty"`
+	TargetType              string `json:"target_type,omitempty"`
+	TargetLabelTemplate     string `json:"target_label_template,omitempty"`
+	ApprovalSummaryTemplate string `json:"approval_summary_template,omitempty"`
+}
+
+type ConnectorActionResumePayload struct {
+	ActionID    string `json:"action_id"`
+	ApprovalID  string `json:"approval_id,omitempty"`
+	ConnectorID string `json:"connector_id,omitempty"`
+	ToolName    string `json:"tool_name"`
+	Arguments   string `json:"arguments,omitempty"`
+	RiskClass   string `json:"risk_class,omitempty"`
 }
 
 // MaxFrameSize limits frame payloads to 4 MB.

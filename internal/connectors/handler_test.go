@@ -70,3 +70,24 @@ func TestHandleList_TenantPathMismatch(t *testing.T) {
 		t.Fatalf("expected 403, got %d", w.Code)
 	}
 }
+
+func TestHandleCreate_InvalidWriteToolMetadata(t *testing.T) {
+	handler := connectors.NewHandler(nil, connectors.NewStore())
+	body := `{
+		"name": "salesforce",
+		"endpoint": "https://example.com",
+		"tools": [
+			{"name":"salesforce.update_contact","action_type":"write"}
+		]
+	}`
+	req := httptest.NewRequest("POST", "/api/v1/connectors", strings.NewReader(body))
+	req = req.WithContext(middleware.WithTenantID(req.Context(), "test-tenant"))
+	req.SetPathValue("tenantID", "test-tenant")
+	w := httptest.NewRecorder()
+
+	handler.HandleCreate(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}

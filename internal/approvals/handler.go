@@ -15,8 +15,13 @@ import (
 )
 
 type Handler struct {
-	pool  *pgxpool.Pool
-	store *Store
+	pool     *pgxpool.Pool
+	store    *Store
+	resolver ConnectorActionResolver
+}
+
+type ConnectorActionResolver interface {
+	ResolveConnectorAction(ctx context.Context, tenantID string, request *Request, approved bool) error
 }
 
 func NewHandler(pool *pgxpool.Pool, store *Store) *Handler {
@@ -24,6 +29,14 @@ func NewHandler(pool *pgxpool.Pool, store *Store) *Handler {
 		store = NewStore()
 	}
 	return &Handler{pool: pool, store: store}
+}
+
+func (h *Handler) WithConnectorActionResolver(resolver ConnectorActionResolver) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.resolver = resolver
+	return h
 }
 
 func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +130,12 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, resolution str
 		status, body := resolveErrorResponse(err)
 		httpjson.WriteJSON(w, status, body)
 		return
+	}
+	if h.resolver != nil {
+		if resolveErr := h.resolver.ResolveConnectorAction(r.Context(), tenantIDStr, request, resolution == StatusApproved); resolveErr != nil {
+			httpjson.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to resolve governed connector action"})
+			return
+		}
 	}
 
 	httpjson.WriteJSON(w, http.StatusOK, request)

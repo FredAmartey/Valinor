@@ -36,6 +36,8 @@ func (s *Store) Create(ctx context.Context, q database.Querier, name, connectorT
 	}
 	if tools == nil {
 		tools = json.RawMessage(`[]`)
+	} else if err := ValidateToolsJSON(tools); err != nil {
+		return nil, err
 	}
 	if resources == nil {
 		resources = json.RawMessage(`[]`)
@@ -116,7 +118,7 @@ func (s *Store) Delete(ctx context.Context, q database.Querier, id string) error
 // ListForAgent returns active connectors as agent-facing config entries.
 func (s *Store) ListForAgent(ctx context.Context, q database.Querier) ([]AgentConnectorConfig, error) {
 	rows, err := q.Query(ctx,
-		`SELECT name, connector_type, endpoint, auth_config, tools
+		`SELECT id, name, connector_type, endpoint, auth_config, tools
 		 FROM connectors WHERE status = 'active' ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("listing connectors for agent: %w", err)
@@ -125,12 +127,13 @@ func (s *Store) ListForAgent(ctx context.Context, q database.Querier) ([]AgentCo
 
 	var result []AgentConnectorConfig
 	for rows.Next() {
-		var name, connType, endpoint string
+		var id, name, connType, endpoint string
 		var authConfig, tools json.RawMessage
-		if err := rows.Scan(&name, &connType, &endpoint, &authConfig, &tools); err != nil {
+		if err := rows.Scan(&id, &name, &connType, &endpoint, &authConfig, &tools); err != nil {
 			return nil, fmt.Errorf("scanning connector for agent: %w", err)
 		}
 		result = append(result, AgentConnectorConfig{
+			ID:       id,
 			Name:     name,
 			Type:     connType,
 			Endpoint: endpoint,

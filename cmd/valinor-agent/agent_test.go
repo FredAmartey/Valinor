@@ -140,6 +140,75 @@ func TestAgent_ConfigUpdate_ToolPoliciesAndCanary(t *testing.T) {
 	agent.mu.RUnlock()
 }
 
+func TestAgent_ConfigUpdate_GovernedConnectors(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	agent := &Agent{
+		cfg:        AgentConfig{OpenClawURL: "http://localhost:8081"},
+		httpClient: &http.Client{Timeout: 2 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	configPayload := json.RawMessage(`{
+		"config":{"model":"gpt-4o"},
+		"connectors":[
+			{
+				"id":"connector-1",
+				"name":"crm",
+				"type":"mcp",
+				"endpoint":"http://localhost:9000",
+				"auth":{},
+				"tools":["update_contact"],
+				"governed_tools":{
+					"update_contact":{
+						"action_type":"write",
+						"risk_class":"external_writes",
+						"decision":"require_approval",
+						"target_type":"crm_record",
+						"target_label_template":"Contact {{id}}",
+						"approval_summary_template":"Update CRM contact"
+					}
+				}
+			}
+		]
+	}`)
+	configFrame := proxy.Frame{
+		Type:    proxy.TypeConfigUpdate,
+		ID:      "cfg-governed",
+		Payload: configPayload,
+	}
+	err = cp.Send(ctx, configFrame)
+	require.NoError(t, err)
+
+	reply, err := cp.Recv(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, proxy.TypeConfigAck, reply.Type)
+
+	agent.mu.RLock()
+	require.Len(t, agent.connectors, 1)
+	assert.Equal(t, "connector-1", agent.connectors[0].ID)
+	meta, ok := agent.connectors[0].GovernedTools["update_contact"]
+	require.True(t, ok)
+	assert.Equal(t, "write", meta.ActionType)
+	assert.Equal(t, "external_writes", meta.RiskClass)
+	assert.Equal(t, "require_approval", meta.Decision)
+	assert.Equal(t, "crm_record", meta.TargetType)
+	assert.Equal(t, "Contact {{id}}", meta.TargetLabelTemplate)
+	assert.Equal(t, "Update CRM contact", meta.ApprovalSummaryTemplate)
+	agent.mu.RUnlock()
+}
+
 func TestAgent_ContextUpdateFrameIsIgnored(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()

@@ -418,6 +418,61 @@ func TestHandler_Configure_InjectsConnectors(t *testing.T) {
 	assert.Equal(t, []string{"web_search"}, pusher.calls[0].connectors[0]["tools"])
 }
 
+func TestHandler_Configure_InjectsGovernedConnectorMetadata(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	var tenantID string
+	err := pool.QueryRow(ctx, "INSERT INTO tenants (name, slug) VALUES ('InjectGoverned', 'inject-governed') RETURNING id").Scan(&tenantID)
+	require.NoError(t, err)
+
+	driver := orchestrator.NewMockDriver()
+	store := orchestrator.NewStore()
+	mgr := orchestrator.NewManager(pool, driver, store, orchestrator.NewKBStore(), orchestrator.ManagerConfig{Driver: "mock"})
+
+	pusher := &mockConfigPusher{}
+	lister := &mockConnectorLister{items: []connectors.AgentConnectorConfig{
+		{
+			ID:       "connector-crm",
+			Name:     "crm",
+			Type:     "mcp",
+			Endpoint: "http://localhost:9002",
+			Tools:    json.RawMessage(`[{"name":"update_contact","action_type":"write","risk_class":"external_writes","target_type":"crm_record"}]`),
+		},
+	}}
+	handler := orchestrator.NewHandler(mgr, pusher, nil, lister, pool)
+
+	inst, err := mgr.Provision(ctx, tenantID, orchestrator.ProvisionOpts{})
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"config":{"model":"gpt-4"},"tool_allowlist":["update_contact"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+inst.ID+"/configure", body)
+	req.SetPathValue("id", inst.ID)
+	req = withIdentity(req, tenantID, false)
+	w := httptest.NewRecorder()
+
+	handler.HandleConfigure(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, pusher.calls, 1)
+	require.Len(t, pusher.calls[0].connectors, 1)
+
+	assert.Equal(t, "connector-crm", pusher.calls[0].connectors[0]["id"])
+	governedTools, ok := pusher.calls[0].connectors[0]["governed_tools"].(map[string]any)
+	require.True(t, ok)
+	updateContact, ok := governedTools["update_contact"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "write", updateContact["action_type"])
+	assert.Equal(t, "external_writes", updateContact["risk_class"])
+	assert.Equal(t, "require_approval", updateContact["decision"])
+	assert.Equal(t, "crm_record", updateContact["target_type"])
+}
+
 func TestHandler_Provision_InjectsConnectors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

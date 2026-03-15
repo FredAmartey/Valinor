@@ -60,6 +60,13 @@ const (
 
 	ActionToolExecuted = "tool.executed"
 	ActionToolFailed   = "tool.failed"
+
+	ActionConnectorWriteBlocked           = "connector.write.blocked"
+	ActionConnectorWriteApprovalRequested = "connector.write.approval_requested"
+	ActionConnectorWriteApproved          = "connector.write.approved"
+	ActionConnectorWriteDenied            = "connector.write.denied"
+	ActionConnectorWriteExecuted          = "connector.write.executed"
+	ActionConnectorWriteFailed            = "connector.write.failed"
 )
 
 const (

@@ -4,6 +4,7 @@ import {
   useSecurityEventsQuery,
   useSecurityOverviewQuery,
 } from "@/lib/queries/activity";
+import { connectorGovernanceLabels } from "@/lib/connector-governance";
 import { formatDate, formatTimeAgo } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ActivityEvent, SecurityCheck } from "@/lib/types";
@@ -153,11 +154,14 @@ export function SecurityEventsView({ tenantId }: { tenantId?: string }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {events.map((event) => (
-            <div
-              key={event.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-            >
+          {events.map((event) => {
+            const governanceLabels = connectorGovernanceLabels(event.metadata);
+
+            return (
+              <div
+                key={event.id}
+                className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+              >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100">
@@ -215,6 +219,14 @@ export function SecurityEventsView({ tenantId }: { tenantId?: string }) {
                     {event.runtime_source}
                   </span>
                 )}
+                {governanceLabels.map((label) => (
+                  <span
+                    key={label}
+                    className="rounded-full bg-violet-50 px-2 py-1 text-violet-700"
+                  >
+                    {label}
+                  </span>
+                ))}
                 <span className="rounded-full bg-zinc-100 px-2 py-1">
                   {event.source}
                 </span>
@@ -244,8 +256,9 @@ export function SecurityEventsView({ tenantId }: { tenantId?: string }) {
                   )}
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
 

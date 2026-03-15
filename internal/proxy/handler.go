@@ -12,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/activity"
+	"github.com/valinor-ai/valinor/internal/approvals"
+	auditlog "github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	httpjson "github.com/valinor-ai/valinor/internal/platform/httputil"
@@ -70,15 +72,22 @@ type HandlerConfig struct {
 
 // Handler serves proxy HTTP endpoints for agent communication.
 type Handler struct {
-	pool             *ConnPool
-	agents           AgentLookup
-	cfg              HandlerConfig
-	sentinel         Sentinel
-	audit            AuditLogger
-	activity         activity.Logger
-	userContextStore UserContextStore
-	tokenValidator   TokenValidator
-	rbacEval         *rbac.Evaluator
+	pool                     *ConnPool
+	agents                   AgentLookup
+	cfg                      HandlerConfig
+	sentinel                 Sentinel
+	audit                    AuditLogger
+	activity                 activity.Logger
+	userContextStore         UserContextStore
+	tokenValidator           TokenValidator
+	rbacEval                 *rbac.Evaluator
+	connectorApprovalService ConnectorApprovalService
+}
+
+var errConnectorApprovalServiceUnavailable = errors.New("connector approval service unavailable")
+
+type ConnectorApprovalService interface {
+	CreateForConnectorAction(ctx context.Context, tenantID string, params approvals.ConnectorActionParams) (*approvals.ConnectorActionResult, error)
 }
 
 type preparedMessageRequest struct {
@@ -135,6 +144,14 @@ func (h *Handler) WithRBACEvaluator(eval *rbac.Evaluator) *Handler {
 		return nil
 	}
 	h.rbacEval = eval
+	return h
+}
+
+func (h *Handler) WithConnectorApprovalService(service ConnectorApprovalService) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.connectorApprovalService = service
 	return h
 }
 
@@ -343,16 +360,26 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 		case TypeToolBlocked:
 			var blocked struct {
-				ToolName string `json:"tool_name"`
-				Reason   string `json:"reason"`
+				ToolName      string `json:"tool_name"`
+				ConnectorName string `json:"connector_name"`
+				RiskClass     string `json:"risk_class"`
+				Reason        string `json:"reason"`
 			}
 			_ = json.Unmarshal(reply.Payload, &blocked)
 			if h.audit != nil {
-				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
-				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
-					evt.ResourceID = &agentUUID
+				actionName := "tool.blocked"
+				resourceType := "agent"
+				if strings.TrimSpace(blocked.ConnectorName) != "" || strings.TrimSpace(blocked.RiskClass) != "" {
+					actionName = auditlog.ActionConnectorWriteBlocked
+					resourceType = "connector"
 				}
-				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				evt := auditFromRequest(r, actionName, resourceType, agentTenant)
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					if resourceType == "agent" {
+						evt.ResourceID = &agentUUID
+					}
+				}
+				evt.Metadata = connectorToolAuditMetadata(blocked.ToolName, blocked.ConnectorName, blocked.RiskClass, blocked.Reason)
 				h.audit.Log(r.Context(), evt)
 			}
 			if h.activity != nil {
@@ -402,6 +429,21 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 			httpjson.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"error": "session terminated for security reasons",
 			})
+			return
+
+		case TypeApprovalRequired:
+			var pending ApprovalRequiredPayload
+			if err := json.Unmarshal(reply.Payload, &pending); err != nil {
+				httpjson.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "invalid approval payload"})
+				return
+			}
+			result, persistErr := h.persistConnectorApproval(r, agentID, agentTenant, reqID, pending)
+			if persistErr != nil {
+				slog.Error("persisting connector approval failed", "agent", agentID, "tool", pending.ToolName, "error", persistErr)
+				httpjson.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist connector approval"})
+				return
+			}
+			httpjson.WriteJSON(w, http.StatusAccepted, approvalRequiredResponse(pending, result))
 			return
 
 		case TypeToolExecuted:
@@ -520,15 +562,25 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		case TypeToolBlocked:
 			if h.audit != nil {
 				var blocked struct {
-					ToolName string `json:"tool_name"`
-					Reason   string `json:"reason"`
+					ToolName      string `json:"tool_name"`
+					ConnectorName string `json:"connector_name"`
+					RiskClass     string `json:"risk_class"`
+					Reason        string `json:"reason"`
 				}
 				_ = json.Unmarshal(reply.Payload, &blocked)
-				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
-				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
-					evt.ResourceID = &agentUUID
+				actionName := "tool.blocked"
+				resourceType := "agent"
+				if strings.TrimSpace(blocked.ConnectorName) != "" || strings.TrimSpace(blocked.RiskClass) != "" {
+					actionName = auditlog.ActionConnectorWriteBlocked
+					resourceType = "connector"
 				}
-				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				evt := auditFromRequest(r, actionName, resourceType, agentTenant)
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					if resourceType == "agent" {
+						evt.ResourceID = &agentUUID
+					}
+				}
+				evt.Metadata = connectorToolAuditMetadata(blocked.ToolName, blocked.ConnectorName, blocked.RiskClass, blocked.Reason)
 				h.audit.Log(r.Context(), evt)
 			}
 			if h.activity != nil {
@@ -582,6 +634,38 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 				h.activity.Log(r.Context(), event)
 			}
 			writeSSE(w, "error", json.RawMessage(`{"error":"session terminated for security reasons"}`))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return
+
+		case TypeApprovalRequired:
+			var pending ApprovalRequiredPayload
+			if err := json.Unmarshal(reply.Payload, &pending); err != nil {
+				writeSSE(w, "error", json.RawMessage(`{"error":"invalid approval payload"}`))
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+			result, persistErr := h.persistConnectorApproval(r, agentID, agentTenant, reqID, pending)
+			if persistErr != nil {
+				slog.Error("persisting connector approval failed", "agent", agentID, "tool", pending.ToolName, "error", persistErr)
+				writeSSE(w, "error", json.RawMessage(`{"error":"failed to persist connector approval"}`))
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+			payload, err := json.Marshal(approvalRequiredResponse(pending, result))
+			if err != nil {
+				writeSSE(w, "error", json.RawMessage(`{"error":"invalid approval response"}`))
+				if flusher != nil {
+					flusher.Flush()
+				}
+				return
+			}
+			writeSSE(w, "approval_required", payload)
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -952,6 +1036,135 @@ func fallbackRuntimeEventTitle(eventType string) string {
 	default:
 		return "Runtime event"
 	}
+}
+
+func (h *Handler) persistConnectorApproval(r *http.Request, agentID, agentTenant, correlationID string, pending ApprovalRequiredPayload) (*approvals.ConnectorActionResult, error) {
+	if h == nil || h.connectorApprovalService == nil {
+		return nil, errConnectorApprovalServiceUnavailable
+	}
+
+	tenantUUID, err := uuid.Parse(strings.TrimSpace(agentTenant))
+	if err != nil {
+		return nil, err
+	}
+	connectorUUID, err := uuid.Parse(strings.TrimSpace(pending.ConnectorID))
+	if err != nil {
+		return nil, err
+	}
+
+	var agentUUID *uuid.UUID
+	if parsedAgentID, parseErr := uuid.Parse(strings.TrimSpace(agentID)); parseErr == nil {
+		agentUUID = &parsedAgentID
+	}
+
+	var requestedBy *uuid.UUID
+	if identity := auth.GetIdentity(r.Context()); identity != nil {
+		if parsedUserID, parseErr := uuid.Parse(strings.TrimSpace(identity.UserID)); parseErr == nil {
+			requestedBy = &parsedUserID
+		}
+	}
+
+	args := json.RawMessage(`{}`)
+	if trimmed := strings.TrimSpace(pending.Arguments); trimmed != "" {
+		if !json.Valid([]byte(trimmed)) {
+			return nil, errors.New("approval arguments must be valid JSON")
+		}
+		args = json.RawMessage(trimmed)
+	}
+
+	result, err := h.connectorApprovalService.CreateForConnectorAction(r.Context(), agentTenant, approvals.ConnectorActionParams{
+		TenantID:      tenantUUID,
+		AgentID:       agentUUID,
+		RequestedBy:   requestedBy,
+		ConnectorID:   connectorUUID,
+		ConnectorName: pending.ConnectorName,
+		SessionID:     correlationID,
+		CorrelationID: correlationID,
+		ToolName:      pending.ToolName,
+		RiskClass:     pending.RiskClass,
+		TargetType:    pending.TargetType,
+		TargetLabel:   pending.TargetLabelTemplate,
+		ActionSummary: pending.ApprovalSummaryTemplate,
+		Arguments:     args,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if h.activity != nil && result != nil && result.Approval != nil && result.Action != nil {
+		event := activityFromRequest(r, agentID, agentTenant)
+		event.Kind = activity.KindApprovalRequested
+		event.Status = activity.StatusApprovalRequired
+		event.Source = "agent"
+		event.Provenance = activity.ProvenanceRuntimeVsock
+		event.Binding = "vsock"
+		event.RuntimeSource = "openclaw"
+		event.InternalEventType = "connector.approval_requested"
+		event.Title = "Approval requested"
+		event.Summary = result.Action.ActionSummary
+		event.RiskClass = result.Action.RiskClass
+		event.SessionID = result.Action.SessionID
+		event.CorrelationID = result.Action.CorrelationID
+		event.ApprovalID = &result.Approval.ID
+		event.ConnectorID = &result.Action.ConnectorID
+		event.Metadata = map[string]any{
+			"connector_name":     pending.ConnectorName,
+			"tool_name":          pending.ToolName,
+			"governed_action_id": result.Action.ID.String(),
+		}
+		h.activity.Log(r.Context(), event)
+	}
+	if h.audit != nil && result != nil && result.Approval != nil && result.Action != nil {
+		evt := auditFromRequest(r, auditlog.ActionConnectorWriteApprovalRequested, "connector", agentTenant)
+		evt.ResourceID = &result.Action.ConnectorID
+		evt.Source = "agent"
+		evt.Metadata = map[string]any{
+			"approval_id":        result.Approval.ID.String(),
+			"governed_action_id": result.Action.ID.String(),
+			"connector_id":       result.Action.ConnectorID.String(),
+			"connector_name":     pending.ConnectorName,
+			"tool_name":          pending.ToolName,
+			"risk_class":         pending.RiskClass,
+			"target_type":        pending.TargetType,
+			"target_label":       result.Action.TargetLabel,
+			"correlation_id":     result.Action.CorrelationID,
+			"session_id":         result.Action.SessionID,
+		}
+		h.audit.Log(r.Context(), evt)
+	}
+
+	return result, nil
+}
+
+func connectorToolAuditMetadata(toolName, connectorName, riskClass, reason string) map[string]any {
+	metadata := map[string]any{
+		"tool_name": toolName,
+		"reason":    reason,
+	}
+	if trimmed := strings.TrimSpace(connectorName); trimmed != "" {
+		metadata["connector_name"] = trimmed
+	}
+	if trimmed := strings.TrimSpace(riskClass); trimmed != "" {
+		metadata["risk_class"] = trimmed
+	}
+	return metadata
+}
+
+func approvalRequiredResponse(pending ApprovalRequiredPayload, result *approvals.ConnectorActionResult) map[string]any {
+	response := map[string]any{
+		"status":         "awaiting_approval",
+		"connector_id":   pending.ConnectorID,
+		"connector_name": pending.ConnectorName,
+		"tool_name":      pending.ToolName,
+		"risk_class":     pending.RiskClass,
+	}
+	if result != nil && result.Approval != nil {
+		response["approval_id"] = result.Approval.ID.String()
+	}
+	if result != nil && result.Action != nil {
+		response["governed_action_id"] = result.Action.ID.String()
+	}
+	return response
 }
 
 func sessionHaltReason(payload json.RawMessage) string {

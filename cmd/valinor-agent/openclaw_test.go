@@ -616,10 +616,20 @@ func TestForwardToOpenClaw_ToolCallLoop(t *testing.T) {
 		toolAllowlist: []string{"search_players"},
 		connectors: []AgentConnector{
 			{
+				ID:       "connector-football",
 				Name:     "football-api",
 				Endpoint: mockMCP.URL,
 				Auth:     json.RawMessage(`{}`),
 				Tools:    []string{"search_players"},
+				GovernedTools: map[string]GovernedTool{
+					"search_players": {
+						ActionType:              "write",
+						RiskClass:               "external_writes",
+						Decision:                "allow",
+						TargetType:              "player_search",
+						ApprovalSummaryTemplate: "Search players",
+					},
+				},
 			},
 		},
 	}
@@ -685,6 +695,305 @@ done:
 	assert.True(t, gotToolExecuted, "expected tool_executed audit frame")
 	assert.Equal(t, "Found 3 players", finalContent)
 	assert.Equal(t, 2, openClawCalls, "expected exactly 2 OpenClaw calls (tool call + final)")
+}
+
+func TestForwardToOpenClaw_GovernedConnectorWriteBlocked(t *testing.T) {
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call-blocked",
+								"type": "function",
+								"function": map[string]string{
+									"name":      "update_contact",
+									"arguments": `{"id":"123"}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	mcpCalls := 0
+	mockMCP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpCalls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer mockMCP.Close()
+
+	agent := &Agent{
+		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		mcp:           newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		toolAllowlist: []string{"update_contact"},
+		connectors: []AgentConnector{
+			{
+				ID:       "connector-crm",
+				Name:     "crm-api",
+				Endpoint: mockMCP.URL,
+				Auth:     json.RawMessage(`{}`),
+				Tools:    []string{"update_contact"},
+				GovernedTools: map[string]GovernedTool{
+					"update_contact": {
+						ActionType: "write",
+						RiskClass:  "external_writes",
+						Decision:   "block",
+					},
+				},
+			},
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	err = cp.Send(ctx, proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-blocked-governed",
+		Payload: json.RawMessage(`{"role":"user","content":"update the CRM record"}`),
+	})
+	require.NoError(t, err)
+
+	var sawBlockedRuntimeEvent bool
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+		if reply.Type == proxy.TypeRuntimeEvent {
+			var evt proxy.RuntimeEventPayload
+			require.NoError(t, json.Unmarshal(reply.Payload, &evt))
+			if evt.EventType == "connector.blocked" {
+				sawBlockedRuntimeEvent = true
+			}
+			continue
+		}
+
+		require.Equal(t, proxy.TypeToolBlocked, reply.Type)
+		var blocked struct {
+			ToolName      string `json:"tool_name"`
+			ConnectorName string `json:"connector_name"`
+			RiskClass     string `json:"risk_class"`
+			Reason        string `json:"reason"`
+		}
+		require.NoError(t, json.Unmarshal(reply.Payload, &blocked))
+		assert.Equal(t, "update_contact", blocked.ToolName)
+		assert.Equal(t, "crm-api", blocked.ConnectorName)
+		assert.Equal(t, "external_writes", blocked.RiskClass)
+		assert.Contains(t, blocked.Reason, "blocked")
+		break
+	}
+
+	assert.True(t, sawBlockedRuntimeEvent, "expected connector.blocked runtime event")
+	assert.Equal(t, 0, mcpCalls, "blocked governed write must not execute externally")
+}
+
+func TestForwardToOpenClaw_GovernedConnectorWriteAwaitingApproval(t *testing.T) {
+	mockOpenClaw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call-approval",
+								"type": "function",
+								"function": map[string]string{
+									"name":      "update_contact",
+									"arguments": `{"id":"123","status":"active"}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer mockOpenClaw.Close()
+
+	mcpCalls := 0
+	mockMCP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpCalls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer mockMCP.Close()
+
+	agent := &Agent{
+		cfg:           AgentConfig{OpenClawURL: mockOpenClaw.URL},
+		httpClient:    &http.Client{Timeout: 5 * time.Second},
+		mcp:           newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		toolAllowlist: []string{"update_contact"},
+		connectors: []AgentConnector{
+			{
+				ID:       "connector-crm",
+				Name:     "crm-api",
+				Endpoint: mockMCP.URL,
+				Auth:     json.RawMessage(`{}`),
+				Tools:    []string{"update_contact"},
+				GovernedTools: map[string]GovernedTool{
+					"update_contact": {
+						ActionType:              "write",
+						RiskClass:               "external_writes",
+						Decision:                "require_approval",
+						TargetType:              "crm_record",
+						TargetLabelTemplate:     "Contact {{id}}",
+						ApprovalSummaryTemplate: "Update CRM contact",
+					},
+				},
+			},
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	err = cp.Send(ctx, proxy.Frame{
+		Type:    proxy.TypeMessage,
+		ID:      "msg-awaiting-approval",
+		Payload: json.RawMessage(`{"role":"user","content":"update the CRM record"}`),
+	})
+	require.NoError(t, err)
+
+	var sawApprovalRuntimeEvent bool
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+		if reply.Type == proxy.TypeRuntimeEvent {
+			var evt proxy.RuntimeEventPayload
+			require.NoError(t, json.Unmarshal(reply.Payload, &evt))
+			if evt.EventType == "connector.awaiting_approval" {
+				sawApprovalRuntimeEvent = true
+				assert.Equal(t, "approval_required", evt.Status)
+				assert.Equal(t, "external_writes", evt.RiskClass)
+			}
+			continue
+		}
+
+		require.Equal(t, proxy.TypeApprovalRequired, reply.Type)
+		var pending proxy.ApprovalRequiredPayload
+		require.NoError(t, json.Unmarshal(reply.Payload, &pending))
+		assert.Equal(t, "connector-crm", pending.ConnectorID)
+		assert.Equal(t, "crm-api", pending.ConnectorName)
+		assert.Equal(t, "update_contact", pending.ToolName)
+		assert.Equal(t, "external_writes", pending.RiskClass)
+		assert.Equal(t, "crm_record", pending.TargetType)
+		assert.Equal(t, `{"id":"123","status":"active"}`, pending.Arguments)
+		break
+	}
+
+	assert.True(t, sawApprovalRuntimeEvent, "expected connector.awaiting_approval runtime event")
+	assert.Equal(t, 0, mcpCalls, "approval-required governed write must pause before external execution")
+}
+
+func TestHandleConnectorActionResume_ExecutesApprovedAction(t *testing.T) {
+	mcpCalls := 0
+	mockMCP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mcpCalls++
+		var req jsonRPCRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		resp := jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: &toolCallResult{
+				Content: []contentBlock{{Type: "text", Text: `{"updated":true}`}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockMCP.Close()
+
+	agent := &Agent{
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+		mcp:        newMCPClient(&http.Client{Timeout: 5 * time.Second}),
+		connectors: []AgentConnector{
+			{
+				ID:       "connector-crm",
+				Name:     "crm-api",
+				Endpoint: mockMCP.URL,
+				Auth:     json.RawMessage(`{}`),
+				Tools:    []string{"update_contact"},
+			},
+		},
+	}
+
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go agent.handleConnection(ctx, server)
+
+	cp := proxy.NewAgentConn(client)
+	_, err := cp.Recv(ctx)
+	require.NoError(t, err)
+
+	payload, err := json.Marshal(proxy.ConnectorActionResumePayload{
+		ActionID:    "action-123",
+		ApprovalID:  "approval-123",
+		ConnectorID: "connector-crm",
+		ToolName:    "update_contact",
+		Arguments:   `{"id":"123"}`,
+		RiskClass:   "external_writes",
+	})
+	require.NoError(t, err)
+
+	err = cp.Send(ctx, proxy.Frame{
+		Type:    proxy.TypeConnectorActionResume,
+		ID:      "resume-connector-action",
+		Payload: payload,
+	})
+	require.NoError(t, err)
+
+	var sawCompletedRuntimeEvent bool
+	for {
+		reply, recvErr := cp.Recv(ctx)
+		require.NoError(t, recvErr)
+		switch reply.Type {
+		case proxy.TypeRuntimeEvent:
+			var evt proxy.RuntimeEventPayload
+			require.NoError(t, json.Unmarshal(reply.Payload, &evt))
+			if evt.EventType == "connector.resume_completed" {
+				sawCompletedRuntimeEvent = true
+			}
+		case proxy.TypeToolExecuted:
+			assert.True(t, sawCompletedRuntimeEvent, "expected completion runtime event before tool execution audit")
+			assert.Equal(t, 1, mcpCalls)
+			return
+		default:
+			t.Fatalf("unexpected frame type: %s", reply.Type)
+		}
+	}
 }
 
 func TestForwardToOpenClaw_ToolCallLoop_ConnectorNotFound(t *testing.T) {

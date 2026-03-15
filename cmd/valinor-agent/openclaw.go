@@ -256,6 +256,79 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 				continue
 			}
 
+			if governance, ok := connector.GovernedTools[tc.Function.Name]; ok {
+				switch governance.Decision {
+				case "block":
+					a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+						EventType:     "connector.blocked",
+						Kind:          "connector.blocked",
+						Title:         "Connector write blocked",
+						Summary:       fmt.Sprintf("%s was blocked before external execution.", tc.Function.Name),
+						Status:        "blocked",
+						RiskClass:     governance.RiskClass,
+						RuntimeSource: "openclaw",
+						Metadata: map[string]any{
+							"connector_id":   connector.ID,
+							"connector_name": connector.Name,
+							"tool_name":      tc.Function.Name,
+							"decision":       governance.Decision,
+						},
+					})
+					payload, marshalErr := json.Marshal(map[string]string{
+						"tool_name":      tc.Function.Name,
+						"connector_name": connector.Name,
+						"risk_class":     governance.RiskClass,
+						"reason":         "governed connector write blocked by policy",
+					})
+					if marshalErr != nil {
+						slog.Error("marshal governed tool_blocked payload failed", "error", marshalErr)
+						return
+					}
+					_ = conn.Send(ctx, proxy.Frame{
+						Type:    proxy.TypeToolBlocked,
+						ID:      frame.ID,
+						Payload: payload,
+					})
+					return
+				case "require_approval":
+					a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+						EventType:     "connector.awaiting_approval",
+						Kind:          "connector.called",
+						Title:         "Connector write waiting for approval",
+						Summary:       fmt.Sprintf("%s is paused until approval is granted.", tc.Function.Name),
+						Status:        "approval_required",
+						RiskClass:     governance.RiskClass,
+						RuntimeSource: "openclaw",
+						Metadata: map[string]any{
+							"connector_id":   connector.ID,
+							"connector_name": connector.Name,
+							"tool_name":      tc.Function.Name,
+							"decision":       governance.Decision,
+						},
+					})
+					payload, marshalErr := json.Marshal(proxy.ApprovalRequiredPayload{
+						ConnectorID:             connector.ID,
+						ConnectorName:           connector.Name,
+						ToolName:                tc.Function.Name,
+						Arguments:               tc.Function.Arguments,
+						RiskClass:               governance.RiskClass,
+						TargetType:              governance.TargetType,
+						TargetLabelTemplate:     governance.TargetLabelTemplate,
+						ApprovalSummaryTemplate: governance.ApprovalSummaryTemplate,
+					})
+					if marshalErr != nil {
+						slog.Error("marshal approval_required payload failed", "error", marshalErr)
+						return
+					}
+					_ = conn.Send(ctx, proxy.Frame{
+						Type:    proxy.TypeApprovalRequired,
+						ID:      frame.ID,
+						Payload: payload,
+					})
+					return
+				}
+			}
+
 			toolResult, callErr := a.mcp.callTool(ctx, connector, tc.Function.Name, tc.Function.Arguments)
 			elapsed := time.Since(start)
 
@@ -310,6 +383,78 @@ func (a *Agent) forwardToOpenClaw(ctx context.Context, conn *proxy.AgentConn, fr
 		"code": "max_iterations",
 	})
 	a.sendError(ctx, conn, frame.ID, "max_iterations", "tool call loop exceeded maximum iterations")
+}
+
+func (a *Agent) handleConnectorActionResume(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
+	var payload proxy.ConnectorActionResumePayload
+	if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+		a.sendError(ctx, conn, frame.ID, "invalid_resume_payload", "invalid connector action payload")
+		return
+	}
+
+	a.mu.RLock()
+	currentConnectors := a.connectors
+	a.mu.RUnlock()
+
+	connector, err := resolveConnectorForAction(currentConnectors, payload.ConnectorID, payload.ToolName)
+	if err != nil {
+		a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+			EventType:     "connector.resume_failed",
+			Kind:          "connector.called",
+			Title:         "Approved connector action failed",
+			Summary:       err.Error(),
+			Status:        "failed",
+			RiskClass:     payload.RiskClass,
+			RuntimeSource: "openclaw",
+			Metadata: map[string]any{
+				"action_id":   payload.ActionID,
+				"approval_id": payload.ApprovalID,
+				"tool_name":   payload.ToolName,
+			},
+		})
+		a.emitToolAudit(ctx, conn, frame.ID, proxy.TypeToolFailed, payload.ToolName, "", 0, err.Error())
+		return
+	}
+
+	start := time.Now()
+	_, callErr := a.mcp.callTool(ctx, connector, payload.ToolName, payload.Arguments)
+	elapsed := time.Since(start)
+	if callErr != nil {
+		a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+			EventType:     "connector.resume_failed",
+			Kind:          "connector.called",
+			Title:         "Approved connector action failed",
+			Summary:       callErr.Error(),
+			Status:        "failed",
+			RiskClass:     payload.RiskClass,
+			RuntimeSource: "openclaw",
+			Metadata: map[string]any{
+				"action_id":      payload.ActionID,
+				"approval_id":    payload.ApprovalID,
+				"tool_name":      payload.ToolName,
+				"connector_name": connector.Name,
+			},
+		})
+		a.emitToolAudit(ctx, conn, frame.ID, proxy.TypeToolFailed, payload.ToolName, connector.Name, elapsed, callErr.Error())
+		return
+	}
+
+	a.emitRuntimeEvent(ctx, conn, frame.ID, proxy.RuntimeEventPayload{
+		EventType:     "connector.resume_completed",
+		Kind:          "connector.called",
+		Title:         "Approved connector action executed",
+		Summary:       fmt.Sprintf("%s executed after approval.", payload.ToolName),
+		Status:        "completed",
+		RiskClass:     payload.RiskClass,
+		RuntimeSource: "openclaw",
+		Metadata: map[string]any{
+			"action_id":      payload.ActionID,
+			"approval_id":    payload.ApprovalID,
+			"tool_name":      payload.ToolName,
+			"connector_name": connector.Name,
+		},
+	})
+	a.emitToolAudit(ctx, conn, frame.ID, proxy.TypeToolExecuted, payload.ToolName, connector.Name, elapsed, "")
 }
 
 // sendDoneChunk sends a final content chunk to the control plane.
@@ -402,4 +547,21 @@ func (a *Agent) sendError(ctx context.Context, conn *proxy.AgentConn, reqID, cod
 		Payload: payload,
 	}
 	_ = conn.Send(ctx, errFrame)
+}
+
+func resolveConnectorForAction(connectors []AgentConnector, connectorID, toolName string) (AgentConnector, error) {
+	connectorID = strings.TrimSpace(connectorID)
+	if connectorID != "" {
+		for _, c := range connectors {
+			if c.ID == connectorID {
+				for _, tool := range c.Tools {
+					if tool == toolName {
+						return c, nil
+					}
+				}
+				return AgentConnector{}, fmt.Errorf("connector %q does not expose tool %q", connectorID, toolName)
+			}
+		}
+	}
+	return resolveConnector(connectors, toolName)
 }

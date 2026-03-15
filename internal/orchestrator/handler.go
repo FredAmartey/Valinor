@@ -14,6 +14,7 @@ import (
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/valinor-ai/valinor/internal/policies"
 )
 
 // ConfigPusher pushes config to a running agent over vsock.
@@ -26,18 +27,32 @@ type ConnectorLister interface {
 	ListForAgent(ctx context.Context, q database.Querier) ([]connectors.AgentConnectorConfig, error)
 }
 
+type PolicyReader interface {
+	GetTenantDefaults(ctx context.Context, q database.Querier, tenantID uuid.UUID) (policies.PolicySet, error)
+	GetAgentOverrides(ctx context.Context, q database.Querier, tenantID, agentID uuid.UUID) (policies.PolicySet, error)
+}
+
 // Handler handles HTTP requests for agent lifecycle.
 type Handler struct {
 	manager        *Manager
 	configPusher   ConfigPusher // optional, nil = no vsock push
 	auditLog       audit.Logger
 	connectorStore ConnectorLister
+	policyStore    PolicyReader
 	pool           *database.Pool
 }
 
 // NewHandler creates a new orchestrator Handler.
 func NewHandler(manager *Manager, pusher ConfigPusher, auditLog audit.Logger, connectorLister ConnectorLister, pool *database.Pool) *Handler {
 	return &Handler{manager: manager, configPusher: pusher, auditLog: auditLog, connectorStore: connectorLister, pool: pool}
+}
+
+func (h *Handler) WithPolicyStore(store PolicyReader) *Handler {
+	if h == nil {
+		return nil
+	}
+	h.policyStore = store
+	return h
 }
 
 // HandleProvision creates a new agent for the caller's tenant.
@@ -125,34 +140,7 @@ func (h *Handler) HandleProvision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load active connectors and push config if agent is already running.
-	var agentConnectors []map[string]any
-	if h.connectorStore != nil && h.pool != nil {
-		if connErr := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
-			configs, listErr := h.connectorStore.ListForAgent(ctx, q)
-			if listErr != nil {
-				slog.Warn("failed to load connectors for agent", "error", listErr)
-				return nil
-			}
-			for _, c := range configs {
-				var tools []string
-				if len(c.Tools) > 0 {
-					if unmarshalErr := json.Unmarshal(c.Tools, &tools); unmarshalErr != nil {
-						slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", unmarshalErr)
-					}
-				}
-				agentConnectors = append(agentConnectors, map[string]any{
-					"name":     c.Name,
-					"type":     c.Type,
-					"endpoint": c.Endpoint,
-					"auth":     c.Auth,
-					"tools":    tools,
-				})
-			}
-			return nil
-		}); connErr != nil {
-			slog.Warn("failed to load tenant connectors", "error", connErr)
-		}
-	}
+	agentConnectors := h.buildAgentConnectors(r.Context(), tenantID, inst.ID)
 
 	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
 		if pushErr := h.configPusher.PushConfig(r.Context(), inst.ID, *inst.VsockCID, nil, nil, nil, nil, agentConnectors); pushErr != nil {
@@ -347,36 +335,7 @@ func (h *Handler) HandleConfigure(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load active connectors for this tenant
-	var agentConnectors []map[string]any
-	if h.connectorStore != nil && h.pool != nil {
-		tenantID := middleware.GetTenantID(r.Context())
-		if connErr := database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
-			configs, listErr := h.connectorStore.ListForAgent(ctx, q)
-			if listErr != nil {
-				slog.Warn("failed to load connectors for agent", "error", listErr)
-				return nil
-			}
-			for _, c := range configs {
-				// Parse tools from json.RawMessage to []string for type-safe agent deserialization
-				var tools []string
-				if len(c.Tools) > 0 {
-					if unmarshalErr := json.Unmarshal(c.Tools, &tools); unmarshalErr != nil {
-						slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", unmarshalErr)
-					}
-				}
-				agentConnectors = append(agentConnectors, map[string]any{
-					"name":     c.Name,
-					"type":     c.Type,
-					"endpoint": c.Endpoint,
-					"auth":     c.Auth,
-					"tools":    tools,
-				})
-			}
-			return nil
-		}); connErr != nil {
-			slog.Warn("failed to load tenant connectors", "error", connErr)
-		}
-	}
+	agentConnectors := h.buildAgentConnectors(r.Context(), middleware.GetTenantID(r.Context()), id)
 
 	// Best-effort push to running agent via vsock
 	if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil {
@@ -413,4 +372,101 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (h *Handler) buildAgentConnectors(ctx context.Context, tenantID, agentID string) []map[string]any {
+	if h == nil || h.connectorStore == nil || h.pool == nil {
+		return nil
+	}
+
+	var agentConnectors []map[string]any
+	if connErr := database.WithTenantConnection(ctx, h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		configs, listErr := h.connectorStore.ListForAgent(ctx, q)
+		if listErr != nil {
+			slog.Warn("failed to load connectors for agent", "error", listErr)
+			return nil
+		}
+
+		defaults, overrides := h.loadPolicySets(ctx, q, tenantID, agentID)
+		for _, c := range configs {
+			tools, parseErr := connectors.ParseTools(c.Tools)
+			if parseErr != nil {
+				slog.Warn("failed to parse tools for connector", "connector", c.Name, "error", parseErr)
+				continue
+			}
+
+			toolNames := make([]string, 0, len(tools))
+			governedTools := make(map[string]any)
+			for _, tool := range tools {
+				toolNames = append(toolNames, tool.Name)
+				if !connectors.IsGovernedWrite(tool) {
+					continue
+				}
+				governance, evalErr := connectors.EvaluateGovernance(tool, defaults, overrides)
+				if evalErr != nil && !connectors.IsToolMissingGovernanceMetadata(evalErr) {
+					slog.Warn("failed to evaluate connector governance", "connector", c.Name, "tool", tool.Name, "error", evalErr)
+				}
+				governedTools[tool.Name] = map[string]any{
+					"action_type":               tool.ActionType,
+					"risk_class":                firstNonEmpty(governance.RiskClass, tool.RiskClass),
+					"decision":                  string(governance.Decision),
+					"target_type":               tool.TargetType,
+					"target_label_template":     tool.TargetLabelTemplate,
+					"approval_summary_template": tool.ApprovalSummaryTemplate,
+				}
+			}
+
+			connectorPayload := map[string]any{
+				"id":       c.ID,
+				"name":     c.Name,
+				"type":     c.Type,
+				"endpoint": c.Endpoint,
+				"auth":     c.Auth,
+				"tools":    toolNames,
+			}
+			if len(governedTools) > 0 {
+				connectorPayload["governed_tools"] = governedTools
+			}
+			agentConnectors = append(agentConnectors, connectorPayload)
+		}
+		return nil
+	}); connErr != nil {
+		slog.Warn("failed to load tenant connectors", "error", connErr)
+	}
+	return agentConnectors
+}
+
+func (h *Handler) loadPolicySets(ctx context.Context, q database.Querier, tenantID, agentID string) (policies.PolicySet, policies.PolicySet) {
+	defaults := policies.DefaultPolicySet()
+	overrides := policies.PolicySet{}
+	if h == nil || h.policyStore == nil {
+		return defaults, overrides
+	}
+
+	tenantUUID, tenantErr := uuid.Parse(strings.TrimSpace(tenantID))
+	if tenantErr != nil {
+		return defaults, overrides
+	}
+	if storedDefaults, err := h.policyStore.GetTenantDefaults(ctx, q, tenantUUID); err == nil && len(storedDefaults) > 0 {
+		defaults = storedDefaults
+	}
+
+	agentUUID, agentErr := uuid.Parse(strings.TrimSpace(agentID))
+	if agentErr != nil {
+		return defaults, overrides
+	}
+	if storedOverrides, err := h.policyStore.GetAgentOverrides(ctx, q, tenantUUID, agentUUID); err == nil && len(storedOverrides) > 0 {
+		overrides = storedOverrides
+	}
+	return defaults, overrides
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

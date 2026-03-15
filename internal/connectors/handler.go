@@ -59,6 +59,10 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrEndpointEmpty.Error()})
 		return
 	}
+	if validateErr := ValidateToolsJSON(req.Tools); validateErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": validateErr.Error()})
+		return
+	}
 
 	var connector *Connector
 	err = database.WithTenantConnection(r.Context(), h.pool, tenantID, func(ctx context.Context, q database.Querier) error {
