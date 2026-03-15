@@ -114,18 +114,18 @@ func TestGovernedActionStore_CreateGetAndTransition(t *testing.T) {
 	err := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
 		var createErr error
 		created, createErr = store.Create(ctx, q, connectors.CreateGovernedActionParams{
-			TenantID:       mustUUID(t, tenantID),
-			AgentID:        &agentID,
-			SessionID:      sessionID,
-			CorrelationID:  correlationID,
-			ConnectorID:    connectorID,
-			ToolName:       "salesforce.update_contact",
-			RiskClass:      "external_writes",
-			TargetType:     "crm_record",
-			TargetLabel:    "salesforce:contact/123",
-			ActionSummary:  "Update Salesforce contact 123.",
-			Arguments:      json.RawMessage(`{"id":"123","email":"updated@example.com"}`),
-			Status:         connectors.GovernedActionStatusPending,
+			TenantID:      mustUUID(t, tenantID),
+			AgentID:       &agentID,
+			SessionID:     sessionID,
+			CorrelationID: correlationID,
+			ConnectorID:   connectorID,
+			ToolName:      "salesforce.update_contact",
+			RiskClass:     "external_writes",
+			TargetType:    "crm_record",
+			TargetLabel:   "salesforce:contact/123",
+			ActionSummary: "Update Salesforce contact 123.",
+			Arguments:     json.RawMessage(`{"id":"123","email":"updated@example.com"}`),
+			Status:        connectors.GovernedActionStatusPending,
 		})
 		return createErr
 	})

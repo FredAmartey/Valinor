@@ -46,18 +46,18 @@ type GovernedAction struct {
 }
 
 type CreateGovernedActionParams struct {
-	TenantID       uuid.UUID
-	AgentID        *uuid.UUID
-	ConnectorID    uuid.UUID
-	SessionID      string
-	CorrelationID  string
-	ToolName       string
-	RiskClass      string
-	TargetType     string
-	TargetLabel    string
-	ActionSummary  string
-	Arguments      json.RawMessage
-	Status         string
+	TenantID      uuid.UUID
+	AgentID       *uuid.UUID
+	ConnectorID   uuid.UUID
+	SessionID     string
+	CorrelationID string
+	ToolName      string
+	RiskClass     string
+	TargetType    string
+	TargetLabel   string
+	ActionSummary string
+	Arguments     json.RawMessage
+	Status        string
 }
 
 type GovernedActionStore struct{}

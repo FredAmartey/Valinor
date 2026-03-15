@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/activity"
-	auditlog "github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/approvals"
+	auditlog "github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	httpjson "github.com/valinor-ai/valinor/internal/platform/httputil"
@@ -83,6 +83,8 @@ type Handler struct {
 	rbacEval                 *rbac.Evaluator
 	connectorApprovalService ConnectorApprovalService
 }
+
+var errConnectorApprovalServiceUnavailable = errors.New("connector approval service unavailable")
 
 type ConnectorApprovalService interface {
 	CreateForConnectorAction(ctx context.Context, tenantID string, params approvals.ConnectorActionParams) (*approvals.ConnectorActionResult, error)
@@ -1038,7 +1040,7 @@ func fallbackRuntimeEventTitle(eventType string) string {
 
 func (h *Handler) persistConnectorApproval(r *http.Request, agentID, agentTenant, correlationID string, pending ApprovalRequiredPayload) (*approvals.ConnectorActionResult, error) {
 	if h == nil || h.connectorApprovalService == nil {
-		return nil, nil
+		return nil, errConnectorApprovalServiceUnavailable
 	}
 
 	tenantUUID, err := uuid.Parse(strings.TrimSpace(agentTenant))

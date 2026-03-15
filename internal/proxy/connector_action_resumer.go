@@ -23,6 +23,8 @@ type ConnectorActionResolver struct {
 	audit       AuditLogger
 }
 
+var errConnectorActionResolverUnavailable = errors.New("connector action resolver unavailable")
+
 func NewConnectorActionResolver(pool *database.Pool, connPool *ConnPool, agents AgentLookup, actionStore *connectors.GovernedActionStore) *ConnectorActionResolver {
 	return &ConnectorActionResolver{
 		pool:        pool,
@@ -41,8 +43,11 @@ func (r *ConnectorActionResolver) WithAuditLogger(logger AuditLogger) *Connector
 }
 
 func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, tenantID string, request *approvals.Request, approved bool) error {
-	if r == nil || r.pool == nil || r.connPool == nil || r.agents == nil || r.actionStore == nil || request == nil {
-		return nil
+	if r == nil || r.pool == nil || r.connPool == nil || r.agents == nil || r.actionStore == nil {
+		return errConnectorActionResolverUnavailable
+	}
+	if request == nil {
+		return errors.New("approval request required")
 	}
 
 	actionID, ok := extractActionID(request.Metadata)

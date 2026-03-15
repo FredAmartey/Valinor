@@ -59,8 +59,8 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": ErrEndpointEmpty.Error()})
 		return
 	}
-	if err := ValidateToolsJSON(req.Tools); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if validateErr := ValidateToolsJSON(req.Tools); validateErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": validateErr.Error()})
 		return
 	}
 

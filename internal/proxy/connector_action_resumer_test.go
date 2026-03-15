@@ -11,8 +11,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/approvals"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/database"
@@ -97,7 +97,7 @@ func seedResolverAction(t *testing.T, ctx context.Context, pool *database.Pool, 
 		connectorID = connector.ID
 
 		var approvalID uuid.UUID
-		if err := q.QueryRow(ctx,
+		if scanErr := q.QueryRow(ctx,
 			`INSERT INTO approval_requests (
 				tenant_id, agent_id, risk_class, status, target_type, target_label, action_summary, metadata
 			) VALUES ($1, $2, 'external_writes', 'pending', 'crm_record', 'Contact 123', 'Update CRM contact', $3)
@@ -105,8 +105,8 @@ func seedResolverAction(t *testing.T, ctx context.Context, pool *database.Pool, 
 			tenantID,
 			agentID,
 			json.RawMessage(`{}`),
-		).Scan(&approvalID); err != nil {
-			return err
+		).Scan(&approvalID); scanErr != nil {
+			return scanErr
 		}
 
 		action, createErr = actionStore.Create(ctx, q, connectors.CreateGovernedActionParams{
@@ -126,8 +126,8 @@ func seedResolverAction(t *testing.T, ctx context.Context, pool *database.Pool, 
 		if createErr != nil {
 			return createErr
 		}
-		_, err := actionStore.MarkAwaitingApproval(ctx, q, action.ID, approvalID)
-		return err
+		_, markErr := actionStore.MarkAwaitingApproval(ctx, q, action.ID, approvalID)
+		return markErr
 	})
 	require.NoError(t, err)
 
@@ -177,7 +177,7 @@ func TestConnectorActionResolver_ApproveExecutesGovernedAction(t *testing.T) {
 		}
 
 		var payload proxy.ConnectorActionResumePayload
-		if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+		if decodeErr := json.Unmarshal(frame.Payload, &payload); decodeErr != nil {
 			return
 		}
 		resumePayloads <- payload
@@ -311,6 +311,21 @@ func TestConnectorActionResolver_ApproveWithStoppedAgentMarksGovernedActionFaile
 	require.Len(t, auditLogger.events, 2)
 	assert.Equal(t, audit.ActionConnectorWriteApproved, auditLogger.events[0].Action)
 	assert.Equal(t, audit.ActionConnectorWriteFailed, auditLogger.events[1].Action)
+}
+
+func TestConnectorActionResolver_ReturnsErrorWhenDependenciesMissing(t *testing.T) {
+	t.Parallel()
+
+	request := &approvals.Request{
+		ID:       uuid.New(),
+		TenantID: uuid.New(),
+		Metadata: map[string]any{"governed_action_id": uuid.NewString()},
+	}
+
+	var resolver *proxy.ConnectorActionResolver
+	err := resolver.ResolveConnectorAction(context.Background(), uuid.NewString(), request, true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "connector action resolver unavailable")
 }
 
 func mustUUID(t *testing.T, value string) uuid.UUID {
