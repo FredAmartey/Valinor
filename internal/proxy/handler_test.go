@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/activity"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/approvals"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/connectors"
@@ -111,6 +112,17 @@ func (m *mockActivityLogger) Log(_ context.Context, event activity.Event) {
 }
 
 func (m *mockActivityLogger) Close() error { return nil }
+
+type mockAuditLogger struct {
+	mu     sync.Mutex
+	events []proxy.AuditEvent
+}
+
+func (m *mockAuditLogger) Log(_ context.Context, event proxy.AuditEvent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, event)
+}
 
 type mockConnectorApprovalService struct {
 	result  *approvals.ConnectorActionResult
@@ -701,6 +713,168 @@ func TestHandleMessage_PersistsConnectorApprovalRequiredAction(t *testing.T) {
 	require.NotNil(t, approvalEvent.ConnectorID)
 	assert.Equal(t, connectorID, *approvalEvent.ConnectorID)
 	assert.Equal(t, "Update CRM contact", approvalEvent.Summary)
+}
+
+func TestHandleMessage_AuditsGovernedConnectorApprovalRequest(t *testing.T) {
+	transport := proxy.NewTCPTransport(9838)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(15)
+	agentID := uuid.NewString()
+	tenantID := uuid.NewString()
+	approvalID := uuid.New()
+	actionID := uuid.New()
+	connectorID := uuid.New()
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	auditLogger := &mockAuditLogger{}
+	approvalService := &mockConnectorApprovalService{
+		result: &approvals.ConnectorActionResult{
+			Approval: &approvals.Request{ID: approvalID},
+			Action: &connectors.GovernedAction{
+				ID:            actionID,
+				ConnectorID:   connectorID,
+				SessionID:     "pending-session",
+				CorrelationID: "pending-correlation",
+				RiskClass:     "external_writes",
+				ActionSummary: "Update CRM contact",
+			},
+		},
+	}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, auditLogger).WithConnectorApprovalService(approvalService)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type: proxy.TypeApprovalRequired,
+			ID:   frame.ID,
+			Payload: json.RawMessage(fmt.Sprintf(`{
+				"connector_id":"%s",
+				"connector_name":"crm-api",
+				"tool_name":"update_contact",
+				"arguments":"{\"id\":\"123\"}",
+				"risk_class":"external_writes",
+				"target_type":"crm_record",
+				"target_label_template":"Contact 123",
+				"approval_summary_template":"Update CRM contact"
+			}`, connectorID)),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"role":"user","content":"update the CRM contact"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Len(t, auditLogger.events, 2)
+	connectorEvent := auditLogger.events[1]
+	assert.Equal(t, audit.ActionConnectorWriteApprovalRequested, connectorEvent.Action)
+	assert.Equal(t, "connector", connectorEvent.ResourceType)
+	assert.Equal(t, "crm-api", connectorEvent.Metadata["connector_name"])
+	assert.Equal(t, "update_contact", connectorEvent.Metadata["tool_name"])
+	assert.Equal(t, actionID.String(), connectorEvent.Metadata["governed_action_id"])
+}
+
+func TestHandleMessage_AuditsGovernedConnectorBlock(t *testing.T) {
+	transport := proxy.NewTCPTransport(9839)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(16)
+	agentID := uuid.NewString()
+	tenantID := uuid.NewString()
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	auditLogger := &mockAuditLogger{}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, auditLogger)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type: proxy.TypeToolBlocked,
+			ID:   frame.ID,
+			Payload: json.RawMessage(`{
+				"tool_name":"update_contact",
+				"connector_name":"crm-api",
+				"risk_class":"external_writes",
+				"reason":"governed connector write blocked by policy"
+			}`),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"role":"user","content":"update the CRM contact"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Len(t, auditLogger.events, 2)
+	connectorEvent := auditLogger.events[1]
+	assert.Equal(t, audit.ActionConnectorWriteBlocked, connectorEvent.Action)
+	assert.Equal(t, "crm-api", connectorEvent.Metadata["connector_name"])
+	assert.Equal(t, "external_writes", connectorEvent.Metadata["risk_class"])
 }
 
 func TestHandleStream_ForwardsRuntimeEvent(t *testing.T) {

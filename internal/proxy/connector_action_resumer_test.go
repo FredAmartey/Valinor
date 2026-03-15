@@ -11,12 +11,23 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/approvals"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 	"github.com/valinor-ai/valinor/internal/proxy"
 )
+
+type captureConnectorAuditLogger struct {
+	events []proxy.AuditEvent
+}
+
+func (l *captureConnectorAuditLogger) Log(_ context.Context, event proxy.AuditEvent) {
+	l.events = append(l.events, event)
+}
+
+func (l *captureConnectorAuditLogger) Close() error { return nil }
 
 func setupResolverTestDB(t *testing.T) (*database.Pool, func()) {
 	t.Helper()
@@ -198,7 +209,8 @@ func TestConnectorActionResolver_ApproveExecutesGovernedAction(t *testing.T) {
 		},
 	}
 
-	resolver := proxy.NewConnectorActionResolver(pool, connPool, agents, actionStore)
+	auditLogger := &captureConnectorAuditLogger{}
+	resolver := proxy.NewConnectorActionResolver(pool, connPool, agents, actionStore).WithAuditLogger(auditLogger)
 	require.NoError(t, resolver.ResolveConnectorAction(ctx, tenantID, request, true))
 
 	resumePayload := <-resumePayloads
@@ -213,6 +225,9 @@ func TestConnectorActionResolver_ApproveExecutesGovernedAction(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, connectors.GovernedActionStatusExecuted, stored.Status)
+	require.Len(t, auditLogger.events, 2)
+	assert.Equal(t, audit.ActionConnectorWriteApproved, auditLogger.events[0].Action)
+	assert.Equal(t, audit.ActionConnectorWriteExecuted, auditLogger.events[1].Action)
 }
 
 func TestConnectorActionResolver_DenyMarksGovernedActionDenied(t *testing.T) {
@@ -239,7 +254,8 @@ func TestConnectorActionResolver_DenyMarksGovernedActionDenied(t *testing.T) {
 		},
 	}
 
-	resolver := proxy.NewConnectorActionResolver(pool, proxy.NewConnPool(proxy.NewTCPTransport(9892)), agents, actionStore)
+	auditLogger := &captureConnectorAuditLogger{}
+	resolver := proxy.NewConnectorActionResolver(pool, proxy.NewConnPool(proxy.NewTCPTransport(9892)), agents, actionStore).WithAuditLogger(auditLogger)
 	require.NoError(t, resolver.ResolveConnectorAction(ctx, tenantID, request, false))
 
 	var stored *connectors.GovernedAction
@@ -250,6 +266,8 @@ func TestConnectorActionResolver_DenyMarksGovernedActionDenied(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, connectors.GovernedActionStatusDenied, stored.Status)
+	require.Len(t, auditLogger.events, 1)
+	assert.Equal(t, audit.ActionConnectorWriteDenied, auditLogger.events[0].Action)
 }
 
 func mustUUID(t *testing.T, value string) uuid.UUID {

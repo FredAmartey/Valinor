@@ -301,7 +301,10 @@ func run() error {
 			WSAllowedOrigins: cfg.CORS.AllowedOrigins,
 		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithActivityLogger(activityLogger).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine).WithConnectorApprovalService(connectorApprovalService)
 		if approvalHandler != nil {
-			approvalHandler = approvalHandler.WithConnectorActionResolver(proxy.NewConnectorActionResolver(pool, connPool, orchManager, governedActionStore))
+			approvalHandler = approvalHandler.WithConnectorActionResolver(
+				proxy.NewConnectorActionResolver(pool, connPool, orchManager, governedActionStore).
+					WithAuditLogger(&auditAdapter{l: auditLogger}),
+			)
 		}
 	}
 	if connPool != nil {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/approvals"
+	auditlog "github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/database"
@@ -19,6 +20,7 @@ type ConnectorActionResolver struct {
 	connPool    *ConnPool
 	agents      AgentLookup
 	actionStore *connectors.GovernedActionStore
+	audit       AuditLogger
 }
 
 func NewConnectorActionResolver(pool *database.Pool, connPool *ConnPool, agents AgentLookup, actionStore *connectors.GovernedActionStore) *ConnectorActionResolver {
@@ -28,6 +30,14 @@ func NewConnectorActionResolver(pool *database.Pool, connPool *ConnPool, agents 
 		agents:      agents,
 		actionStore: actionStore,
 	}
+}
+
+func (r *ConnectorActionResolver) WithAuditLogger(logger AuditLogger) *ConnectorActionResolver {
+	if r == nil {
+		return nil
+	}
+	r.audit = logger
+	return r
 }
 
 func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, tenantID string, request *approvals.Request, approved bool) error {
@@ -55,8 +65,12 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 		return err
 	})
 	if err != nil || !approved {
+		if err == nil && action != nil {
+			r.logConnectorAudit(ctx, request, action, auditlog.ActionConnectorWriteDenied)
+		}
 		return err
 	}
+	r.logConnectorAudit(ctx, request, action, auditlog.ActionConnectorWriteApproved)
 
 	if action == nil || action.AgentID == nil {
 		return errors.New("governed action has no agent context")
@@ -116,12 +130,17 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 		case TypeRuntimeEvent:
 			continue
 		case TypeToolExecuted:
-			return database.WithTenantConnection(ctx, r.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+			err := database.WithTenantConnection(ctx, r.pool, tenantID, func(ctx context.Context, q database.Querier) error {
 				_, err := r.actionStore.MarkExecuted(ctx, q, action.ID)
 				return err
 			})
+			if err == nil {
+				r.logConnectorAudit(ctx, request, action, auditlog.ActionConnectorWriteExecuted)
+			}
+			return err
 		case TypeToolFailed, TypeError:
 			r.markActionFailed(ctx, tenantID, action.ID)
+			r.logConnectorAudit(ctx, request, action, auditlog.ActionConnectorWriteFailed)
 			return errors.New("approved connector action execution failed")
 		}
 	}
@@ -154,4 +173,32 @@ func extractActionID(metadata map[string]any) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	return parsed, true
+}
+
+func (r *ConnectorActionResolver) logConnectorAudit(ctx context.Context, request *approvals.Request, action *connectors.GovernedAction, actionName string) {
+	if r == nil || r.audit == nil || request == nil || action == nil {
+		return
+	}
+
+	resourceID := action.ConnectorID
+	evt := AuditEvent{
+		TenantID:     request.TenantID,
+		UserID:       request.ReviewedBy,
+		Action:       actionName,
+		ResourceType: "connector",
+		ResourceID:   &resourceID,
+		Source:       "api",
+		Metadata: map[string]any{
+			"approval_id":        request.ID.String(),
+			"governed_action_id": action.ID.String(),
+			"connector_id":       action.ConnectorID.String(),
+			"tool_name":          action.ToolName,
+			"risk_class":         action.RiskClass,
+			"target_type":        action.TargetType,
+			"target_label":       action.TargetLabel,
+			"correlation_id":     action.CorrelationID,
+			"session_id":         action.SessionID,
+		},
+	}
+	r.audit.Log(ctx, evt)
 }

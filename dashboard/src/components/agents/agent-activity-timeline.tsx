@@ -2,6 +2,7 @@
 
 import { useAgentActivityQuery } from "@/lib/queries/activity";
 import { formatDate, formatTimeAgo } from "@/lib/format";
+import { connectorGovernanceLabels } from "@/lib/connector-governance";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ShieldCheck,
@@ -105,11 +106,14 @@ export function AgentActivityTimeline({ agentId }: { agentId: string }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {events.map((event) => (
-            <div
-              key={event.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-            >
+          {events.map((event) => {
+            const governanceLabels = connectorGovernanceLabels(event.metadata);
+
+            return (
+              <div
+                key={event.id}
+                className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+              >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100">
@@ -170,6 +174,14 @@ export function AgentActivityTimeline({ agentId }: { agentId: string }) {
                     {event.risk_class.replaceAll("_", " ")}
                   </span>
                 )}
+                {governanceLabels.map((label) => (
+                  <span
+                    key={label}
+                    className="rounded-full bg-violet-50 px-2 py-1 text-violet-700"
+                  >
+                    {label}
+                  </span>
+                ))}
                 {event.sensitive_content_ref?.preview && (
                   <span className="rounded-full bg-zinc-100 px-2 py-1">
                     {event.sensitive_content_ref.preview}
@@ -197,8 +209,9 @@ export function AgentActivityTimeline({ agentId }: { agentId: string }) {
                   )}
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

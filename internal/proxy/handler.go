@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/valinor-ai/valinor/internal/activity"
+	auditlog "github.com/valinor-ai/valinor/internal/audit"
 	"github.com/valinor-ai/valinor/internal/approvals"
 	"github.com/valinor-ai/valinor/internal/auth"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
@@ -357,16 +358,26 @@ func (h *Handler) HandleMessage(w http.ResponseWriter, r *http.Request) {
 
 		case TypeToolBlocked:
 			var blocked struct {
-				ToolName string `json:"tool_name"`
-				Reason   string `json:"reason"`
+				ToolName      string `json:"tool_name"`
+				ConnectorName string `json:"connector_name"`
+				RiskClass     string `json:"risk_class"`
+				Reason        string `json:"reason"`
 			}
 			_ = json.Unmarshal(reply.Payload, &blocked)
 			if h.audit != nil {
-				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
-				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
-					evt.ResourceID = &agentUUID
+				actionName := "tool.blocked"
+				resourceType := "agent"
+				if strings.TrimSpace(blocked.ConnectorName) != "" || strings.TrimSpace(blocked.RiskClass) != "" {
+					actionName = auditlog.ActionConnectorWriteBlocked
+					resourceType = "connector"
 				}
-				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				evt := auditFromRequest(r, actionName, resourceType, agentTenant)
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					if resourceType == "agent" {
+						evt.ResourceID = &agentUUID
+					}
+				}
+				evt.Metadata = connectorToolAuditMetadata(blocked.ToolName, blocked.ConnectorName, blocked.RiskClass, blocked.Reason)
 				h.audit.Log(r.Context(), evt)
 			}
 			if h.activity != nil {
@@ -549,15 +560,25 @@ func (h *Handler) HandleStream(w http.ResponseWriter, r *http.Request) {
 		case TypeToolBlocked:
 			if h.audit != nil {
 				var blocked struct {
-					ToolName string `json:"tool_name"`
-					Reason   string `json:"reason"`
+					ToolName      string `json:"tool_name"`
+					ConnectorName string `json:"connector_name"`
+					RiskClass     string `json:"risk_class"`
+					Reason        string `json:"reason"`
 				}
 				_ = json.Unmarshal(reply.Payload, &blocked)
-				evt := auditFromRequest(r, "tool.blocked", "agent", agentTenant)
-				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
-					evt.ResourceID = &agentUUID
+				actionName := "tool.blocked"
+				resourceType := "agent"
+				if strings.TrimSpace(blocked.ConnectorName) != "" || strings.TrimSpace(blocked.RiskClass) != "" {
+					actionName = auditlog.ActionConnectorWriteBlocked
+					resourceType = "connector"
 				}
-				evt.Metadata = map[string]any{"tool_name": blocked.ToolName, "reason": blocked.Reason}
+				evt := auditFromRequest(r, actionName, resourceType, agentTenant)
+				if agentUUID, parseErr := uuid.Parse(agentID); parseErr == nil {
+					if resourceType == "agent" {
+						evt.ResourceID = &agentUUID
+					}
+				}
+				evt.Metadata = connectorToolAuditMetadata(blocked.ToolName, blocked.ConnectorName, blocked.RiskClass, blocked.Reason)
 				h.audit.Log(r.Context(), evt)
 			}
 			if h.activity != nil {
@@ -1091,8 +1112,40 @@ func (h *Handler) persistConnectorApproval(r *http.Request, agentID, agentTenant
 		}
 		h.activity.Log(r.Context(), event)
 	}
+	if h.audit != nil && result != nil && result.Approval != nil && result.Action != nil {
+		evt := auditFromRequest(r, auditlog.ActionConnectorWriteApprovalRequested, "connector", agentTenant)
+		evt.ResourceID = &result.Action.ConnectorID
+		evt.Source = "agent"
+		evt.Metadata = map[string]any{
+			"approval_id":        result.Approval.ID.String(),
+			"governed_action_id": result.Action.ID.String(),
+			"connector_id":       result.Action.ConnectorID.String(),
+			"connector_name":     pending.ConnectorName,
+			"tool_name":          pending.ToolName,
+			"risk_class":         pending.RiskClass,
+			"target_type":        pending.TargetType,
+			"target_label":       result.Action.TargetLabel,
+			"correlation_id":     result.Action.CorrelationID,
+			"session_id":         result.Action.SessionID,
+		}
+		h.audit.Log(r.Context(), evt)
+	}
 
 	return result, nil
+}
+
+func connectorToolAuditMetadata(toolName, connectorName, riskClass, reason string) map[string]any {
+	metadata := map[string]any{
+		"tool_name": toolName,
+		"reason":    reason,
+	}
+	if trimmed := strings.TrimSpace(connectorName); trimmed != "" {
+		metadata["connector_name"] = trimmed
+	}
+	if trimmed := strings.TrimSpace(riskClass); trimmed != "" {
+		metadata["risk_class"] = trimmed
+	}
+	return metadata
 }
 
 func approvalRequiredResponse(pending ApprovalRequiredPayload, result *approvals.ConnectorActionResult) map[string]any {

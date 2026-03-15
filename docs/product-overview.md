@@ -169,8 +169,11 @@ This includes:
 - MCP and connector registration
 - scoped credentials
 - integration-level visibility
-- connector restrictions and policy
+- explicit governance metadata on connector tools
+- policy decisions for connector writes: allow, block, or require approval
+- pause-and-resume approval flows for governed external writes
 - human review for sensitive external actions
+- audit trails tied to governed connector actions
 
 ## Example Use Case
 

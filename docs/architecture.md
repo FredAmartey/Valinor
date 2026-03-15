@@ -125,7 +125,8 @@ That means the architecture includes:
 - retries and delivery visibility
 - tenant-scoped provider credentials
 - connector registration and governed tool access
-- approval-gated sensitive actions
+- approval-gated connector writes that pause before external execution
+- resumable governed connector actions after approval
 - visibility into delivery failures, blocked actions, and external effects
 
 Channels and integrations are not bolt-ons. They are part of the trust model because they are where agents reach real people and real systems.

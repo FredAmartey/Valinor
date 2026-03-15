@@ -6,6 +6,7 @@ import {
   useApproveRequestMutation,
   useDenyRequestMutation,
 } from "@/lib/queries/approvals";
+import { connectorGovernanceLabels } from "@/lib/connector-governance";
 import { formatDate, formatTimeAgo } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCan } from "@/components/providers/permission-provider";
@@ -96,11 +97,14 @@ export function ApprovalsQueue({ tenantId }: { tenantId?: string }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {approvals.map((approval) => (
-            <div
-              key={approval.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-            >
+          {approvals.map((approval) => {
+            const governanceLabels = connectorGovernanceLabels(approval.metadata);
+
+            return (
+              <div
+                key={approval.id}
+                className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+              >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-zinc-900">
@@ -128,6 +132,14 @@ export function ApprovalsQueue({ tenantId }: { tenantId?: string }) {
                 >
                   {formatTimeAgo(approval.created_at)}
                 </span>
+                {governanceLabels.map((label) => (
+                  <span
+                    key={label}
+                    className="rounded-full bg-violet-50 px-2 py-1 text-violet-700"
+                  >
+                    {label}
+                  </span>
+                ))}
               </div>
 
               {canResolve && approval.status === "pending" && (
@@ -152,8 +164,9 @@ export function ApprovalsQueue({ tenantId }: { tenantId?: string }) {
                   </button>
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
