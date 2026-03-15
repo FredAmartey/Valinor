@@ -270,6 +270,49 @@ func TestConnectorActionResolver_DenyMarksGovernedActionDenied(t *testing.T) {
 	assert.Equal(t, audit.ActionConnectorWriteDenied, auditLogger.events[0].Action)
 }
 
+func TestConnectorActionResolver_ApproveWithStoppedAgentMarksGovernedActionFailed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, cleanup := setupResolverTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	cid := uint32(23)
+	tenantID, agentID, _, action, request := seedResolverAction(t, ctx, pool, "resolver-stopped", cid)
+	actionStore := connectors.NewGovernedActionStore()
+
+	agents := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID.String(): {
+				ID:       agentID.String(),
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusProvisioning,
+			},
+		},
+	}
+
+	auditLogger := &captureConnectorAuditLogger{}
+	resolver := proxy.NewConnectorActionResolver(pool, proxy.NewConnPool(proxy.NewTCPTransport(9893)), agents, actionStore).WithAuditLogger(auditLogger)
+
+	err := resolver.ResolveConnectorAction(ctx, tenantID, request, true)
+	require.Error(t, err)
+
+	var stored *connectors.GovernedAction
+	getErr := database.WithTenantConnection(ctx, pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var readErr error
+		stored, readErr = actionStore.GetByID(ctx, q, action.ID)
+		return readErr
+	})
+	require.NoError(t, getErr)
+	assert.Equal(t, connectors.GovernedActionStatusFailed, stored.Status)
+	require.Len(t, auditLogger.events, 2)
+	assert.Equal(t, audit.ActionConnectorWriteApproved, auditLogger.events[0].Action)
+	assert.Equal(t, audit.ActionConnectorWriteFailed, auditLogger.events[1].Action)
+}
+
 func mustUUID(t *testing.T, value string) uuid.UUID {
 	t.Helper()
 	id, err := uuid.Parse(value)

@@ -165,20 +165,14 @@ func (s *GovernedActionStore) updateStatus(
 	nextStatus string,
 	allowed map[string]struct{},
 ) (*GovernedAction, error) {
-	current, err := s.GetByID(ctx, q, id)
-	if err != nil {
-		return nil, err
-	}
-	if _, ok := allowed[current.Status]; !ok {
-		return nil, ErrGovernedActionInvalidTransition
-	}
-
 	var approvalRef any
 	if approvalID != uuid.Nil {
 		approvalRef = approvalID
 	}
-	if approvalRef == nil {
-		approvalRef = current.ApprovalRequestID
+
+	allowedStatuses := make([]string, 0, len(allowed))
+	for status := range allowed {
+		allowedStatuses = append(allowedStatuses, status)
 	}
 
 	action, err := scanGovernedActionRow(q.QueryRow(ctx,
@@ -188,16 +182,21 @@ func (s *GovernedActionStore) updateStatus(
 		        updated_at = now()
 		  WHERE id = $1
 		    AND tenant_id = current_setting('app.current_tenant_id', true)::UUID
+		    AND status = ANY($4)
 		  RETURNING id, tenant_id, agent_id, approval_request_id, connector_id, session_id,
 		            correlation_id, tool_name, risk_class, target_type, target_label,
 		            action_summary, arguments, status, created_at, updated_at`,
 		id,
 		nextStatus,
 		approvalRef,
+		allowedStatuses,
 	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrGovernedActionNotFound
+			if _, getErr := s.GetByID(ctx, q, id); getErr != nil {
+				return nil, getErr
+			}
+			return nil, ErrGovernedActionInvalidTransition
 		}
 		return nil, fmt.Errorf("updating governed connector action: %w", err)
 	}

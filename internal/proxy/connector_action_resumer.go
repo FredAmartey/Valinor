@@ -78,17 +78,17 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 
 	inst, err := r.agents.GetByID(ctx, action.AgentID.String())
 	if err != nil {
-		r.markActionFailed(ctx, tenantID, action.ID)
+		r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 		return fmt.Errorf("loading agent for governed action: %w", err)
 	}
 	if inst.Status != orchestrator.StatusRunning || inst.VsockCID == nil {
-		r.markActionFailed(ctx, tenantID, action.ID)
+		r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 		return errors.New("agent is not running for governed action")
 	}
 
 	conn, err := r.connPool.Get(ctx, inst.ID, *inst.VsockCID)
 	if err != nil {
-		r.markActionFailed(ctx, tenantID, action.ID)
+		r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 		return fmt.Errorf("connecting to agent for governed action: %w", err)
 	}
 
@@ -101,7 +101,7 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 		RiskClass:   action.RiskClass,
 	})
 	if err != nil {
-		r.markActionFailed(ctx, tenantID, action.ID)
+		r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 		return fmt.Errorf("marshaling connector action resume payload: %w", err)
 	}
 
@@ -114,7 +114,7 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 		Payload: payload,
 	})
 	if err != nil {
-		r.markActionFailed(ctx, tenantID, action.ID)
+		r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 		return fmt.Errorf("sending connector action resume request: %w", err)
 	}
 	defer stream.Close()
@@ -122,7 +122,7 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 	for {
 		reply, err := stream.Recv(reqCtx)
 		if err != nil {
-			r.markActionFailed(ctx, tenantID, action.ID)
+			r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 			return fmt.Errorf("waiting for connector action resume result: %w", err)
 		}
 
@@ -139,8 +139,7 @@ func (r *ConnectorActionResolver) ResolveConnectorAction(ctx context.Context, te
 			}
 			return err
 		case TypeToolFailed, TypeError:
-			r.markActionFailed(ctx, tenantID, action.ID)
-			r.logConnectorAudit(ctx, request, action, auditlog.ActionConnectorWriteFailed)
+			r.failConnectorAction(ctx, tenantID, request, action.ID, action)
 			return errors.New("approved connector action execution failed")
 		}
 	}
@@ -154,6 +153,11 @@ func (r *ConnectorActionResolver) markActionFailed(ctx context.Context, tenantID
 		_, err := r.actionStore.MarkFailed(ctx, q, actionID)
 		return err
 	})
+}
+
+func (r *ConnectorActionResolver) failConnectorAction(ctx context.Context, tenantID string, request *approvals.Request, actionID uuid.UUID, action *connectors.GovernedAction) {
+	r.markActionFailed(ctx, tenantID, actionID)
+	r.logConnectorAudit(ctx, request, action, auditlog.ActionConnectorWriteFailed)
 }
 
 func extractActionID(metadata map[string]any) (uuid.UUID, bool) {
