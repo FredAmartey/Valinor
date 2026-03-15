@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -40,4 +41,41 @@ func WithTenantConnection(ctx context.Context, pool *pgxpool.Pool, tenantID stri
 	}
 
 	return fn(ctx, conn)
+}
+
+// WithTenantTransaction acquires a dedicated connection, sets the tenant context,
+// runs fn inside a transaction, and rolls back on any error.
+func WithTenantTransaction(ctx context.Context, pool *pgxpool.Pool, tenantID string, fn func(ctx context.Context, q Querier) error) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquiring connection: %w", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), "SELECT set_config('app.current_tenant_id', '', false)")
+		conn.Release()
+	}()
+
+	_, err = conn.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, false)", tenantID)
+	if err != nil {
+		return fmt.Errorf("setting tenant context: %w", err)
+	}
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() {
+		rollbackErr := tx.Rollback(context.Background())
+		if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+			_ = rollbackErr
+		}
+	}()
+
+	if err := fn(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	return nil
 }

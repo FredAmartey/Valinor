@@ -118,7 +118,7 @@ func (s *ConnectorActionService) CreateForConnectorAction(ctx context.Context, t
 	}
 
 	var result *ConnectorActionResult
-	err := database.WithTenantConnection(ctx, s.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+	err := database.WithTenantTransaction(ctx, s.pool, tenantID, func(ctx context.Context, q database.Querier) error {
 		var createErr error
 		result, createErr = s.store.CreateForConnectorAction(ctx, q, s.actionWriter, params)
 		return createErr
