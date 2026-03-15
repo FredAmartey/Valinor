@@ -214,6 +214,8 @@ func run() error {
 	var activityHandler *activity.Handler
 	var approvalHandler *approvals.Handler
 	var policyHandler *policies.Handler
+	var approvalStore *approvals.Store
+	var governedActionStore *connectors.GovernedActionStore
 	if pool != nil {
 		auditHandler = audit.NewHandler(pool)
 		activityHandler = activity.NewHandler(pool).WithSecurityOverviewConfig(activity.SecurityOverviewConfig{
@@ -221,7 +223,8 @@ func run() error {
 			WebSocketAuthEnabled:    true,
 			EnabledChannelProviders: enabledChannelProviders(cfg.Channels.Providers),
 		})
-		approvalStore := approvals.NewStore()
+		approvalStore = approvals.NewStore()
+		governedActionStore = connectors.NewGovernedActionStore()
 		approvalHandler = approvals.NewHandler(pool, approvalStore)
 		policyHandler = policies.NewHandler(pool, policies.NewStore())
 		if channelOutboxWorker != nil && channelOutboxWorker.dispatcher != nil {
@@ -290,12 +293,13 @@ func run() error {
 		agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger, connectors.NewStore(), pool).WithPolicyStore(policies.NewStore())
 
 		userContextStore = proxy.NewDBUserContextStore(pool)
+		connectorApprovalService := approvals.NewConnectorActionService(pool, approvalStore, governedActionStore)
 		proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{
 			MessageTimeout:   time.Duration(cfg.Proxy.MessageTimeout) * time.Second,
 			ConfigTimeout:    time.Duration(cfg.Proxy.ConfigTimeout) * time.Second,
 			PingTimeout:      time.Duration(cfg.Proxy.PingTimeout) * time.Second,
 			WSAllowedOrigins: cfg.CORS.AllowedOrigins,
-		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithActivityLogger(activityLogger).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine)
+		}, &sentinelAdapter{s: sentinelScanner}, &auditAdapter{l: auditLogger}).WithActivityLogger(activityLogger).WithUserContextStore(userContextStore).WithTokenValidator(tokenSvc).WithRBACEvaluator(rbacEngine).WithConnectorApprovalService(connectorApprovalService)
 	}
 	if connPool != nil {
 		defer connPool.Close()

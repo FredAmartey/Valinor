@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valinor-ai/valinor/internal/connectors"
+	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
 type scriptedQuerier struct {
@@ -160,6 +162,54 @@ func (r approvalRow) Scan(dest ...any) error {
 	return nil
 }
 
+type fakeGovernedActionWriter struct {
+	createParams  []connectors.CreateGovernedActionParams
+	awaitingCalls []struct {
+		id         uuid.UUID
+		approvalID uuid.UUID
+	}
+	created *connectors.GovernedAction
+}
+
+func (f *fakeGovernedActionWriter) Create(_ context.Context, _ database.Querier, params connectors.CreateGovernedActionParams) (*connectors.GovernedAction, error) {
+	f.createParams = append(f.createParams, params)
+	if f.created != nil {
+		return f.created, nil
+	}
+	created := &connectors.GovernedAction{
+		ID:            uuid.New(),
+		TenantID:      params.TenantID,
+		AgentID:       params.AgentID,
+		ConnectorID:   params.ConnectorID,
+		SessionID:     params.SessionID,
+		CorrelationID: params.CorrelationID,
+		ToolName:      params.ToolName,
+		RiskClass:     params.RiskClass,
+		TargetType:    params.TargetType,
+		TargetLabel:   params.TargetLabel,
+		ActionSummary: params.ActionSummary,
+		Arguments:     params.Arguments,
+		Status:        params.Status,
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+	f.created = created
+	return created, nil
+}
+
+func (f *fakeGovernedActionWriter) MarkAwaitingApproval(_ context.Context, _ database.Querier, id, approvalID uuid.UUID) (*connectors.GovernedAction, error) {
+	f.awaitingCalls = append(f.awaitingCalls, struct {
+		id         uuid.UUID
+		approvalID uuid.UUID
+	}{id: id, approvalID: approvalID})
+	updated := *f.created
+	updated.Status = connectors.GovernedActionStatusAwaitingApproval
+	updated.ApprovalRequestID = &approvalID
+	updated.UpdatedAt = time.Now().UTC()
+	f.created = &updated
+	return f.created, nil
+}
+
 type scriptedRows struct {
 	rows []pgx.Row
 	idx  int
@@ -296,4 +346,73 @@ func TestStoreListReturnsMetadataDecodeError(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "unmarshaling approval metadata")
+}
+
+func TestStoreCreateForConnectorAction_PersistsApprovalMetadataAndAwaitingStatus(t *testing.T) {
+	store := NewStore()
+	tenantID := uuid.New()
+	agentID := uuid.New()
+	requestedBy := uuid.New()
+	connectorID := uuid.New()
+	writer := &fakeGovernedActionWriter{}
+
+	approvalID := uuid.New()
+	q := &scriptedQuerier{
+		queryRows: []pgx.Row{approvalRow{request: Request{
+			ID:            approvalID,
+			TenantID:      tenantID,
+			AgentID:       &agentID,
+			RequestedBy:   &requestedBy,
+			RiskClass:     "external_writes",
+			Status:        StatusPending,
+			TargetType:    "crm_record",
+			TargetLabel:   "Contact 123",
+			ActionSummary: "Update CRM contact",
+			CreatedAt:     time.Now().UTC(),
+		}}},
+	}
+
+	result, err := store.CreateForConnectorAction(context.Background(), q, writer, ConnectorActionParams{
+		TenantID:      tenantID,
+		AgentID:       &agentID,
+		RequestedBy:   &requestedBy,
+		ConnectorID:   connectorID,
+		ConnectorName: "crm-api",
+		SessionID:     "session-123",
+		CorrelationID: "corr-123",
+		ToolName:      "update_contact",
+		RiskClass:     "external_writes",
+		TargetType:    "crm_record",
+		TargetLabel:   "Contact 123",
+		ActionSummary: "Update CRM contact",
+		Arguments:     json.RawMessage(`{"id":"123"}`),
+		Metadata:      map[string]any{"source": "runtime"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Approval)
+	require.NotNil(t, result.Action)
+	require.Len(t, writer.createParams, 1)
+	assert.Equal(t, connectors.GovernedActionStatusPending, writer.createParams[0].Status)
+	require.Len(t, writer.awaitingCalls, 1)
+	assert.Equal(t, writer.created.ID, writer.awaitingCalls[0].id)
+	assert.Equal(t, approvalID, writer.awaitingCalls[0].approvalID)
+	assert.Equal(t, connectors.GovernedActionStatusAwaitingApproval, result.Action.Status)
+	require.NotNil(t, result.Action.ApprovalRequestID)
+	assert.Equal(t, approvalID, *result.Action.ApprovalRequestID)
+
+	require.Len(t, q.queryRowCalls, 1)
+	metadataArg, ok := q.queryRowCalls[0].args[8].([]byte)
+	require.True(t, ok)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(metadataArg, &metadata))
+	assert.Equal(t, "runtime", metadata["source"])
+	assert.Equal(t, connectorID.String(), metadata["connector_id"])
+	assert.Equal(t, "crm-api", metadata["connector_name"])
+	assert.Equal(t, "update_contact", metadata["tool_name"])
+	assert.Equal(t, "corr-123", metadata["correlation_id"])
+	assert.Equal(t, "session-123", metadata["session_id"])
+	assert.Equal(t, writer.created.ID.String(), metadata["governed_action_id"])
+	assert.Equal(t, `{"id":"123"}`, metadata["arguments"])
 }

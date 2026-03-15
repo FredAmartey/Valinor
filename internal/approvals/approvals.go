@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
@@ -57,6 +58,40 @@ type CreateParams struct {
 	ExpiresAt       *time.Time
 }
 
+type GovernedActionWriter interface {
+	Create(ctx context.Context, q database.Querier, params connectors.CreateGovernedActionParams) (*connectors.GovernedAction, error)
+	MarkAwaitingApproval(ctx context.Context, q database.Querier, id, approvalID uuid.UUID) (*connectors.GovernedAction, error)
+}
+
+type ConnectorActionParams struct {
+	TenantID      uuid.UUID
+	AgentID       *uuid.UUID
+	RequestedBy   *uuid.UUID
+	ConnectorID   uuid.UUID
+	ConnectorName string
+	SessionID     string
+	CorrelationID string
+	ToolName      string
+	RiskClass     string
+	TargetType    string
+	TargetLabel   string
+	ActionSummary string
+	Arguments     json.RawMessage
+	Metadata      map[string]any
+	ExpiresAt     *time.Time
+}
+
+type ConnectorActionResult struct {
+	Approval *Request
+	Action   *connectors.GovernedAction
+}
+
+type ConnectorActionService struct {
+	pool         *database.Pool
+	store        *Store
+	actionWriter GovernedActionWriter
+}
+
 type ListParams struct {
 	TenantID uuid.UUID
 	Status   *string
@@ -67,6 +102,31 @@ type Store struct{}
 
 func NewStore() *Store {
 	return &Store{}
+}
+
+func NewConnectorActionService(pool *database.Pool, store *Store, actionWriter GovernedActionWriter) *ConnectorActionService {
+	return &ConnectorActionService{
+		pool:         pool,
+		store:        store,
+		actionWriter: actionWriter,
+	}
+}
+
+func (s *ConnectorActionService) CreateForConnectorAction(ctx context.Context, tenantID string, params ConnectorActionParams) (*ConnectorActionResult, error) {
+	if s == nil || s.pool == nil || s.store == nil || s.actionWriter == nil {
+		return nil, errors.New("connector action service is not configured")
+	}
+
+	var result *ConnectorActionResult
+	err := database.WithTenantConnection(ctx, s.pool, tenantID, func(ctx context.Context, q database.Querier) error {
+		var createErr error
+		result, createErr = s.store.CreateForConnectorAction(ctx, q, s.actionWriter, params)
+		return createErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *Store) Create(ctx context.Context, q database.Querier, params CreateParams) (*Request, error) {
@@ -104,6 +164,69 @@ func (s *Store) Create(ctx context.Context, q database.Querier, params CreatePar
 		return nil, fmt.Errorf("creating approval request: %w", err)
 	}
 	return request, nil
+}
+
+func (s *Store) CreateForConnectorAction(ctx context.Context, q database.Querier, actionWriter GovernedActionWriter, params ConnectorActionParams) (*ConnectorActionResult, error) {
+	if actionWriter == nil {
+		return nil, errors.New("governed action writer is required")
+	}
+
+	action, err := actionWriter.Create(ctx, q, connectors.CreateGovernedActionParams{
+		TenantID:      params.TenantID,
+		AgentID:       params.AgentID,
+		ConnectorID:   params.ConnectorID,
+		SessionID:     params.SessionID,
+		CorrelationID: params.CorrelationID,
+		ToolName:      params.ToolName,
+		RiskClass:     params.RiskClass,
+		TargetType:    normalizeConnectorTargetType(params.TargetType),
+		TargetLabel:   normalizeConnectorTargetLabel(params.TargetLabel, params.ConnectorName, params.ToolName),
+		ActionSummary: normalizeConnectorActionSummary(params.ActionSummary, params.ConnectorName, params.ToolName),
+		Arguments:     params.Arguments,
+		Status:        connectors.GovernedActionStatusPending,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating governed connector action: %w", err)
+	}
+
+	metadata := make(map[string]any, len(params.Metadata)+7)
+	for key, value := range params.Metadata {
+		metadata[key] = value
+	}
+	metadata["connector_id"] = params.ConnectorID.String()
+	metadata["connector_name"] = params.ConnectorName
+	metadata["tool_name"] = params.ToolName
+	metadata["governed_action_id"] = action.ID.String()
+	metadata["correlation_id"] = params.CorrelationID
+	metadata["session_id"] = params.SessionID
+	if len(params.Arguments) > 0 {
+		metadata["arguments"] = string(params.Arguments)
+	}
+
+	approval, err := s.Create(ctx, q, CreateParams{
+		TenantID:      params.TenantID,
+		AgentID:       params.AgentID,
+		RequestedBy:   params.RequestedBy,
+		RiskClass:     params.RiskClass,
+		TargetType:    action.TargetType,
+		TargetLabel:   action.TargetLabel,
+		ActionSummary: action.ActionSummary,
+		Metadata:      metadata,
+		ExpiresAt:     params.ExpiresAt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating connector approval request: %w", err)
+	}
+
+	action, err = actionWriter.MarkAwaitingApproval(ctx, q, action.ID, approval.ID)
+	if err != nil {
+		return nil, fmt.Errorf("marking governed connector action awaiting approval: %w", err)
+	}
+
+	return &ConnectorActionResult{
+		Approval: approval,
+		Action:   action,
+	}, nil
 }
 
 func (s *Store) List(ctx context.Context, q database.Querier, params ListParams) ([]Request, error) {
@@ -263,4 +386,31 @@ func decodeRequestMetadata(metadataJSON json.RawMessage, dest *map[string]any) e
 		return fmt.Errorf("unmarshaling approval metadata: %w", err)
 	}
 	return nil
+}
+
+func normalizeConnectorTargetType(value string) string {
+	if value == "" {
+		return "connector_action"
+	}
+	return value
+}
+
+func normalizeConnectorTargetLabel(value, connectorName, toolName string) string {
+	if value != "" {
+		return value
+	}
+	if connectorName != "" {
+		return connectorName + ":" + toolName
+	}
+	return toolName
+}
+
+func normalizeConnectorActionSummary(value, connectorName, toolName string) string {
+	if value != "" {
+		return value
+	}
+	if connectorName != "" {
+		return fmt.Sprintf("%s via %s", toolName, connectorName)
+	}
+	return toolName
 }

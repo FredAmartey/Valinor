@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,10 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valinor-ai/valinor/internal/activity"
+	"github.com/valinor-ai/valinor/internal/approvals"
 	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/valinor-ai/valinor/internal/connectors"
 	"github.com/valinor-ai/valinor/internal/orchestrator"
 	"github.com/valinor-ai/valinor/internal/platform/middleware"
 	"github.com/valinor-ai/valinor/internal/proxy"
@@ -107,6 +111,19 @@ func (m *mockActivityLogger) Log(_ context.Context, event activity.Event) {
 }
 
 func (m *mockActivityLogger) Close() error { return nil }
+
+type mockConnectorApprovalService struct {
+	result  *approvals.ConnectorActionResult
+	err     error
+	calls   []approvals.ConnectorActionParams
+	tenants []string
+}
+
+func (m *mockConnectorApprovalService) CreateForConnectorAction(_ context.Context, tenantID string, params approvals.ConnectorActionParams) (*approvals.ConnectorActionResult, error) {
+	m.tenants = append(m.tenants, tenantID)
+	m.calls = append(m.calls, params)
+	return m.result, m.err
+}
 
 func TestHandleMessage_Success(t *testing.T) {
 	transport := proxy.NewTCPTransport(9800)
@@ -564,6 +581,126 @@ func TestHandleMessage_ReturnsAwaitingApprovalForConnectorAction(t *testing.T) {
 	assert.Equal(t, activity.KindConnectorCalled, waitingEvent.Kind)
 	assert.Equal(t, activity.StatusApprovalRequired, waitingEvent.Status)
 	assert.Equal(t, "connector.awaiting_approval", waitingEvent.InternalEventType)
+}
+
+func TestHandleMessage_PersistsConnectorApprovalRequiredAction(t *testing.T) {
+	transport := proxy.NewTCPTransport(9837)
+	pool := proxy.NewConnPool(transport)
+	defer pool.Close()
+
+	cid := uint32(14)
+	agentID := uuid.NewString()
+	tenantID := uuid.NewString()
+	approvalID := uuid.New()
+	actionID := uuid.New()
+	connectorID := uuid.New()
+
+	store := &mockAgentStore{
+		agents: map[string]*orchestrator.AgentInstance{
+			agentID: {
+				ID:       agentID,
+				TenantID: &tenantID,
+				VsockCID: &cid,
+				Status:   orchestrator.StatusRunning,
+			},
+		},
+	}
+	activityLogger := &mockActivityLogger{}
+	approvalService := &mockConnectorApprovalService{
+		result: &approvals.ConnectorActionResult{
+			Approval: &approvals.Request{ID: approvalID},
+			Action: &connectors.GovernedAction{
+				ID:            actionID,
+				ConnectorID:   connectorID,
+				SessionID:     "pending-session",
+				CorrelationID: "pending-correlation",
+				RiskClass:     "external_writes",
+				ActionSummary: "Update CRM contact",
+			},
+		},
+	}
+
+	handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{
+		MessageTimeout: 5 * time.Second,
+	}, nil, nil).WithActivityLogger(activityLogger).WithConnectorApprovalService(approvalService)
+
+	ctx := context.Background()
+	ln, listenErr := transport.Listen(ctx, cid)
+	require.NoError(t, listenErr)
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		ac := proxy.NewAgentConn(conn)
+		frame, err := ac.Recv(ctx)
+		if err != nil {
+			return
+		}
+
+		_ = ac.Send(ctx, proxy.Frame{
+			Type: proxy.TypeRuntimeEvent,
+			ID:   frame.ID,
+			Payload: json.RawMessage(`{
+				"event_type":"connector.awaiting_approval",
+				"kind":"connector.called",
+				"title":"Connector write waiting for approval",
+				"summary":"CRM contact update requires review before execution.",
+				"status":"approval_required",
+				"risk_class":"external_writes",
+				"runtime_source":"openclaw",
+				"metadata":{"tool_name":"update_contact","connector_name":"crm-api"}
+			}`),
+		})
+		_ = ac.Send(ctx, proxy.Frame{
+			Type: proxy.TypeApprovalRequired,
+			ID:   frame.ID,
+			Payload: json.RawMessage(fmt.Sprintf(`{
+				"connector_id":"%s",
+				"connector_name":"crm-api",
+				"tool_name":"update_contact",
+				"arguments":"{\"id\":\"123\"}",
+				"risk_class":"external_writes",
+				"target_type":"crm_record",
+				"target_label_template":"Contact 123",
+				"approval_summary_template":"Update CRM contact"
+			}`, connectorID)),
+		})
+	}()
+
+	req := httptest.NewRequest("POST", "/agents/"+agentID+"/message", bytes.NewBufferString(`{"role":"user","content":"update the CRM contact"}`))
+	req.SetPathValue("id", agentID)
+	req = withTestAuth(req, tenantID)
+	w := httptest.NewRecorder()
+
+	handler.HandleMessage(w, req)
+
+	require.Equal(t, http.StatusAccepted, w.Code)
+	require.Len(t, approvalService.calls, 1)
+	assert.Equal(t, tenantID, approvalService.tenants[0])
+	assert.Equal(t, connectorID, approvalService.calls[0].ConnectorID)
+	assert.Equal(t, "update_contact", approvalService.calls[0].ToolName)
+	assert.JSONEq(t, `{"id":"123"}`, string(approvalService.calls[0].Arguments))
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, approvalID.String(), resp["approval_id"])
+	assert.Equal(t, actionID.String(), resp["governed_action_id"])
+
+	require.Len(t, activityLogger.events, 3)
+	approvalEvent := activityLogger.events[2]
+	assert.Equal(t, activity.KindApprovalRequested, approvalEvent.Kind)
+	assert.Equal(t, activity.StatusApprovalRequired, approvalEvent.Status)
+	assert.Equal(t, "connector.approval_requested", approvalEvent.InternalEventType)
+	require.NotNil(t, approvalEvent.ApprovalID)
+	assert.Equal(t, approvalID, *approvalEvent.ApprovalID)
+	require.NotNil(t, approvalEvent.ConnectorID)
+	assert.Equal(t, connectorID, *approvalEvent.ConnectorID)
+	assert.Equal(t, "Update CRM contact", approvalEvent.Summary)
 }
 
 func TestHandleStream_ForwardsRuntimeEvent(t *testing.T) {
