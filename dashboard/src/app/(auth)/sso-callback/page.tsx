@@ -34,7 +34,7 @@ export default function SSOCallbackPage() {
           () => Promise.resolve(),
         )
 
-        // If there's an active session, exchange for Valinor tokens
+        // If there's an active session, exchange for Heimdall tokens
         if (clerk.session) {
           const token = await clerk.session.getToken()
           if (!token) {

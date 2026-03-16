@@ -43,7 +43,7 @@ export default function SignUpPage() {
 
       await signUpAttempt.prepareEmailAddressVerification({ strategy: "email_code" })
 
-      sessionStorage.setItem("valinor_signup_pending", "true")
+      sessionStorage.setItem("heimdall_signup_pending", "true")
       router.push("/signup/verify")
     } catch (err: unknown) {
       setLoading(false)

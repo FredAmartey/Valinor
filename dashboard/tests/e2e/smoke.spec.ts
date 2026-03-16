@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test"
 test.describe("Dashboard smoke tests", () => {
   test("login page renders with email input", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByText("Valinor Dashboard")).toBeVisible()
+    await expect(page).toHaveTitle("Heimdall Dashboard")
     await expect(page.getByLabel("Email")).toBeVisible()
     await expect(page.getByText("Sign in (Dev Mode)")).toBeVisible()
   })

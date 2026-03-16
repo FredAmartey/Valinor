@@ -6,7 +6,7 @@ export function AuthCard({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-sm space-y-6 rounded-2xl bg-white p-8 shadow-2xl shadow-black/20">
         <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Valinor
+            Heimdall
           </h1>
         </div>
         {children}

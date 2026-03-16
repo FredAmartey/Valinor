@@ -57,7 +57,7 @@ export default function VerifyPage() {
         return
       }
 
-      sessionStorage.removeItem("valinor_signup_pending")
+      sessionStorage.removeItem("heimdall_signup_pending")
 
       router.push("/signup/team")
       router.refresh()

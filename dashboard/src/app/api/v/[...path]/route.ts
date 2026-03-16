@@ -1,7 +1,7 @@
 import { getAccessToken } from "@/lib/auth"
 import { NextRequest, NextResponse } from "next/server"
 
-const API_BASE_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+const API_BASE_URL = process.env.HEIMDALL_API_URL ?? "http://localhost:8080"
 
 /**
  * BFF proxy: forwards client-side API calls to the Go backend,
