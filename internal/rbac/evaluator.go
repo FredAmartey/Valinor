@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/auth"
 )
 
 // Store defines the database interface for RBAC (for loading resource policies).

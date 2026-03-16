@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/channels"
 )
 
 func classifyOutboxHTTPStatus(provider string, status int, message, retryAfterHeader string, now time.Time) error {

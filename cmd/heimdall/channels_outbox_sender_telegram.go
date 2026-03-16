@@ -10,19 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
 )
 
-const defaultSlackAPIBaseURL = "https://slack.com"
+const defaultTelegramAPIBaseURL = "https://api.telegram.org"
 
-type slackOutboxSender struct {
+type telegramOutboxSender struct {
 	client      *http.Client
 	apiBaseURL  string
 	accessToken string
 }
 
-func newSlackOutboxSender(cfg config.ChannelProviderConfig, client *http.Client) *slackOutboxSender {
+func newTelegramOutboxSender(cfg config.ChannelProviderConfig, client *http.Client) *telegramOutboxSender {
 	httpClient := client
 	if httpClient == nil {
 		httpClient = &http.Client{
@@ -32,21 +32,20 @@ func newSlackOutboxSender(cfg config.ChannelProviderConfig, client *http.Client)
 
 	apiBaseURL := strings.TrimSpace(cfg.APIBaseURL)
 	if apiBaseURL == "" {
-		apiBaseURL = defaultSlackAPIBaseURL
+		apiBaseURL = defaultTelegramAPIBaseURL
 	}
 
-	return &slackOutboxSender{
+	return &telegramOutboxSender{
 		client:      httpClient,
 		apiBaseURL:  strings.TrimRight(apiBaseURL, "/"),
 		accessToken: strings.TrimSpace(cfg.AccessToken),
 	}
 }
 
-func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox) error {
+func (s *telegramOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox) error {
 	var payload struct {
 		Content       string `json:"content"`
 		CorrelationID string `json:"correlation_id"`
-		ThreadTS      string `json:"thread_ts"`
 	}
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return fmt.Errorf("decoding outbox payload: %w", err)
@@ -62,35 +61,31 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		return fmt.Errorf("outbox recipient id is required")
 	}
 
-	type slackSendRequest struct {
-		Channel     string `json:"channel"`
-		Text        string `json:"text"`
-		UnfurlLinks bool   `json:"unfurl_links"`
-		ThreadTS    string `json:"thread_ts,omitempty"`
+	type telegramSendRequest struct {
+		ChatID                string `json:"chat_id"`
+		Text                  string `json:"text"`
+		DisableWebPagePreview bool   `json:"disable_web_page_preview"`
 	}
 
-	threadTS := strings.TrimSpace(payload.ThreadTS)
-	body, err := json.Marshal(slackSendRequest{
-		Channel:     recipientID,
-		Text:        content,
-		UnfurlLinks: false,
-		ThreadTS:    threadTS,
+	body, err := json.Marshal(telegramSendRequest{
+		ChatID:                recipientID,
+		Text:                  content,
+		DisableWebPagePreview: true,
 	})
 	if err != nil {
-		return fmt.Errorf("marshaling slack message body: %w", err)
+		return fmt.Errorf("marshaling telegram message body: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s/api/chat.postMessage", s.apiBaseURL)
+	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", s.apiBaseURL, s.accessToken)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("building slack request: %w", err)
+		return fmt.Errorf("building telegram request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+s.accessToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("sending slack request: %w", err)
+		return fmt.Errorf("sending telegram request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -100,24 +95,24 @@ func (s *slackOutboxSender) Send(ctx context.Context, job channels.ChannelOutbox
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return classifyOutboxHTTPStatus("slack", resp.StatusCode, msg, resp.Header.Get("Retry-After"), time.Now().UTC())
+		return classifyOutboxHTTPStatus("telegram", resp.StatusCode, msg, resp.Header.Get("Retry-After"), time.Now().UTC())
 	}
 
 	var response struct {
-		OK    bool   `json:"ok"`
-		Error string `json:"error"`
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(respBody, &response); err != nil {
-		return fmt.Errorf("decoding slack response: %w", err)
+		return fmt.Errorf("decoding telegram response: %w", err)
 	}
 	if !response.OK {
-		errMsg := strings.TrimSpace(response.Error)
+		errMsg := strings.TrimSpace(response.Description)
 		if errMsg == "" {
 			errMsg = "unknown error"
 		}
-		// Slack semantic rejections (ok=false) are treated as non-retryable.
+		// Telegram semantic rejections (ok=false) are treated as non-retryable.
 		// Transient throttling is expected via HTTP 429 and is handled above.
-		return channels.NewOutboxPermanentError(fmt.Errorf("slack send failed: %s", errMsg))
+		return channels.NewOutboxPermanentError(fmt.Errorf("telegram send failed: %s", errMsg))
 	}
 
 	return nil

@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/platform/telemetry"
 )
 
 func TestLogging_CapturesRequest(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 )
 
 // Sentinel errors for invite redemption. These mirror the tenant package
-// sentinels and are translated by the adapter in cmd/valinor/main.go.
+// sentinels and are translated by the adapter in cmd/heimdall/main.go.
 var (
 	ErrInviteNotFound = errors.New("invite not found")
 	ErrInviteExpired  = errors.New("invite has expired")

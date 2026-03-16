@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/proxy"
-	"github.com/valinor-ai/valinor/internal/rbac"
-	"github.com/valinor-ai/valinor/internal/sentinel"
+	"github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/rbac"
+	"github.com/FredAmartey/heimdall/internal/sentinel"
 )
 
 type channelIdentityLookupFunc func(ctx context.Context, userID string) (*auth.Identity, error)

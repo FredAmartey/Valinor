@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 func requireTestDB(t *testing.T) *database.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://valinor:valinor@localhost:5432/valinor?sslmode=disable"
+		dsn = "postgres://heimdall:valinor@localhost:5432/heimdall?sslmode=disable"
 	}
 	pool, err := database.Connect(context.Background(), dsn, 2)
 	if err != nil {

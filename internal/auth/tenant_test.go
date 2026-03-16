@@ -33,7 +33,7 @@ func TestTenantResolver_ExtractSlugFromOrigin(t *testing.T) {
 		},
 		{
 			name:    "bare base domain",
-			origin:  "https://valinor.example.com",
+			origin:  "https://heimdall.example.com",
 			wantErr: true,
 		},
 		{

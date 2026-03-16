@@ -314,7 +314,7 @@ func TestFirecrackerDriver_StartFailsWhenNetworkInterfaceRejected(t *testing.T) 
 		ChrootBaseDir: filepath.Join(tmp, "jailer"),
 		UID:           1001,
 		GID:           1001,
-		NetNSPath:     "/var/run/netns/valinor",
+		NetNSPath:     "/var/run/netns/heimdall",
 		NetworkPolicy: "outbound_only",
 		TapDevice:     "tap0",
 	})

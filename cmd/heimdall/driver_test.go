@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
 )
 
 func TestSelectVMDriver_MockAllowedInDevMode(t *testing.T) {
@@ -60,7 +60,7 @@ func TestSelectVMDriver_FirecrackerPlatformAndConfig(t *testing.T) {
 			ChrootBaseDir: filepath.Join(tmp, "jailer"),
 			UID:           1001,
 			GID:           1001,
-			NetNSPath:     "/var/run/netns/valinor",
+			NetNSPath:     "/var/run/netns/heimdall",
 		},
 		Network: config.FirecrackerNetworkConfig{
 			Policy:    "outbound_only",
@@ -146,7 +146,7 @@ func TestSelectVMDriver_FirecrackerJailerEnabledOnLinux(t *testing.T) {
 				ChrootBaseDir: filepath.Join(tmp, "jailer"),
 				UID:           1001,
 				GID:           1001,
-				NetNSPath:     "/var/run/netns/valinor",
+				NetNSPath:     "/var/run/netns/heimdall",
 			},
 			Network: config.FirecrackerNetworkConfig{
 				Policy:    "outbound_only",
@@ -210,7 +210,7 @@ func TestSelectVMDriver_FirecrackerJailerDaemonizeOnLinux(t *testing.T) {
 				ChrootBaseDir: filepath.Join(tmp, "jailer"),
 				UID:           1001,
 				GID:           1001,
-				NetNSPath:     "/var/run/netns/valinor",
+				NetNSPath:     "/var/run/netns/heimdall",
 				Daemonize:     true,
 			},
 			Network: config.FirecrackerNetworkConfig{
@@ -306,7 +306,7 @@ func TestSelectVMDriver_FirecrackerNetworkPolicyRequiresTapDeviceInProd(t *testi
 				ChrootBaseDir: filepath.Join(tmp, "jailer"),
 				UID:           1001,
 				GID:           1001,
-				NetNSPath:     "/var/run/netns/valinor",
+				NetNSPath:     "/var/run/netns/heimdall",
 			},
 			Network: config.FirecrackerNetworkConfig{
 				Policy: "outbound_only",
@@ -377,7 +377,7 @@ func TestSelectVMDriver_Docker(t *testing.T) {
 			NetworkMode:      "per-tenant",
 			DefaultCPUs:      1,
 			DefaultMemoryMB:  512,
-			MemoryBasePath:   "/var/lib/valinor/memory",
+			MemoryBasePath:   "/var/lib/heimdall/memory",
 			WorkspaceQuotaMB: 1024,
 		},
 	}

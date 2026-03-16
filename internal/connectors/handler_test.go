@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
 )
 
 func TestHandleCreate_MissingName(t *testing.T) {

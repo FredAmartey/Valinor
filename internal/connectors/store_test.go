@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/valinor-ai/valinor/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/connectors"
 )
 
 func TestNewStore(t *testing.T) {

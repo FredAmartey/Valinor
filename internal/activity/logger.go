@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 type LoggerConfig struct {

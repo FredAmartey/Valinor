@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/FredAmartey/heimdall/internal/platform/telemetry"
 )
 
 func TestNewLogger_JSON(t *testing.T) {

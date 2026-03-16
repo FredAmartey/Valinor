@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/audit"
 )
 
 // Handler handles tenant HTTP endpoints.

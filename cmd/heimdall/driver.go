@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
 )
 
 const (
