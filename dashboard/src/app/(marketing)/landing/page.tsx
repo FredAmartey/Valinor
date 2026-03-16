@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { ThemeProvider, useTheme, palette, GRAIN_URL } from "@/components/landing/theme"
 import { LandingToolbar, LANDING_NAV } from "@/components/landing/landing-toolbar"
 import { Hero } from "@/components/landing/hero"
-import { WhyValinor } from "@/components/landing/why-valinor"
+import { WhyHeimdall } from "@/components/landing/why-heimdall"
 import { Features } from "@/components/landing/features"
 import { Tiers } from "@/components/landing/tiers"
 import { FooterCta } from "@/components/landing/footer"
@@ -69,7 +69,7 @@ function LandingContent() {
 
       {/* Page sections */}
       <Hero />
-      <WhyValinor />
+      <WhyHeimdall />
       <Features />
       <Tiers />
       <FooterCta />

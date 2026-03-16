@@ -2,11 +2,11 @@
 
 ## Goal
 
-Enforce OpenClaw runtime security defaults from Valinor infrastructure so operator config cannot silently weaken baseline isolation.
+Enforce OpenClaw runtime security defaults from Heimdall infrastructure so operator config cannot silently weaken baseline isolation.
 
 ## Context
 
-OpenClaw's security model is trusted-operator, with documented dangerous defaults/tradeoffs when sandbox is disabled or workspace boundaries are relaxed. Valinor must enforce production-safe defaults in the control plane.
+OpenClaw's security model is trusted-operator, with documented dangerous defaults/tradeoffs when sandbox is disabled or workspace boundaries are relaxed. Heimdall must enforce production-safe defaults in the control plane.
 
 ## Recommended Approach
 

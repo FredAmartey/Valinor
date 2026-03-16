@@ -6,10 +6,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
 func TestNewStore(t *testing.T) {

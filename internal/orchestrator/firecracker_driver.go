@@ -25,7 +25,7 @@ import (
 const (
 	defaultFirecrackerBinary       = "firecracker"
 	defaultJailerBinary            = "jailer"
-	defaultFirecrackerStateSubdir  = "valinor-firecracker"
+	defaultFirecrackerStateSubdir  = "heimdall-firecracker"
 	defaultFirecrackerBootArgs     = "console=ttyS0 reboot=k panic=1 pci=off"
 	defaultFirecrackerVCPUs        = 1
 	defaultFirecrackerMemoryMB     = 512
@@ -86,7 +86,7 @@ func NewFirecrackerDriver(kernelPath, rootDrive, jailerPath string) *Firecracker
 		jailerCfg = FirecrackerJailerConfig{
 			Enabled:       true,
 			BinaryPath:    strings.TrimSpace(jailerPath),
-			ChrootBaseDir: filepath.Join(os.TempDir(), "valinor-jailer"),
+			ChrootBaseDir: filepath.Join(os.TempDir(), "heimdall-jailer"),
 			// Require explicit jailer UID/GID in production config.
 			UID: -1,
 			GID: -1,
@@ -97,7 +97,7 @@ func NewFirecrackerDriver(kernelPath, rootDrive, jailerPath string) *Firecracker
 
 // NewFirecrackerDriverWithConfig creates a FirecrackerDriver with optional jailer settings.
 func NewFirecrackerDriverWithConfig(kernelPath, rootDrive string, jailerCfg FirecrackerJailerConfig) *FirecrackerDriver {
-	binaryPath := strings.TrimSpace(os.Getenv("VALINOR_FIRECRACKER_BIN"))
+	binaryPath := strings.TrimSpace(os.Getenv("HEIMDALL_FIRECRACKER_BIN"))
 	if binaryPath == "" {
 		binaryPath = defaultFirecrackerBinary
 	}

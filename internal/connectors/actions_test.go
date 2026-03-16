@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
 func setupActionsTestDB(t *testing.T) (*database.Pool, func()) {
@@ -22,7 +22,7 @@ func setupActionsTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(

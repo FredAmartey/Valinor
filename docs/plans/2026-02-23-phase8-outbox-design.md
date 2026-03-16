@@ -13,7 +13,7 @@ This design covers the first production-safe outbox slice after channel executio
 - New tenant-scoped `channel_outbox` persistence model with RLS isolation.
 - Outbox enqueue on successful channel execution (`executed`) only.
 - Fail-closed behavior when enqueue fails: request returns `500` and message status is persisted as `dispatch_failed`.
-- In-process outbox dispatcher worker in `valinor`.
+- In-process outbox dispatcher worker in `heimdall`.
 - Provider adapter interface with stub/no-op implementation (no real provider API call yet).
 - Retry and dead-letter handling in same table.
 
@@ -38,7 +38,7 @@ Expected product impact:
 
 1. **Provider-agnostic outbox first** rather than provider-specific direct send.
 2. **Enqueue only `executed` replies in V1** to keep policy/UX messaging out of infra slice.
-3. **In-process dispatcher worker** in `valinor` for fastest operational adoption.
+3. **In-process dispatcher worker** in `heimdall` for fastest operational adoption.
 4. **Fail-closed on enqueue failure**: return `500` and persist `dispatch_failed`.
 5. **Retry policy**: max 5 attempts with light backoff + jitter.
 6. **Dead-letter persistence** in same table (`status=dead`, `last_error`).
@@ -117,7 +117,7 @@ Worker periodically reclaims stale `sending` rows (`locked_at` older than thresh
 
 ## Dispatcher Worker
 
-New in-process loop started from `cmd/valinor/main.go` when channel ingress is enabled.
+New in-process loop started from `cmd/heimdall/main.go` when channel ingress is enabled.
 
 Responsibilities:
 
@@ -151,7 +151,7 @@ Add channel outbox worker config defaults:
 - `channels.outbox.base_retry_seconds` (base retry interval)
 - jitter bounds
 
-Environment variable overrides follow existing `VALINOR_...` mapping.
+Environment variable overrides follow existing `HEIMDALL_...` mapping.
 
 ## Observability
 
@@ -200,5 +200,5 @@ Environment variable overrides follow existing `VALINOR_...` mapping.
 ## Verification Commands
 
 - `go test ./internal/channels -v`
-- `go test ./cmd/valinor -v`
+- `go test ./cmd/heimdall -v`
 - `go test ./...`

@@ -99,7 +99,7 @@ RBAC:
 
 ### Encryption-at-rest behavior
 
-- Encryption key is configured via `channels.credentials.key` / `VALINOR_CHANNELS_CREDENTIALS_KEY`.
+- Encryption key is configured via `channels.credentials.key` / `HEIMDALL_CHANNELS_CREDENTIALS_KEY`.
 - New/updated secret writes are encrypted before persistence.
 - Reads decrypt prefixed ciphertext (`enc:v1:`) and preserve legacy plaintext compatibility.
 - Encrypted values fail closed if key is missing or decryption fails.

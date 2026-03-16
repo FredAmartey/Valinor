@@ -8,10 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	httpjson "github.com/valinor-ai/valinor/internal/platform/httputil"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
+	httpjson "github.com/FredAmartey/heimdall/internal/platform/httputil"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
 )
 
 type Handler struct {

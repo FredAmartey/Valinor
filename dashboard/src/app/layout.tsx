@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Valinor Dashboard",
+  title: "Heimdall Dashboard",
   description: "Admin dashboard for secure, observable, and governable AI agents.",
 }
 

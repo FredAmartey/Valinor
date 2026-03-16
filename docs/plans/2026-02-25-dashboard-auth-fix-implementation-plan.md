@@ -280,7 +280,7 @@ git commit -m "feat(auth): add POST /auth/dev/login endpoint for dashboard dev m
 
 **Files:**
 - Modify: `internal/platform/server/server.go`
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Step 1: Add dev route registration to server.go**
 
@@ -298,7 +298,7 @@ This registers `POST /auth/dev/login` on the public mux (no auth middleware), bu
 **Step 2: Verify Go builds and tests pass**
 
 ```bash
-go build ./cmd/valinor && go test ./internal/platform/server/... && go test ./internal/auth/...
+go build ./cmd/heimdall && go test ./internal/platform/server/... && go test ./internal/auth/...
 ```
 
 Expected: Build succeeds, all tests pass.
@@ -361,7 +361,7 @@ declare module "@auth/core/jwt" {
   }
 }
 
-const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+const HEIMDALL_API_URL = process.env.HEIMDALL_API_URL ?? "http://localhost:8080"
 
 export const authConfig: NextAuthConfig = {
   providers: [
@@ -372,7 +372,7 @@ export const authConfig: NextAuthConfig = {
       async authorize(credentials) {
         if (!credentials?.email) return null
 
-        const res = await fetch(`${VALINOR_API_URL}/auth/dev/login`, {
+        const res = await fetch(`${HEIMDALL_API_URL}/auth/dev/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: credentials.email }),
@@ -411,9 +411,9 @@ export const authConfig: NextAuthConfig = {
         return token
       }
 
-      // Token expired: refresh via Valinor API
+      // Token expired: refresh via Heimdall API
       try {
-        const res = await fetch(`${VALINOR_API_URL}/auth/token/refresh`, {
+        const res = await fetch(`${HEIMDALL_API_URL}/auth/token/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refresh_token: token.refreshToken }),
@@ -520,7 +520,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Valinor Dashboard
+            Heimdall Dashboard
           </h1>
           <p className="mt-2 text-sm text-zinc-500">
             Sign in to manage your AI agent infrastructure.
@@ -602,7 +602,7 @@ import { test, expect } from "@playwright/test"
 test.describe("Dashboard smoke tests", () => {
   test("login page renders with email input", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByText("Valinor Dashboard")).toBeVisible()
+    await expect(page.getByText("Heimdall Dashboard")).toBeVisible()
     await expect(page.getByLabel("Email")).toBeVisible()
     await expect(page.getByText("Sign in (Dev Mode)")).toBeVisible()
   })

@@ -10,8 +10,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 )
 
 func setupContextStoreTestDB(t *testing.T) (*database.Pool, func()) {
@@ -20,7 +20,7 @@ func setupContextStoreTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(

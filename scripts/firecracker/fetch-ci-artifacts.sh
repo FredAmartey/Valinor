@@ -8,7 +8,7 @@ Usage:
 
 Examples:
   fetch-ci-artifacts.sh v1.11.0
-  fetch-ci-artifacts.sh v1.11.0 /var/lib/valinor
+  fetch-ci-artifacts.sh v1.11.0 /var/lib/heimdall
 
 Outputs:
   <output-dir>/vmlinux
@@ -16,10 +16,10 @@ Outputs:
   <output-dir>/runtime-versions.json
 
 Environment:
-  VALINOR_GUEST_NODE_VERSION
-  VALINOR_GUEST_NODE_SHA256
-  VALINOR_GUEST_OPENCLAW_VERSION
-  VALINOR_GUEST_OPENCLAW_INTEGRITY
+  HEIMDALL_GUEST_NODE_VERSION
+  HEIMDALL_GUEST_NODE_SHA256
+  HEIMDALL_GUEST_OPENCLAW_VERSION
+  HEIMDALL_GUEST_OPENCLAW_INTEGRITY
 EOF
 }
 
@@ -54,7 +54,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 release_tag="${1:-}"
-output_dir="${2:-/var/lib/valinor}"
+output_dir="${2:-/var/lib/heimdall}"
 if [[ -z "${release_tag}" ]]; then
   usage
   exit 1
@@ -128,7 +128,7 @@ run_root chown -R root:root "${rootfs_tree}"
 log "Installing pinned guest runtime (Node.js + OpenClaw)"
 "${script_dir}/install-guest-runtime.sh" "${rootfs_tree}" "${arch}"
 
-rootfs_size="${VALINOR_ROOTFS_SIZE:-2G}"
+rootfs_size="${HEIMDALL_ROOTFS_SIZE:-2G}"
 truncate -s "${rootfs_size}" "${rootfs_img}"
 
 log "Building ext4 rootfs image (${rootfs_size})"
@@ -137,7 +137,7 @@ run_root mkfs.ext4 -d "${rootfs_tree}" -F "${rootfs_img}" >/dev/null
 run_root mkdir -p "${output_dir}"
 run_root install -m 0644 "${kernel_tmp}" "${output_dir}/vmlinux"
 run_root install -m 0644 "${rootfs_img}" "${output_dir}/rootfs.ext4"
-run_root install -m 0644 "${rootfs_tree}/etc/valinor/runtime-versions.json" "${output_dir}/runtime-versions.json"
+run_root install -m 0644 "${rootfs_tree}/etc/heimdall/runtime-versions.json" "${output_dir}/runtime-versions.json"
 
 log "Artifacts written:"
 log "  ${output_dir}/vmlinux"

@@ -45,7 +45,7 @@ export function Hero() {
             className="text-base md:text-lg leading-relaxed max-w-[520px]"
             style={{ color: c.textSec, transition: "color 0.4s" }}
           >
-            Valinor gives teams and enterprises the visibility, isolation,
+            Heimdall gives teams and enterprises the visibility, isolation,
             governance, and auditability needed to use AI agents securely and
             with confidence.
           </p>

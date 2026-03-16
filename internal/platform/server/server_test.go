@@ -10,13 +10,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/activity"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/server"
-	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/FredAmartey/heimdall/internal/activity"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/server"
+	"github.com/FredAmartey/heimdall/internal/rbac"
 )
 
 func TestServer_HealthCheck(t *testing.T) {
@@ -77,7 +77,7 @@ func TestServer_StartStop(t *testing.T) {
 const testTenant = "00000000-0000-0000-0000-000000000123"
 
 func newTestDeps() (server.Dependencies, *auth.TokenService) {
-	tokenSvc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	tokenSvc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 	rbacEngine := rbac.NewEvaluator(nil)
 	// Register roles for both a named test tenant and the empty tenant.
 	// Tests that use identities without TenantID rely on the empty-tenant

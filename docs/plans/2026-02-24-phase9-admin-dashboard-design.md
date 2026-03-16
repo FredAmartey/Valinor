@@ -2,14 +2,14 @@
 
 ## Goal
 
-Build the Valinor admin dashboard — a Next.js web application that gives platform admins and tenant admins visibility and control over the Valinor control plane. Phase 9, Slice 1 delivers the application shell (auth, navigation, layout) plus the Overview dashboard and Tenant Management views.
+Build the Heimdall admin dashboard — a Next.js web application that gives platform admins and tenant admins visibility and control over the Heimdall control plane. Phase 9, Slice 1 delivers the application shell (auth, navigation, layout) plus the Overview dashboard and Tenant Management views.
 
 ## Scope
 
 ### In scope (Slice 1)
 
 - Next.js 15 App Router scaffold with TypeScript strict mode
-- Authentication via NextAuth.js v5 wrapping Valinor's existing OIDC + JWT flow
+- Authentication via NextAuth.js v5 wrapping Heimdall's existing OIDC + JWT flow
 - Navigation shell: collapsible sidebar, top bar with breadcrumbs and user menu
 - Overview dashboard (platform admin and tenant admin variants)
 - Tenant management: list, detail, create (platform admin only)
@@ -99,14 +99,14 @@ dashboard/
 ## Authentication Flow
 
 1. User visits dashboard. NextAuth middleware checks session
-2. No session: redirect to `/login`. NextAuth initiates OIDC flow against Valinor `/auth/login`
-3. Valinor redirects to external OIDC provider (Google, Okta, etc.)
-4. Provider callback hits Valinor `/auth/callback`. Valinor issues JWT (access + refresh)
+2. No session: redirect to `/login`. NextAuth initiates OIDC flow against Heimdall `/auth/login`
+3. Heimdall redirects to external OIDC provider (Google, Okta, etc.)
+4. Provider callback hits Heimdall `/auth/callback`. Heimdall issues JWT (access + refresh)
 5. NextAuth receives JWT pair, stores in encrypted HTTP-only session cookie
-6. Dashboard API calls attach Valinor JWT as `Authorization: Bearer <token>`
-7. Token refresh: NextAuth `jwt` callback checks expiry, calls Valinor `POST /auth/token/refresh` transparently
+6. Dashboard API calls attach Heimdall JWT as `Authorization: Bearer <token>`
+7. Token refresh: NextAuth `jwt` callback checks expiry, calls Heimdall `POST /auth/token/refresh` transparently
 
-No standalone auth. Dashboard has zero user/password storage. Purely a client to Valinor's existing OIDC + JWT system.
+No standalone auth. Dashboard has zero user/password storage. Purely a client to Heimdall's existing OIDC + JWT system.
 
 ### Route Protection
 
@@ -311,14 +311,14 @@ Test files co-located: `*.test.tsx` next to component. Playwright tests in `test
 
 | Risk | Mitigation |
 |------|------------|
-| OIDC flow mismatch between NextAuth and Valinor | Test auth flow in isolation first. Valinor has dev mode with bypassed OIDC |
-| CORS between dashboard and API | Configure Valinor to allow dashboard origin. Fail-fast on first API call |
+| OIDC flow mismatch between NextAuth and Heimdall | Test auth flow in isolation first. Heimdall has dev mode with bypassed OIDC |
+| CORS between dashboard and API | Configure Heimdall to allow dashboard origin. Fail-fast on first API call |
 | shadcn/ui breaking changes | Components are copied in, not imported. Pin versions in generation |
 | Scope creep into other views | Strict slice boundary: only Overview + Tenants in Slice 1 |
 
 ### Rollback
 
-Dashboard is a separate process with no Go code changes. Rollback is: stop the dashboard process. Valinor API is unaffected.
+Dashboard is a separate process with no Go code changes. Rollback is: stop the dashboard process. Heimdall API is unaffected.
 
 ---
 

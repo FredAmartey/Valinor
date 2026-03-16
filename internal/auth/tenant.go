@@ -55,7 +55,7 @@ func (tr *TenantResolver) ResolveFromRequest(ctx context.Context, r *http.Reques
 }
 
 // ResolveFromOrigin extracts the tenant slug from an Origin header URL
-// (e.g. "https://gondolin.valinor.example.com") and looks up the tenant ID.
+// (e.g. "https://gondolin.heimdall.example.com") and looks up the tenant ID.
 func (tr *TenantResolver) ResolveFromOrigin(ctx context.Context, origin string) (string, error) {
 	slug, err := tr.extractSlugFromOrigin(origin)
 	if err != nil {
@@ -77,7 +77,7 @@ func (tr *TenantResolver) extractSlugFromOrigin(origin string) (string, error) {
 }
 
 // extractSlug parses the subdomain from a host string.
-// Expects format: <slug>.<baseDomain> (e.g. "chelsea-fc.valinor.example.com").
+// Expects format: <slug>.<baseDomain> (e.g. "chelsea-fc.heimdall.example.com").
 func (tr *TenantResolver) extractSlug(host string) (string, error) {
 	// Strip port if present
 	hostname, _, err := net.SplitHostPort(host)

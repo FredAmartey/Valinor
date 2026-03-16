@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/rbac"
 )
 
 // RoleStore handles role database operations within a tenant.

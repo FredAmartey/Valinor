@@ -7,7 +7,7 @@ import type { ChatMessage, WsServerMessage } from "@/lib/types"
 type WsStatus = "connecting" | "connected" | "disconnected" | "error"
 
 const WS_BASE_URL = (
-  process.env.NEXT_PUBLIC_VALINOR_API_URL ?? "http://localhost:8080"
+  process.env.NEXT_PUBLIC_HEIMDALL_API_URL ?? "http://localhost:8080"
 ).replace(/^http/, "ws")
 
 const MAX_RECONNECT_ATTEMPTS = 3

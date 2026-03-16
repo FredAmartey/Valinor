@@ -16,14 +16,14 @@ import (
 // TestFirecrackerDriver_RealBinaryLifecycle exercises the real Firecracker binary.
 // It is intentionally opt-in to keep CI portable.
 func TestFirecrackerDriver_RealBinaryLifecycle(t *testing.T) {
-	if os.Getenv("VALINOR_FIRECRACKER_E2E") != "1" {
-		t.Skip("set VALINOR_FIRECRACKER_E2E=1 to run real Firecracker e2e")
+	if os.Getenv("HEIMDALL_FIRECRACKER_E2E") != "1" {
+		t.Skip("set HEIMDALL_FIRECRACKER_E2E=1 to run real Firecracker e2e")
 	}
 
-	kernelPath := os.Getenv("VALINOR_FIRECRACKER_KERNEL_PATH")
-	rootDrive := os.Getenv("VALINOR_FIRECRACKER_ROOT_DRIVE")
+	kernelPath := os.Getenv("HEIMDALL_FIRECRACKER_KERNEL_PATH")
+	rootDrive := os.Getenv("HEIMDALL_FIRECRACKER_ROOT_DRIVE")
 	if kernelPath == "" || rootDrive == "" {
-		t.Skip("set VALINOR_FIRECRACKER_KERNEL_PATH and VALINOR_FIRECRACKER_ROOT_DRIVE")
+		t.Skip("set HEIMDALL_FIRECRACKER_KERNEL_PATH and HEIMDALL_FIRECRACKER_ROOT_DRIVE")
 	}
 
 	driver := NewFirecrackerDriver(kernelPath, rootDrive, "")

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/auth"
 )
 
 type tenantContextKey struct{}

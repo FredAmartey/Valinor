@@ -8,11 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/auth"
 )
 
 func newTestTokenService() *auth.TokenService {
-	return auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	return auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {

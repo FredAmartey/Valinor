@@ -10,7 +10,7 @@
 
 **Builds on:** Phase 1 foundation — `config.Load()`, `database.Connect()`, `server.New()`, `middleware.*`, `telemetry.*`
 
-**Design Doc:** `docs/plans/2026-02-21-valinor-design.md`
+**Design Doc:** `docs/plans/2026-02-21-heimdall-design.md`
 
 ---
 
@@ -30,23 +30,23 @@ func TestLoad_AuthDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, false, cfg.Auth.DevMode)
-	assert.Equal(t, "valinor", cfg.Auth.JWT.Issuer)
+	assert.Equal(t, "heimdall", cfg.Auth.JWT.Issuer)
 	assert.Equal(t, 24, cfg.Auth.JWT.ExpiryHours)
 	assert.Equal(t, 168, cfg.Auth.JWT.RefreshExpiryHours)
 }
 
 func TestLoad_AuthEnvOverrides(t *testing.T) {
-	os.Setenv("VALINOR_AUTH_DEVMODE", "true")
-	os.Setenv("VALINOR_AUTH_OIDC_ISSUERURL", "https://accounts.google.com")
-	os.Setenv("VALINOR_AUTH_OIDC_CLIENTID", "test-client-id")
-	os.Setenv("VALINOR_AUTH_OIDC_CLIENTSECRET", "test-secret")
-	os.Setenv("VALINOR_AUTH_JWT_SIGNINGKEY", "super-secret-key-at-least-32-chars!!")
+	os.Setenv("HEIMDALL_AUTH_DEVMODE", "true")
+	os.Setenv("HEIMDALL_AUTH_OIDC_ISSUERURL", "https://accounts.google.com")
+	os.Setenv("HEIMDALL_AUTH_OIDC_CLIENTID", "test-client-id")
+	os.Setenv("HEIMDALL_AUTH_OIDC_CLIENTSECRET", "test-secret")
+	os.Setenv("HEIMDALL_AUTH_JWT_SIGNINGKEY", "super-secret-key-at-least-32-chars!!")
 	defer func() {
-		os.Unsetenv("VALINOR_AUTH_DEVMODE")
-		os.Unsetenv("VALINOR_AUTH_OIDC_ISSUERURL")
-		os.Unsetenv("VALINOR_AUTH_OIDC_CLIENTID")
-		os.Unsetenv("VALINOR_AUTH_OIDC_CLIENTSECRET")
-		os.Unsetenv("VALINOR_AUTH_JWT_SIGNINGKEY")
+		os.Unsetenv("HEIMDALL_AUTH_DEVMODE")
+		os.Unsetenv("HEIMDALL_AUTH_OIDC_ISSUERURL")
+		os.Unsetenv("HEIMDALL_AUTH_OIDC_CLIENTID")
+		os.Unsetenv("HEIMDALL_AUTH_OIDC_CLIENTSECRET")
+		os.Unsetenv("HEIMDALL_AUTH_JWT_SIGNINGKEY")
 	}()
 
 	cfg, err := config.Load()
@@ -102,7 +102,7 @@ type JWTConfig struct {
 Add defaults in the `Load` function's confmap:
 ```go
 "auth.devmode":                false,
-"auth.jwt.issuer":             "valinor",
+"auth.jwt.issuer":             "heimdall",
 "auth.jwt.expiryhours":        24,
 "auth.jwt.refreshexpiryhours": 168,
 "auth.oidc.redirecturl":       "http://localhost:8080/auth/callback",
@@ -128,7 +128,7 @@ auth:
     redirecturl: "http://localhost:8080/auth/callback"
   jwt:
     signingkey: "dev-signing-key-change-in-production-must-be-32-chars"
-    issuer: "valinor"
+    issuer: "heimdall"
     expiryhours: 24
     refreshexpiryhours: 168
 ```
@@ -161,11 +161,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 func TestTokenService_CreateAndValidate(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{
 		UserID:      "user-123",
@@ -192,7 +192,7 @@ func TestTokenService_CreateAndValidate(t *testing.T) {
 }
 
 func TestTokenService_CreateRefreshToken(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{
 		UserID:   "user-123",
@@ -210,7 +210,7 @@ func TestTokenService_CreateRefreshToken(t *testing.T) {
 }
 
 func TestTokenService_ExpiredToken(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 0, 0) // 0 hours = expires immediately
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 0, 0) // 0 hours = expires immediately
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
 
@@ -225,8 +225,8 @@ func TestTokenService_ExpiredToken(t *testing.T) {
 }
 
 func TestTokenService_InvalidSignature(t *testing.T) {
-	svc1 := auth.NewTokenService("signing-key-one-must-be-32-chars!!", "valinor", 24, 168)
-	svc2 := auth.NewTokenService("signing-key-two-must-be-32-chars!!", "valinor", 24, 168)
+	svc1 := auth.NewTokenService("signing-key-one-must-be-32-chars!!", "heimdall", 24, 168)
+	svc2 := auth.NewTokenService("signing-key-two-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
 
@@ -239,7 +239,7 @@ func TestTokenService_InvalidSignature(t *testing.T) {
 }
 
 func TestTokenService_MalformedToken(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	_, err := svc.ValidateToken("not.a.jwt")
 	assert.Error(t, err)
@@ -310,7 +310,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type valinorClaims struct {
+type heimdallClaims struct {
 	jwt.RegisteredClaims
 	UserID      string   `json:"uid"`
 	TenantID    string   `json:"tid"`
@@ -349,7 +349,7 @@ func (s *TokenService) CreateRefreshToken(identity *Identity) (string, error) {
 func (s *TokenService) createToken(identity *Identity, tokenType string, expiryHours int) (string, error) {
 	now := time.Now()
 
-	claims := valinorClaims{
+	claims := heimdallClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   identity.UserID,
@@ -370,7 +370,7 @@ func (s *TokenService) createToken(identity *Identity, tokenType string, expiryH
 }
 
 func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &valinorClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &heimdallClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -384,7 +384,7 @@ func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
 		return nil, fmt.Errorf("%w: %v", ErrTokenInvalid, err)
 	}
 
-	claims, ok := token.Claims.(*valinorClaims)
+	claims, ok := token.Claims.(*heimdallClaims)
 	if !ok || !token.Valid {
 		return nil, ErrTokenInvalid
 	}
@@ -463,11 +463,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 func newTestTokenService() *auth.TokenService {
-	return auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	return auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
@@ -748,8 +748,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 func setupTestDB(t *testing.T) (*database.Pool, func()) {
@@ -758,7 +758,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -772,7 +772,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 	require.NoError(t, err)
 
 	// Run migrations
-	err = database.RunMigrations(connStr, "file:///Users/fred/Documents/Valinor/migrations")
+	err = database.RunMigrations(connStr, "file:///Users/fred/Documents/Heimdall/migrations")
 	require.NoError(t, err)
 
 	pool, err := database.Connect(ctx, connStr, 5)
@@ -1108,7 +1108,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 func TestHandler_RefreshToken(t *testing.T) {
@@ -1409,8 +1409,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/rbac"
 )
 
 func TestEvaluator_PermissionGranted(t *testing.T) {
@@ -1524,7 +1524,7 @@ package rbac
 import (
 	"context"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 // Decision represents the result of an authorization check.
@@ -1553,7 +1553,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 // Evaluator is the in-memory RBAC policy evaluation engine.
@@ -1716,8 +1716,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/rbac"
 )
 
 func setIdentity(r *http.Request, identity *auth.Identity) *http.Request {
@@ -1813,7 +1813,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 // RequirePermission returns middleware that checks if the authenticated user
@@ -1892,8 +1892,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 func TestTenantContext_SetsContextValue(t *testing.T) {
@@ -1947,7 +1947,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 type tenantContextKey struct{}
@@ -1996,7 +1996,7 @@ git commit -m "feat(auth): add tenant context middleware for RLS support"
 
 **Files:**
 - Modify: `internal/platform/server/server.go`
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Step 1: Update server to accept Dependencies struct**
 
@@ -2061,7 +2061,7 @@ Add necessary imports for `auth`, `rbac`, `middleware` packages.
 
 **Step 2: Update main.go to wire auth + RBAC**
 
-Update `cmd/valinor/main.go`:
+Update `cmd/heimdall/main.go`:
 ```go
 func run() error {
 	cfg, err := config.Load("config.yaml")
@@ -2072,7 +2072,7 @@ func run() error {
 	logger := telemetry.NewLogger(cfg.Log.Level, cfg.Log.Format)
 	telemetry.SetDefault(logger)
 
-	slog.Info("valinor starting", "version", "0.2.0", "port", cfg.Server.Port)
+	slog.Info("heimdall starting", "version", "0.2.0", "port", cfg.Server.Port)
 
 	ctx := context.Background()
 
@@ -2161,7 +2161,7 @@ func run() error {
 **Step 3: Build and verify**
 
 ```bash
-go build ./cmd/valinor
+go build ./cmd/heimdall
 ```
 Expected: builds successfully.
 
@@ -2169,7 +2169,7 @@ Expected: builds successfully.
 
 ```bash
 # Start server in dev mode
-VALINOR_AUTH_DEVMODE=true ./bin/valinor &
+HEIMDALL_AUTH_DEVMODE=true ./bin/heimdall &
 
 # Test unauthenticated request
 curl -s http://localhost:8080/healthz | jq .
@@ -2193,7 +2193,7 @@ Expected: all unit tests pass.
 **Step 6: Commit**
 
 ```bash
-git add internal/platform/server/server.go cmd/valinor/main.go
+git add internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat(auth): wire auth middleware, RBAC engine, and dev mode into server"
 ```
 
@@ -2220,8 +2220,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/rbac"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/rbac"
 )
 
 func TestIntegration_AuthRBACFlow(t *testing.T) {
@@ -2264,7 +2264,7 @@ func TestIntegration_AuthRBACFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Auth services
-	tokenSvc := auth.NewTokenService("integration-test-key-must-be-32!!", "valinor", 24, 168)
+	tokenSvc := auth.NewTokenService("integration-test-key-must-be-32!!", "heimdall", 24, 168)
 	store := auth.NewStore(pool)
 
 	// Load identity and create token

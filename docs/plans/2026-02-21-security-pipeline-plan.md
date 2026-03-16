@@ -18,7 +18,7 @@
 **Step 1: Create CLAUDE.md at repo root**
 
 ```markdown
-# Valinor — Project Rules
+# Heimdall — Project Rules
 
 ## Security
 

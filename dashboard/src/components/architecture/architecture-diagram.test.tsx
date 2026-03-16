@@ -14,7 +14,7 @@ describe("ArchitectureDiagram", () => {
     )
 
     expect(screen.getByText("Users and operators")).toBeInTheDocument()
-    expect(screen.getByText("Valinor control plane")).toBeInTheDocument()
+    expect(screen.getByText("Heimdall control plane")).toBeInTheDocument()
     expect(screen.getByText("Policy and approvals")).toBeInTheDocument()
     expect(screen.getByText("Activity and audit")).toBeInTheDocument()
     expect(screen.getByText("Teams runtime")).toBeInTheDocument()

@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
 )
 
 type stubOutboxProviderCredentialResolver struct {

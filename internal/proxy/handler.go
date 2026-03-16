@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/FredAmartey/heimdall/internal/activity"
+	"github.com/FredAmartey/heimdall/internal/approvals"
+	auditlog "github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	httpjson "github.com/FredAmartey/heimdall/internal/platform/httputil"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/rbac"
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/activity"
-	"github.com/valinor-ai/valinor/internal/approvals"
-	auditlog "github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	httpjson "github.com/valinor-ai/valinor/internal/platform/httputil"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/rbac"
 )
 
 // AgentLookup provides agent instance lookups for the proxy handler.

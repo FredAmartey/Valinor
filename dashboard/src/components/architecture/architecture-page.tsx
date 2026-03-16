@@ -196,7 +196,7 @@ export function ArchitecturePage() {
               className="mt-6 max-w-[60ch] text-base leading-relaxed md:text-lg"
               style={{ color: c.textSec, transition: "color 0.4s ease" }}
             >
-              Valinor is designed to keep high-access agents observable, isolated,
+              Heimdall is designed to keep high-access agents observable, isolated,
               governable, and auditable across the full action lifecycle. This is
               the system shape behind that promise.
             </p>
@@ -224,7 +224,7 @@ export function ArchitecturePage() {
                   transition: "transform 0.2s ease",
                 }}
               >
-                Talk to Valinor
+                Talk to Heimdall
               </a>
             </div>
           </div>
@@ -253,7 +253,7 @@ export function ArchitecturePage() {
               />
               <GlassCard
                 title="Lifecycle controls"
-                detail="Valinor secures what agents receive, what they do, and what they send before risky behavior becomes real damage."
+                detail="Heimdall secures what agents receive, what they do, and what they send before risky behavior becomes real damage."
               />
             </div>
           </div>
@@ -263,7 +263,7 @@ export function ArchitecturePage() {
           <SectionHeading
             eyebrow="System"
             title="A layered trust model, not a single checkpoint"
-            description="Valinor's control plane, policy surfaces, activity ledger, audit ledger, channels, and runtime tiers work together to make broad-access agents safer to trust."
+            description="Heimdall's control plane, policy surfaces, activity ledger, audit ledger, channels, and runtime tiers work together to make broad-access agents safer to trust."
           />
           <ArchitectureDiagram />
         </section>
@@ -285,7 +285,7 @@ export function ArchitecturePage() {
           <SectionHeading
             eyebrow="Lifecycle security"
             title="Security before, during, and after agent execution"
-            description="Valinor does not treat security as a single gate around the runtime. It applies checks and controls across ingress, execution, and egress."
+            description="Heimdall does not treat security as a single gate around the runtime. It applies checks and controls across ingress, execution, and egress."
           />
           <div className="grid gap-5 lg:grid-cols-3">
             {SECURITY_STAGES.map((item) => (
@@ -348,7 +348,7 @@ export function ArchitecturePage() {
           <SectionHeading
             eyebrow="Channels and integrations"
             title="Real workflows without giving up governance"
-            description="Channels and external systems are where agents produce real effects. Valinor keeps those paths observable, scoped, and reviewable."
+            description="Channels and external systems are where agents produce real effects. Heimdall keeps those paths observable, scoped, and reviewable."
           />
           <div className="grid gap-5 lg:grid-cols-3">
             {DELIVERY_PILLARS.map((item) => (

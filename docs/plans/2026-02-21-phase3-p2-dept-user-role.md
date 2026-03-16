@@ -224,8 +224,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func TestDepartmentStore(t *testing.T) {
@@ -339,7 +339,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // DepartmentStore handles department database operations.
@@ -455,9 +455,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 // withTenantIdentity sets auth identity and tenant context for handler tests.
@@ -617,8 +617,8 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // DepartmentHandler handles department HTTP endpoints.
@@ -829,8 +829,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func TestUserStore(t *testing.T) {
@@ -973,7 +973,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // UserStore handles user database operations within a tenant.
@@ -1132,8 +1132,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func TestUserHandler(t *testing.T) {
@@ -1303,8 +1303,8 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // UserHandler handles user HTTP endpoints within a tenant.
@@ -1572,8 +1572,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func TestRoleStore(t *testing.T) {
@@ -1719,7 +1719,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // RoleStore handles role database operations within a tenant.
@@ -1882,8 +1882,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func TestRoleHandler(t *testing.T) {
@@ -2051,8 +2051,8 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // RoleHandler handles role HTTP endpoints within a tenant.
@@ -2396,10 +2396,10 @@ git commit -m "feat: wire department/user/role routes with RBAC middleware"
 
 ### Task 11: Main.go Wiring
 
-Create and inject the new handlers in `cmd/valinor/main.go`.
+Create and inject the new handlers in `cmd/heimdall/main.go`.
 
 **Files:**
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Step 1: Add handler creation after tenant handler block**
 
@@ -2440,13 +2440,13 @@ srv := server.New(addr, server.Dependencies{
 
 **Step 2: Verify compilation and startup**
 
-Run: `go build ./cmd/valinor/`
+Run: `go build ./cmd/heimdall/`
 Expected: Compiles successfully.
 
 **Step 3: Commit**
 
 ```bash
-git add cmd/valinor/main.go
+git add cmd/heimdall/main.go
 git commit -m "feat: wire department/user/role handlers in main.go"
 ```
 
@@ -2474,11 +2474,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/platform/server"
-	"github.com/valinor-ai/valinor/internal/rbac"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/server"
+	"github.com/heimdall-ai/heimdall/internal/rbac"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func TestEndToEnd_TenantOrgSetup(t *testing.T) {

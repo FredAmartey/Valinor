@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Deliver the Valinor admin dashboard shell with auth, overview dashboard, and tenant management views.
+**Goal:** Deliver the Heimdall admin dashboard shell with auth, overview dashboard, and tenant management views.
 
-**Architecture:** Separate Next.js 15 process in `dashboard/` talking to the Valinor Go API over HTTP. Server Components by default, `"use client"` only for interactive leaves. TanStack Query for client-side server state, NextAuth.js v5 for auth wrapping Valinor's OIDC flow.
+**Architecture:** Separate Next.js 15 process in `dashboard/` talking to the Heimdall Go API over HTTP. Server Components by default, `"use client"` only for interactive leaves. TanStack Query for client-side server state, NextAuth.js v5 for auth wrapping Heimdall's OIDC flow.
 
 **Tech Stack:** Next.js 15 (App Router), TypeScript (strict), Tailwind CSS v4, shadcn/ui, TanStack Query v5, NextAuth.js v5 (beta), Geist font, @phosphor-icons/react, Vitest, Playwright
 
@@ -29,7 +29,7 @@
 Run from repo root:
 
 ```bash
-cd /Users/fred/Documents/Valinor
+cd /Users/fred/Documents/Heimdall
 npx create-next-app@latest dashboard --yes
 ```
 
@@ -368,7 +368,7 @@ Create `dashboard/src/lib/api.ts`:
 import { auth } from "@/lib/auth"
 import type { ApiErrorResponse } from "@/lib/types"
 
-const API_BASE_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+const API_BASE_URL = process.env.HEIMDALL_API_URL ?? "http://localhost:8080"
 
 export class ApiError extends Error {
   constructor(
@@ -556,7 +556,7 @@ Create `dashboard/src/lib/api-client.ts`:
 import { ApiError, buildUrl } from "@/lib/api"
 import type { ApiErrorResponse } from "@/lib/types"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_VALINOR_API_URL ?? "http://localhost:8080"
+const API_BASE_URL = process.env.NEXT_PUBLIC_HEIMDALL_API_URL ?? "http://localhost:8080"
 
 /**
  * Client-side API function. Used in "use client" components via TanStack Query.
@@ -635,8 +635,8 @@ git commit -m "feat(dashboard): add client-side API client for TanStack Query"
 Create `dashboard/.env.local`:
 
 ```
-VALINOR_API_URL=http://localhost:8080
-NEXT_PUBLIC_VALINOR_API_URL=http://localhost:8080
+HEIMDALL_API_URL=http://localhost:8080
+NEXT_PUBLIC_HEIMDALL_API_URL=http://localhost:8080
 AUTH_SECRET=dev-secret-change-in-production-must-be-32-chars
 AUTH_URL=http://localhost:3000
 ```
@@ -677,20 +677,20 @@ declare module "next-auth/jwt" {
   }
 }
 
-const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+const HEIMDALL_API_URL = process.env.HEIMDALL_API_URL ?? "http://localhost:8080"
 
 export const authConfig: NextAuthConfig = {
   providers: [
     {
-      id: "valinor",
-      name: "Valinor",
+      id: "heimdall",
+      name: "Heimdall",
       type: "oidc",
-      issuer: VALINOR_API_URL,
-      clientId: process.env.AUTH_VALINOR_CLIENT_ID ?? "dashboard",
-      clientSecret: process.env.AUTH_VALINOR_CLIENT_SECRET ?? "",
-      authorization: { url: `${VALINOR_API_URL}/auth/login`, params: { scope: "openid profile email" } },
-      token: { url: `${VALINOR_API_URL}/auth/callback` },
-      userinfo: { url: `${VALINOR_API_URL}/api/v1/users/me` },
+      issuer: HEIMDALL_API_URL,
+      clientId: process.env.AUTH_HEIMDALL_CLIENT_ID ?? "dashboard",
+      clientSecret: process.env.AUTH_HEIMDALL_CLIENT_SECRET ?? "",
+      authorization: { url: `${HEIMDALL_API_URL}/auth/login`, params: { scope: "openid profile email" } },
+      token: { url: `${HEIMDALL_API_URL}/auth/callback` },
+      userinfo: { url: `${HEIMDALL_API_URL}/api/v1/users/me` },
       profile(profile) {
         return {
           id: profile.sub ?? profile.id,
@@ -720,9 +720,9 @@ export const authConfig: NextAuthConfig = {
         return token
       }
 
-      // Token expired: refresh via Valinor API
+      // Token expired: refresh via Heimdall API
       try {
-        const res = await fetch(`${VALINOR_API_URL}/auth/token/refresh`, {
+        const res = await fetch(`${HEIMDALL_API_URL}/auth/token/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refresh_token: token.refreshToken }),
@@ -785,13 +785,13 @@ export const config = {
 cd dashboard && npm run build
 ```
 
-Expected: Build succeeds (auth won't function without a running Valinor API, but it should compile).
+Expected: Build succeeds (auth won't function without a running Heimdall API, but it should compile).
 
 **Step 6: Commit**
 
 ```bash
 git add src/lib/auth.ts src/middleware.ts src/app/api/auth/ .env.local
-git commit -m "feat(dashboard): configure NextAuth v5 with Valinor OIDC provider"
+git commit -m "feat(dashboard): configure NextAuth v5 with Heimdall OIDC provider"
 ```
 
 ---
@@ -1033,7 +1033,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-60 flex-col border-r border-zinc-200 bg-white">
       <div className="flex h-14 items-center border-b border-zinc-200 px-4">
-        <span className="text-lg font-semibold tracking-tight text-zinc-900">Valinor</span>
+        <span className="text-lg font-semibold tracking-tight text-zinc-900">Heimdall</span>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3">
         {navItems.map((item) => (
@@ -1250,8 +1250,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Valinor Dashboard",
-  description: "Admin dashboard for the Valinor AI agent control plane",
+  title: "Heimdall Dashboard",
+  description: "Admin dashboard for the Heimdall AI agent control plane",
 }
 
 export default function RootLayout({
@@ -1294,7 +1294,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6 text-center">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Valinor Dashboard
+            Heimdall Dashboard
           </h1>
           <p className="mt-2 text-sm text-zinc-500">
             Sign in to manage your AI agent infrastructure.
@@ -1303,7 +1303,7 @@ export default function LoginPage() {
         <form
           action={async () => {
             "use server"
-            await signIn("valinor", { redirectTo: "/" })
+            await signIn("heimdall", { redirectTo: "/" })
           }}
         >
           <button
@@ -1356,8 +1356,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Valinor Dashboard",
-  description: "Admin dashboard for the Valinor AI agent control plane",
+  title: "Heimdall Dashboard",
+  description: "Admin dashboard for the Heimdall AI agent control plane",
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -2753,7 +2753,7 @@ import { test, expect } from "@playwright/test"
 test.describe("Dashboard smoke tests", () => {
   test("login page renders", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByText("Valinor Dashboard")).toBeVisible()
+    await expect(page.getByText("Heimdall Dashboard")).toBeVisible()
     await expect(page.getByText("Sign in with SSO")).toBeVisible()
   })
 
@@ -2814,12 +2814,12 @@ Expected: No errors.
 cd dashboard && npx playwright test
 ```
 
-Expected: Login page smoke tests pass (auth redirect may fail without running Valinor API, which is expected).
+Expected: Login page smoke tests pass (auth redirect may fail without running Heimdall API, which is expected).
 
 **Step 5: Run Go tests to verify CORS didn't break anything**
 
 ```bash
-cd /Users/fred/Documents/Valinor && go test ./...
+cd /Users/fred/Documents/Heimdall && go test ./...
 ```
 
 Expected: All existing Go tests pass.

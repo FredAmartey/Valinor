@@ -2,7 +2,7 @@
 
 ## Goal
 
-End-to-end tool execution: register an MCP server, provision an agent with its tools, send a message, OpenClaw calls a tool, valinor-agent validates and executes via MCP JSON-RPC 2.0, result returned to OpenClaw, final response back to user.
+End-to-end tool execution: register an MCP server, provision an agent with its tools, send a message, OpenClaw calls a tool, heimdall-agent validates and executes via MCP JSON-RPC 2.0, result returned to OpenClaw, final response back to user.
 
 ## Delivery
 
@@ -15,7 +15,7 @@ Single PR touching backend only (Go). No dashboard changes.
 Four components:
 
 1. **Connector injection** — wire `connectorStore.ListForAgent()` into orchestrator config push
-2. **MCP JSON-RPC client** — new HTTP client in valinor-agent implementing `tools/call`
+2. **MCP JSON-RPC client** — new HTTP client in heimdall-agent implementing `tools/call`
 3. **Agentic tool loop** — modify OpenClaw handler to execute tools and loop until final response
 4. **Audit events** — emit `tool.executed` and `tool.failed` from agent
 
@@ -54,8 +54,8 @@ Four components:
 
 - Modify: `internal/orchestrator/handler.go` — inject connectors into config push
 - Modify: `internal/proxy/push.go` — add connectors param to `PushConfig`
-- Modify: `cmd/valinor-agent/agent.go` — parse and store connectors from config update
-- Modify: `cmd/valinor/main.go` — wire connector store into orchestrator handler
+- Modify: `cmd/heimdall-agent/agent.go` — parse and store connectors from config update
+- Modify: `cmd/heimdall/main.go` — wire connector store into orchestrator handler
 
 ---
 
@@ -105,7 +105,7 @@ Response:
 
 ### Files
 
-- Create: `cmd/valinor-agent/mcp.go` — MCP client + connector resolver
+- Create: `cmd/heimdall-agent/mcp.go` — MCP client + connector resolver
 
 ---
 
@@ -157,7 +157,7 @@ The agent accumulates messages across loop iterations and sends the full convers
 
 ### Files
 
-- Modify: `cmd/valinor-agent/openclaw.go` — implement agentic loop with tool execution
+- Modify: `cmd/heimdall-agent/openclaw.go` — implement agentic loop with tool execution
 
 ---
 
@@ -183,7 +183,7 @@ The agent sends audit events via `TypeToolBlocked` frame type (already exists fo
 - Modify: `internal/audit/audit.go` — add constants
 - Modify: `internal/proxy/protocol.go` — add frame types
 - Modify: `internal/proxy/handler.go` — handle new frame types, forward to audit logger
-- Modify: `cmd/valinor-agent/openclaw.go` — emit frames after tool execution
+- Modify: `cmd/heimdall-agent/openclaw.go` — emit frames after tool execution
 
 ---
 

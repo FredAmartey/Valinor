@@ -8,7 +8,7 @@ Usage:
 
 Examples:
   bootstrap-linux-kvm.sh v1.11.0
-  bootstrap-linux-kvm.sh v1.11.0 /var/lib/valinor
+  bootstrap-linux-kvm.sh v1.11.0 /var/lib/heimdall
 EOF
 }
 
@@ -18,7 +18,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 release_tag="${1:-}"
-artifact_dir="${2:-/var/lib/valinor}"
+artifact_dir="${2:-/var/lib/heimdall}"
 if [[ -z "${release_tag}" ]]; then
   usage
   exit 1
@@ -34,7 +34,7 @@ cat <<EOF
 
 Bootstrap complete.
 
-Use these settings in Valinor:
+Use these settings in Heimdall:
   orchestrator.driver=firecracker
   orchestrator.firecracker.kernel_path=${artifact_dir}/vmlinux
   orchestrator.firecracker.root_drive=${artifact_dir}/rootfs.ext4
@@ -44,8 +44,8 @@ Pinned guest runtime manifest:
   ${artifact_dir}/runtime-versions.json
 
 Quick e2e test:
-  VALINOR_FIRECRACKER_E2E=1 \\
-  VALINOR_FIRECRACKER_KERNEL_PATH=${artifact_dir}/vmlinux \\
-  VALINOR_FIRECRACKER_ROOT_DRIVE=${artifact_dir}/rootfs.ext4 \\
+  HEIMDALL_FIRECRACKER_E2E=1 \\
+  HEIMDALL_FIRECRACKER_KERNEL_PATH=${artifact_dir}/vmlinux \\
+  HEIMDALL_FIRECRACKER_ROOT_DRIVE=${artifact_dir}/rootfs.ext4 \\
   go test ./internal/orchestrator -run TestFirecrackerDriver_RealBinaryLifecycle -v
 EOF

@@ -52,7 +52,7 @@ const (
 	OutboxStatusDead            OutboxStatus = "dead"
 )
 
-// ChannelLink maps an external channel identity to a Valinor user in a tenant.
+// ChannelLink maps an external channel identity to a Heimdall user in a tenant.
 type ChannelLink struct {
 	ID             uuid.UUID `json:"id"`
 	TenantID       uuid.UUID `json:"tenant_id"`

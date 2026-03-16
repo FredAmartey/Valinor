@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 // KBStore queries knowledge_bases and knowledge_base_grants.

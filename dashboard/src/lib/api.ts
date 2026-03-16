@@ -4,7 +4,7 @@ import type { ApiErrorResponse } from "@/lib/types"
 
 export { ApiError }
 
-const API_BASE_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+const API_BASE_URL = process.env.HEIMDALL_API_URL ?? "http://localhost:8080"
 
 export function buildUrl(path: string, params?: Record<string, string>): string {
   const url = new URL(path, API_BASE_URL)
@@ -36,8 +36,8 @@ export async function api<T>(
       "Content-Type": "application/json",
       ...(accessToken
         ? { Authorization: `Bearer ${accessToken}` }
-        : process.env.VALINOR_DEV_TOKEN
-          ? { Authorization: `Bearer ${process.env.VALINOR_DEV_TOKEN}` }
+        : process.env.HEIMDALL_DEV_TOKEN
+          ? { Authorization: `Bearer ${process.env.HEIMDALL_DEV_TOKEN}` }
           : {}),
       ...fetchOptions.headers,
     },

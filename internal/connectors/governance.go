@@ -3,7 +3,7 @@ package connectors
 import (
 	"errors"
 
-	"github.com/valinor-ai/valinor/internal/policies"
+	"github.com/FredAmartey/heimdall/internal/policies"
 )
 
 type GovernanceResult struct {

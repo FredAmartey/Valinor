@@ -7,7 +7,7 @@
 ### Global ingress switch
 
 - Config key: `channels.ingress.enabled`
-- Environment override: `VALINOR_CHANNELS_INGRESS_ENABLED`
+- Environment override: `HEIMDALL_CHANNELS_INGRESS_ENABLED`
 - Effect: disables all channel ingress when `false`.
 
 ### Per-provider switches

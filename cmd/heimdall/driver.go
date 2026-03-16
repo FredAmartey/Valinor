@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
 )
 
 const (
@@ -85,12 +85,12 @@ func validateFirecrackerPrereqs(cfg config.FirecrackerConfig, devMode bool) (orc
 		return jailerCfg, err
 	}
 
-	binary := strings.TrimSpace(os.Getenv("VALINOR_FIRECRACKER_BIN"))
+	binary := strings.TrimSpace(os.Getenv("HEIMDALL_FIRECRACKER_BIN"))
 	if binary == "" {
 		binary = "firecracker"
 	}
 	if _, err := exec.LookPath(binary); err != nil {
-		return jailerCfg, fmt.Errorf("firecracker binary %q not found in PATH (set VALINOR_FIRECRACKER_BIN to override)", binary)
+		return jailerCfg, fmt.Errorf("firecracker binary %q not found in PATH (set HEIMDALL_FIRECRACKER_BIN to override)", binary)
 	}
 	if cfg.Workspace.Enabled && cfg.Workspace.QuotaMB <= 0 {
 		return jailerCfg, fmt.Errorf("firecracker workspace quotamb must be > 0 when workspace is enabled")

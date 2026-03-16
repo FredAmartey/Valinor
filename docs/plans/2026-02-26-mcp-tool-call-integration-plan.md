@@ -4,7 +4,7 @@
 
 **Goal:** Wire end-to-end tool execution: connector injection at provision/config → MCP JSON-RPC 2.0 client in agent → agentic tool loop with OpenClaw → audit events for tool calls.
 
-**Architecture:** Extend config push payload to include connectors from the DB. Add an MCP client in the valinor-agent that implements `tools/call` over JSON-RPC 2.0. Modify the OpenClaw handler to loop: execute allowed tool calls via MCP, feed results back to OpenClaw, repeat until final text response.
+**Architecture:** Extend config push payload to include connectors from the DB. Add an MCP client in the heimdall-agent that implements `tools/call` over JSON-RPC 2.0. Modify the OpenClaw handler to loop: execute allowed tool calls via MCP, feed results back to OpenClaw, repeat until final text response.
 
 **Tech Stack:** Go 1.25, net/http, JSON-RPC 2.0, pgx/v5
 
@@ -77,7 +77,7 @@ git commit -m "feat(proxy): add tool_executed and tool_failed frame types"
 **Files:**
 - Modify: `internal/proxy/push.go`
 - Modify: `internal/orchestrator/handler.go`
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Step 1: Add connectors parameter to PushConfig**
 
@@ -128,7 +128,7 @@ type ConfigPusher interface {
 
 **Step 3: Update the configPusherAdapter in main.go**
 
-In `cmd/valinor/main.go`, the `configPusherAdapter` struct's `PushConfig` method needs to accept and pass through the connectors parameter:
+In `cmd/heimdall/main.go`, the `configPusherAdapter` struct's `PushConfig` method needs to accept and pass through the connectors parameter:
 
 ```go
 func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string, connectors []map[string]any) error {
@@ -202,7 +202,7 @@ Note: The handler needs access to the DB pool for `WithTenantConnection`. Add it
 
 **Step 5: Wire connector store in main.go**
 
-In `cmd/valinor/main.go`, update the orchestrator handler construction:
+In `cmd/heimdall/main.go`, update the orchestrator handler construction:
 
 ```go
 agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger, connectors.NewStore())
@@ -218,7 +218,7 @@ Expected: success (may require fixing call sites that pass old parameter count)
 **Step 7: Commit**
 
 ```bash
-git add internal/proxy/push.go internal/orchestrator/handler.go cmd/valinor/main.go
+git add internal/proxy/push.go internal/orchestrator/handler.go cmd/heimdall/main.go
 git commit -m "feat(orchestrator): inject connectors into agent config push"
 ```
 
@@ -227,7 +227,7 @@ git commit -m "feat(orchestrator): inject connectors into agent config push"
 ### Task 4: Agent Parses Connectors from Config Update
 
 **Files:**
-- Modify: `cmd/valinor-agent/agent.go`
+- Modify: `cmd/heimdall-agent/agent.go`
 
 **Step 1: Add connectors field to Agent struct**
 
@@ -269,13 +269,13 @@ slog.Info("config updated", "tools", len(payload.ToolAllowlist), "connectors", l
 
 **Step 3: Verify**
 
-Run: `go build ./cmd/valinor-agent/...`
+Run: `go build ./cmd/heimdall-agent/...`
 Expected: success
 
 **Step 4: Commit**
 
 ```bash
-git add cmd/valinor-agent/agent.go
+git add cmd/heimdall-agent/agent.go
 git commit -m "feat(agent): parse and store connectors from config update"
 ```
 
@@ -284,12 +284,12 @@ git commit -m "feat(agent): parse and store connectors from config update"
 ### Task 5: MCP JSON-RPC Client
 
 **Files:**
-- Create: `cmd/valinor-agent/mcp.go`
-- Create: `cmd/valinor-agent/mcp_test.go`
+- Create: `cmd/heimdall-agent/mcp.go`
+- Create: `cmd/heimdall-agent/mcp_test.go`
 
 **Step 1: Write the failing test**
 
-Create `cmd/valinor-agent/mcp_test.go`:
+Create `cmd/heimdall-agent/mcp_test.go`:
 
 ```go
 package main
@@ -386,12 +386,12 @@ func TestResolveConnector(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/valinor-agent/ -run TestMCPClient -v`
+Run: `go test ./cmd/heimdall-agent/ -run TestMCPClient -v`
 Expected: FAIL — types and functions not defined
 
 **Step 3: Implement the MCP client**
 
-Create `cmd/valinor-agent/mcp.go`:
+Create `cmd/heimdall-agent/mcp.go`:
 
 ```go
 package main
@@ -539,13 +539,13 @@ func resolveConnector(connectors []AgentConnector, toolName string) (AgentConnec
 
 **Step 4: Run tests**
 
-Run: `go test ./cmd/valinor-agent/ -run "TestMCPClient|TestResolveConnector" -v`
+Run: `go test ./cmd/heimdall-agent/ -run "TestMCPClient|TestResolveConnector" -v`
 Expected: PASS (3 tests)
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor-agent/mcp.go cmd/valinor-agent/mcp_test.go
+git add cmd/heimdall-agent/mcp.go cmd/heimdall-agent/mcp_test.go
 git commit -m "feat(agent): add MCP JSON-RPC 2.0 client with connector resolver"
 ```
 
@@ -554,7 +554,7 @@ git commit -m "feat(agent): add MCP JSON-RPC 2.0 client with connector resolver"
 ### Task 6: Implement Agentic Tool Execution Loop
 
 **Files:**
-- Modify: `cmd/valinor-agent/openclaw.go`
+- Modify: `cmd/heimdall-agent/openclaw.go`
 
 This is the core change. After OpenClaw returns tool_calls and validation passes, execute each tool via MCP, build the result messages, and call OpenClaw again. Loop until no more tool calls or max iterations.
 
@@ -660,16 +660,16 @@ _ = conn.Send(ctx, auditFrame)
 
 **Step 5: Verify**
 
-Run: `go build ./cmd/valinor-agent/...`
+Run: `go build ./cmd/heimdall-agent/...`
 Expected: success
 
-Run: `go test ./cmd/valinor-agent/ -v`
+Run: `go test ./cmd/heimdall-agent/ -v`
 Expected: ALL PASS
 
 **Step 6: Commit**
 
 ```bash
-git add cmd/valinor-agent/agent.go cmd/valinor-agent/openclaw.go
+git add cmd/heimdall-agent/agent.go cmd/heimdall-agent/openclaw.go
 git commit -m "feat(agent): implement agentic tool execution loop with MCP"
 ```
 
@@ -724,7 +724,7 @@ git commit -m "feat(proxy): forward tool execution audit events to logger"
 ### Task 8: Integration Test — Tool Call Loop
 
 **Files:**
-- Create: `cmd/valinor-agent/openclaw_test.go`
+- Create: `cmd/heimdall-agent/openclaw_test.go`
 
 **Step 1: Write integration test**
 
@@ -744,13 +744,13 @@ func TestForwardToOpenClaw_ToolCallLoop(t *testing.T) {
 
 **Step 2: Run test**
 
-Run: `go test ./cmd/valinor-agent/ -run TestForwardToOpenClaw -v`
+Run: `go test ./cmd/heimdall-agent/ -run TestForwardToOpenClaw -v`
 Expected: PASS
 
 **Step 3: Commit**
 
 ```bash
-git add cmd/valinor-agent/openclaw_test.go
+git add cmd/heimdall-agent/openclaw_test.go
 git commit -m "test(agent): add integration test for tool call execution loop"
 ```
 
@@ -765,7 +765,7 @@ Expected: ALL PASS
 
 **Step 2: Build all binaries**
 
-Run: `go build ./cmd/valinor/... && go build ./cmd/valinor-agent/...`
+Run: `go build ./cmd/heimdall/... && go build ./cmd/heimdall-agent/...`
 Expected: success
 
 **Step 3: Lint**
@@ -779,7 +779,7 @@ Expected: no output (all formatted)
 
 ```bash
 # Unit tests
-go test ./cmd/valinor-agent/... -v
+go test ./cmd/heimdall-agent/... -v
 go test ./internal/proxy/... -v
 go test ./internal/orchestrator/... -v
 go test ./internal/audit/... -v
@@ -788,8 +788,8 @@ go test ./internal/audit/... -v
 go test ./...
 
 # Build
-go build ./cmd/valinor/...
-go build ./cmd/valinor-agent/...
+go build ./cmd/heimdall/...
+go build ./cmd/heimdall-agent/...
 
 # Lint
 gofmt -d .

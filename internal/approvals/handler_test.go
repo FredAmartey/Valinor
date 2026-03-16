@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
 )
 
 func TestHandleList_NilPool(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "valinor-agent: %v\n", err)
+		fmt.Fprintf(os.Stderr, "heimdall-agent: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -29,7 +29,7 @@ func run() error {
 		return fmt.Errorf("invalid openclaw endpoint configuration: %w", err)
 	}
 
-	slog.Info("valinor-agent starting",
+	slog.Info("heimdall-agent starting",
 		"transport", *transportFlag,
 		"port", *portFlag,
 		"openclaw_url", *openclawURL,

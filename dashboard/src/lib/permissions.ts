@@ -1,4 +1,4 @@
-// Mirrors cmd/valinor/main.go rbacEngine.RegisterRole() calls.
+// Mirrors cmd/heimdall/main.go rbacEngine.RegisterRole() calls.
 // IMPORTANT: Keep in sync with the backend when roles or permissions change.
 // There is no automated enforcement — a backend-only permission addition will
 // cause the UI to incorrectly hide controls. A future improvement would be to

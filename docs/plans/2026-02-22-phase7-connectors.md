@@ -81,7 +81,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/valinor-ai/valinor/internal/connectors"
+	"github.com/heimdall-ai/heimdall/internal/connectors"
 )
 
 // mockQuerier implements database.Querier for unit tests.
@@ -123,7 +123,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // Store handles connector database operations.
@@ -334,7 +334,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/valinor-ai/valinor/internal/connectors"
+	"github.com/heimdall-ai/heimdall/internal/connectors"
 )
 
 func TestHandleCreate_MissingName(t *testing.T) {
@@ -367,8 +367,8 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // Handler handles connector HTTP endpoints.
@@ -565,7 +565,7 @@ Expected: SUCCESS (no changes yet — baseline)
 
 In `internal/platform/server/server.go`:
 
-1. Add import: `"github.com/valinor-ai/valinor/internal/connectors"`
+1. Add import: `"github.com/heimdall-ai/heimdall/internal/connectors"`
 
 2. Add to `Dependencies` struct (after `AuditHandler` field, line 35):
 ```go
@@ -611,11 +611,11 @@ git commit -m "feat: wire connector handler routes into server"
 ### Task 7: Wire Connector Store and Handler in main.go
 
 **Files:**
-- Modify: `cmd/valinor/main.go:12-23` (imports), `main.go:119-136` (after tenant setup, RBAC section), `main.go:224-240` (Dependencies)
+- Modify: `cmd/heimdall/main.go:12-23` (imports), `main.go:119-136` (after tenant setup, RBAC section), `main.go:224-240` (Dependencies)
 
 **Step 1: Add connector initialization to main.go**
 
-1. Add import: `"github.com/valinor-ai/valinor/internal/connectors"`
+1. Add import: `"github.com/heimdall-ai/heimdall/internal/connectors"`
 
 2. After the RBAC role registration block (line 136) and before the Audit block (line 138), add:
 ```go
@@ -644,7 +644,7 @@ ConnectorHandler:  connectorHandler,
 
 **Step 2: Verify it compiles**
 
-Run: `go build ./cmd/valinor/`
+Run: `go build ./cmd/heimdall/`
 Expected: SUCCESS
 
 **Step 3: Run all tests**
@@ -655,7 +655,7 @@ Expected: PASS
 **Step 4: Commit**
 
 ```bash
-git add cmd/valinor/main.go
+git add cmd/heimdall/main.go
 git commit -m "feat: wire connector store and handler in main.go DI"
 ```
 
@@ -696,7 +696,7 @@ func NewHandler(manager *Manager, pusher ConfigPusher, resolver ConnectorResolve
 
 **Step 2: Fix all callers of NewHandler**
 
-In `cmd/valinor/main.go`, the `NewHandler` call (line 199) needs the new parameter:
+In `cmd/heimdall/main.go`, the `NewHandler` call (line 199) needs the new parameter:
 ```go
 agentHandler = orchestrator.NewHandler(orchManager, pusher, nil)
 ```
@@ -716,7 +716,7 @@ Expected: PASS (existing orchestrator tests pass NewHandler with updated signatu
 **Step 5: Commit**
 
 ```bash
-git add internal/orchestrator/handler.go cmd/valinor/main.go
+git add internal/orchestrator/handler.go cmd/heimdall/main.go
 git commit -m "feat: add ConnectorResolver interface to orchestrator handler"
 ```
 
@@ -769,7 +769,7 @@ type ConfigPusher interface {
 
 **Step 3: Update configPusherAdapter in main.go**
 
-In `cmd/valinor/main.go`, update the adapter method:
+In `cmd/heimdall/main.go`, update the adapter method:
 ```go
 func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string, connectorConfigs []map[string]any) error {
 	return proxy.PushConfig(ctx, a.pool, agentID, cid, config, toolAllowlist, toolPolicies, canaryTokens, connectorConfigs, a.timeout)
@@ -796,7 +796,7 @@ Expected: PASS
 **Step 7: Commit**
 
 ```bash
-git add internal/proxy/push.go internal/orchestrator/handler.go cmd/valinor/main.go
+git add internal/proxy/push.go internal/orchestrator/handler.go cmd/heimdall/main.go
 git commit -m "feat: extend PushConfig with connector configs parameter"
 ```
 
@@ -805,7 +805,7 @@ git commit -m "feat: extend PushConfig with connector configs parameter"
 ### Task 10: Wire ConnectorResolver Adapter in main.go
 
 **Files:**
-- Modify: `cmd/valinor/main.go` (add connectorResolverAdapter, wire into orchestrator)
+- Modify: `cmd/heimdall/main.go` (add connectorResolverAdapter, wire into orchestrator)
 
 **Step 1: Add the adapter type**
 
@@ -866,13 +866,13 @@ agentHandler = orchestrator.NewHandler(orchManager, pusher, connectorResolver)
 
 **Step 3: Verify it compiles**
 
-Run: `go build ./cmd/valinor/`
+Run: `go build ./cmd/heimdall/`
 Expected: SUCCESS
 
 **Step 4: Commit**
 
 ```bash
-git add cmd/valinor/main.go
+git add cmd/heimdall/main.go
 git commit -m "feat: wire connector resolver adapter into orchestrator"
 ```
 
@@ -949,7 +949,7 @@ Expected: PASS
 **Step 4: Commit**
 
 ```bash
-git add internal/orchestrator/handler.go cmd/valinor/main.go
+git add internal/orchestrator/handler.go cmd/heimdall/main.go
 git commit -m "feat: resolve and push connectors during agent configure"
 ```
 
@@ -958,11 +958,11 @@ git commit -m "feat: resolve and push connectors during agent configure"
 ### Task 12: Extend Agent Config Update for Connectors
 
 **Files:**
-- Modify: `cmd/valinor-agent/agent.go:24-32` (Agent struct), `agent.go:132-167` (handleConfigUpdate)
+- Modify: `cmd/heimdall-agent/agent.go:24-32` (Agent struct), `agent.go:132-167` (handleConfigUpdate)
 
 **Step 1: Add connectors field to Agent struct**
 
-In `cmd/valinor-agent/agent.go`:
+In `cmd/heimdall-agent/agent.go`:
 
 1. Add field to Agent struct (after `canaryTokens` field, line 29):
 ```go
@@ -1003,7 +1003,7 @@ slog.Info("config updated", "tools", len(payload.ToolAllowlist), "connectors", l
 
 **Step 2: Verify it compiles**
 
-Run: `go build ./cmd/valinor-agent/`
+Run: `go build ./cmd/heimdall-agent/`
 Expected: SUCCESS
 
 **Step 3: Run all tests**
@@ -1014,7 +1014,7 @@ Expected: PASS
 **Step 4: Commit**
 
 ```bash
-git add cmd/valinor-agent/agent.go
+git add cmd/heimdall-agent/agent.go
 git commit -m "feat: extend agent config update to store connector configs"
 ```
 
@@ -1023,7 +1023,7 @@ git commit -m "feat: extend agent config update to store connector configs"
 ### Task 13: Add RBAC Permissions for Connectors
 
 **Files:**
-- Modify: `cmd/valinor/main.go:124-136` (already partially done in Task 7)
+- Modify: `cmd/heimdall/main.go:124-136` (already partially done in Task 7)
 
 This task ensures `connectors:read` and `connectors:write` are properly registered. If already done in Task 7, verify and skip.
 
@@ -1049,7 +1049,7 @@ Expected: SUCCESS + PASS
 **Step 3: Commit (if changes needed)**
 
 ```bash
-git add cmd/valinor/main.go
+git add cmd/heimdall/main.go
 git commit -m "feat: add connector RBAC permissions to dept_head role"
 ```
 
@@ -1127,7 +1127,7 @@ if h.audit != nil {
 
 **Step 2: Update NewHandler callers**
 
-In `cmd/valinor/main.go`:
+In `cmd/heimdall/main.go`:
 ```go
 connectorHandler = connectors.NewHandler(pool, connectorStore, &connectorAuditAdapter{l: auditLogger})
 ```
@@ -1164,7 +1164,7 @@ Expected: SUCCESS + PASS
 **Step 4: Commit**
 
 ```bash
-git add internal/connectors/handler.go internal/connectors/handler_test.go cmd/valinor/main.go
+git add internal/connectors/handler.go internal/connectors/handler_test.go cmd/heimdall/main.go
 git commit -m "feat: add audit logging to connector create and delete"
 ```
 

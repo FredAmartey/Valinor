@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/FredAmartey/heimdall/internal/activity"
+	"github.com/FredAmartey/heimdall/internal/approvals"
+	"github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/activity"
-	"github.com/valinor-ai/valinor/internal/approvals"
-	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/proxy"
 )
 
 // withTestAuth injects auth identity and tenant context into a request for testing.

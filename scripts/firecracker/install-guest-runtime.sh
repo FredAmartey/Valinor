@@ -11,10 +11,10 @@ Examples:
   install-guest-runtime.sh /tmp/rootfs-tree x86_64
 
 Environment:
-  VALINOR_GUEST_NODE_VERSION            default: v22.22.0
-  VALINOR_GUEST_NODE_SHA256             required when node version overridden
-  VALINOR_GUEST_OPENCLAW_VERSION        default: 2026.2.23
-  VALINOR_GUEST_OPENCLAW_INTEGRITY      required when openclaw version overridden
+  HEIMDALL_GUEST_NODE_VERSION            default: v22.22.0
+  HEIMDALL_GUEST_NODE_SHA256             required when node version overridden
+  HEIMDALL_GUEST_OPENCLAW_VERSION        default: 2026.2.23
+  HEIMDALL_GUEST_OPENCLAW_INTEGRITY      required when openclaw version overridden
 EOF
 }
 
@@ -89,10 +89,10 @@ default_node_sha256_aarch64="1bf1eb9ee63ffc4e5d324c0b9b62cf4a289f44332dfef9607ce
 default_openclaw_version="2026.2.23"
 default_openclaw_integrity="sha512-7I7G898212v3OzUidgM8kZdZYAziT78Dc5zgeqsV2tfCbINtHK0Pdc2rg2eDLoDYAcheLh0fvH5qn/15Yu9q7A=="
 
-node_version="${VALINOR_GUEST_NODE_VERSION:-${default_node_version}}"
-node_sha256="${VALINOR_GUEST_NODE_SHA256:-}"
-openclaw_version="${VALINOR_GUEST_OPENCLAW_VERSION:-${default_openclaw_version}}"
-openclaw_integrity="${VALINOR_GUEST_OPENCLAW_INTEGRITY:-}"
+node_version="${HEIMDALL_GUEST_NODE_VERSION:-${default_node_version}}"
+node_sha256="${HEIMDALL_GUEST_NODE_SHA256:-}"
+openclaw_version="${HEIMDALL_GUEST_OPENCLAW_VERSION:-${default_openclaw_version}}"
+openclaw_integrity="${HEIMDALL_GUEST_OPENCLAW_INTEGRITY:-}"
 
 if [[ -z "${node_sha256}" ]]; then
   if [[ "${node_version}" == "${default_node_version}" ]]; then
@@ -108,7 +108,7 @@ if [[ -z "${node_sha256}" ]]; then
         ;;
     esac
   else
-    die "VALINOR_GUEST_NODE_SHA256 is required when VALINOR_GUEST_NODE_VERSION is overridden"
+    die "HEIMDALL_GUEST_NODE_SHA256 is required when HEIMDALL_GUEST_NODE_VERSION is overridden"
   fi
 fi
 
@@ -116,7 +116,7 @@ if [[ -z "${openclaw_integrity}" ]]; then
   if [[ "${openclaw_version}" == "${default_openclaw_version}" ]]; then
     openclaw_integrity="${default_openclaw_integrity}"
   else
-    die "VALINOR_GUEST_OPENCLAW_INTEGRITY is required when VALINOR_GUEST_OPENCLAW_VERSION is overridden"
+    die "HEIMDALL_GUEST_OPENCLAW_INTEGRITY is required when HEIMDALL_GUEST_OPENCLAW_VERSION is overridden"
   fi
 fi
 
@@ -142,8 +142,8 @@ node_src_dir="${tmp_dir}/node-${node_version}-linux-${node_arch}"
 [[ -x "${node_src_dir}/bin/node" ]] || die "Node binary missing after extraction"
 [[ -x "${node_src_dir}/bin/npm" ]] || die "npm binary missing after extraction"
 
-node_dst_dir="${rootfs_tree}/opt/valinor/node"
-run_root mkdir -p "${rootfs_tree}/opt/valinor"
+node_dst_dir="${rootfs_tree}/opt/heimdall/node"
+run_root mkdir -p "${rootfs_tree}/opt/heimdall"
 run_root rm -rf "${node_dst_dir}"
 run_root mv "${node_src_dir}" "${node_dst_dir}"
 
@@ -160,7 +160,7 @@ fi
 
 log "Verified OpenClaw integrity (${openclaw_version})"
 
-openclaw_prefix="${rootfs_tree}/opt/valinor/openclaw"
+openclaw_prefix="${rootfs_tree}/opt/heimdall/openclaw"
 run_root rm -rf "${openclaw_prefix}"
 run_root mkdir -p "${openclaw_prefix}"
 
@@ -182,9 +182,9 @@ if [[ "${installed_openclaw_version}" != "${openclaw_version}" ]]; then
 fi
 
 run_root mkdir -p "${rootfs_tree}/usr/local/bin"
-run_root ln -sfn /opt/valinor/node/bin/node "${rootfs_tree}/usr/local/bin/node"
-run_root ln -sfn /opt/valinor/node/bin/npm "${rootfs_tree}/usr/local/bin/npm"
-run_root ln -sfn /opt/valinor/openclaw/bin/openclaw "${rootfs_tree}/usr/local/bin/openclaw"
+run_root ln -sfn /opt/heimdall/node/bin/node "${rootfs_tree}/usr/local/bin/node"
+run_root ln -sfn /opt/heimdall/node/bin/npm "${rootfs_tree}/usr/local/bin/npm"
+run_root ln -sfn /opt/heimdall/openclaw/bin/openclaw "${rootfs_tree}/usr/local/bin/openclaw"
 
 runtime_manifest="${tmp_dir}/runtime-versions.json"
 cat >"${runtime_manifest}" <<EOF
@@ -201,11 +201,11 @@ cat >"${runtime_manifest}" <<EOF
 }
 EOF
 
-run_root mkdir -p "${rootfs_tree}/etc/valinor"
-run_root install -m 0644 "${runtime_manifest}" "${rootfs_tree}/etc/valinor/runtime-versions.json"
+run_root mkdir -p "${rootfs_tree}/etc/heimdall"
+run_root install -m 0644 "${runtime_manifest}" "${rootfs_tree}/etc/heimdall/runtime-versions.json"
 
 log "Guest runtime install complete"
 log "  Node.js: ${node_version}"
 log "  OpenClaw: ${openclaw_version}"
-log "  Manifest: ${rootfs_tree}/etc/valinor/runtime-versions.json"
+log "  Manifest: ${rootfs_tree}/etc/heimdall/runtime-versions.json"
 log "Result: PASS"

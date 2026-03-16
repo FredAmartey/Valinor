@@ -5,18 +5,18 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/FredAmartey/heimdall/internal/approvals"
+	"github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/approvals"
-	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/proxy"
 )
 
 type captureConnectorAuditLogger struct {
@@ -35,7 +35,7 @@ func setupResolverTestDB(t *testing.T) (*database.Pool, func()) {
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(

@@ -6,7 +6,7 @@ The current Clerk OIDC integration redirects users to Clerk's hosted login page.
 
 ## Approach
 
-Use `@clerk/clerk-js` (headless SDK, ~40KB) for password verification and social OAuth. Clerk never shows its own UI. Our forms call Clerk's JS API directly, get a session token, and exchange it for Valinor tokens via the existing `POST /auth/exchange` endpoint.
+Use `@clerk/clerk-js` (headless SDK, ~40KB) for password verification and social OAuth. Clerk never shows its own UI. Our forms call Clerk's JS API directly, get a session token, and exchange it for Heimdall tokens via the existing `POST /auth/exchange` endpoint.
 
 ## Auth Flows
 
@@ -17,7 +17,7 @@ Our login form → clerk.client.signIn.create({ identifier, password })
   → Clerk returns SignIn with status "complete"
   → Extract session token from active session
   → POST /auth/exchange { id_token: sessionToken, tenant_slug }
-  → Backend validates via JWKS → returns Valinor access + refresh tokens
+  → Backend validates via JWKS → returns Heimdall access + refresh tokens
   → NextAuth stores in JWT session → redirect to dashboard
 ```
 
@@ -64,7 +64,7 @@ Both cleared → clean slate, no auto-login
 
 Full-page layout: subtle gradient background (zinc-950 → zinc-900) with centered floating card. Shared `AuthCard` wrapper, `SocialButtons` (Google + GitHub), `AuthDivider` ("or continue with" separator).
 
-Dev mode coexistence: when `NEXT_PUBLIC_VALINOR_DEV_MODE=true`, login shows email-only form without Clerk SDK.
+Dev mode coexistence: when `NEXT_PUBLIC_HEIMDALL_DEV_MODE=true`, login shows email-only form without Clerk SDK.
 
 ## Backend Changes
 

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
 )
 
 // requireDocker skips the test if Docker daemon is not available or the test

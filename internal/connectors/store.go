@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 // Store handles connector database operations.

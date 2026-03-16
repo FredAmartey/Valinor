@@ -5,7 +5,7 @@
 
 ## Goal
 
-Implement real Firecracker jailer mode in Valinor so each MicroVM runs in a dedicated chroot with constrained privileges and cgroups.
+Implement real Firecracker jailer mode in Heimdall so each MicroVM runs in a dedicated chroot with constrained privileges and cgroups.
 
 ## Current State
 
@@ -26,8 +26,8 @@ Replace single `jailer_path` toggle with explicit jailer config:
 ```yaml
 orchestrator:
   firecracker:
-    kernel_path: /var/lib/valinor/vmlinux
-    root_drive: /var/lib/valinor/rootfs.ext4
+    kernel_path: /var/lib/heimdall/vmlinux
+    root_drive: /var/lib/heimdall/rootfs.ext4
     jailer:
       enabled: true
       binary_path: /usr/local/bin/jailer

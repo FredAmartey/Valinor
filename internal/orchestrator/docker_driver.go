@@ -21,8 +21,8 @@ import (
 
 const (
 	dockerAgentPort      = 9100
-	dockerContainerLabel = "valinor.agent"
-	dockerTenantLabel    = "valinor.tenant"
+	dockerContainerLabel = "heimdall.agent"
+	dockerTenantLabel    = "heimdall.tenant"
 	dockerStopTimeout    = 10 // seconds
 )
 
@@ -65,7 +65,7 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 		return VMHandle{}, fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", spec.VMID)
+	containerName := fmt.Sprintf("heimdall-%s", spec.VMID)
 	hostPortNum := dockerAgentPort + int(spec.VsockCID)
 	if hostPortNum < 1024 || hostPortNum > 65535 {
 		return VMHandle{}, fmt.Errorf("computed host port %d out of valid range for CID %d", hostPortNum, spec.VsockCID)
@@ -170,7 +170,7 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 			return VMHandle{}, netErr
 		}
 		netCfg.EndpointsConfig = map[string]*network.EndpointSettings{
-			fmt.Sprintf("valinor-net-%s", spec.TenantID): {NetworkID: netID},
+			fmt.Sprintf("heimdall-net-%s", spec.TenantID): {NetworkID: netID},
 		}
 	}
 
@@ -209,7 +209,7 @@ func (d *DockerDriver) Stop(ctx context.Context, id string) error {
 		return fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", id)
+	containerName := fmt.Sprintf("heimdall-%s", id)
 	timeout := dockerStopTimeout
 	err := d.cli.ContainerStop(ctx, containerName, container.StopOptions{Timeout: &timeout})
 	if err != nil {
@@ -225,7 +225,7 @@ func (d *DockerDriver) IsHealthy(ctx context.Context, id string) (bool, error) {
 		return false, fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", id)
+	containerName := fmt.Sprintf("heimdall-%s", id)
 	info, err := d.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
 		return false, fmt.Errorf("inspecting container %s: %w", containerName, err)
@@ -239,7 +239,7 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 		return fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", id)
+	containerName := fmt.Sprintf("heimdall-%s", id)
 
 	// Inspect before removal to capture the tenant label for network cleanup.
 	var tenantID string
@@ -258,19 +258,19 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 
 	slog.Info("docker container cleaned up", "container", containerName)
 
-	// Remove the tenant network if no other valinor containers use it.
+	// Remove the tenant network if no other Heimdall containers use it.
 	if tenantID != "" {
 		d.cleanupTenantNetwork(ctx, tenantID)
 	}
 	return nil
 }
 
-// cleanupTenantNetwork removes the tenant's Docker network if no valinor
+// cleanupTenantNetwork removes the tenant's Docker network if no Heimdall
 // containers are still connected to it. Best-effort; errors are logged, not returned.
 func (d *DockerDriver) cleanupTenantNetwork(ctx context.Context, tenantID string) {
-	networkName := fmt.Sprintf("valinor-net-%s", tenantID)
+	networkName := fmt.Sprintf("heimdall-net-%s", tenantID)
 
-	// List only valinor containers that belong to this tenant.
+	// List only Heimdall containers that belong to this tenant.
 	tenantFilter := filters.NewArgs(
 		filters.Arg("label", fmt.Sprintf("%s=%s", dockerTenantLabel, tenantID)),
 	)
@@ -296,7 +296,7 @@ func (d *DockerDriver) cleanupTenantNetwork(ctx context.Context, tenantID string
 // ensureTenantNetwork creates an internal Docker bridge network for the tenant
 // if it doesn't already exist. Returns the network ID.
 func (d *DockerDriver) ensureTenantNetwork(ctx context.Context, tenantID string) (string, error) {
-	networkName := fmt.Sprintf("valinor-net-%s", tenantID)
+	networkName := fmt.Sprintf("heimdall-net-%s", tenantID)
 
 	labelFilter := filters.NewArgs(
 		filters.Arg("label", fmt.Sprintf("%s=%s", dockerTenantLabel, tenantID)),

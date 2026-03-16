@@ -13,7 +13,7 @@
 ### Task 1: Record the clean baseline
 
 **Files:**
-- Verify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups`
+- Verify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups`
 
 **Step 1: Confirm branch and workspace**
 
@@ -38,10 +38,10 @@ Expected: PASS.
 ### Task 2: Approval resolution error model
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/approvals/approvals.go`
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/approvals/handler.go`
-- Test: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/approvals/approvals_test.go`
-- Test: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/approvals/handler_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/approvals/approvals.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/approvals/handler.go`
+- Test: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/approvals/approvals_test.go`
+- Test: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/approvals/handler_test.go`
 
 **Step 1: Write/extend failing store tests**
 
@@ -86,8 +86,8 @@ Expected: PASS.
 ### Task 3: Proxy preflight extraction
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/proxy/handler.go`
-- Test: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/proxy/handler_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/proxy/handler.go`
+- Test: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/proxy/handler_test.go`
 
 **Step 1: Add failing regression coverage**
 
@@ -125,12 +125,12 @@ Expected: PASS.
 ### Task 4: Shared JSON writer for touched trust-platform handlers
 
 **Files:**
-- Create: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/platform/httputil/json.go`
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/approvals/handler.go`
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/policies/handler.go`
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/platform/server/server.go`
-- Test: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/approvals/handler_test.go`
-- Test: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/policies/handler_test.go`
+- Create: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/platform/httputil/json.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/approvals/handler.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/policies/handler.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/platform/server/server.go`
+- Test: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/approvals/handler_test.go`
+- Test: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/policies/handler_test.go`
 
 **Step 1: Add a focused helper test only if needed**
 
@@ -160,8 +160,8 @@ Expected: PASS.
 ### Task 5: Outbound phone-number noise reduction
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/channels/outbound_scan.go`
-- Test: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups/internal/channels/outbound_scan_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/channels/outbound_scan.go`
+- Test: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups/internal/channels/outbound_scan_test.go`
 
 **Step 1: Write failing scanner tests**
 
@@ -198,7 +198,7 @@ Expected: PASS.
 ### Task 6: Full verification
 
 **Files:**
-- Verify: `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups`
+- Verify: `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups`
 
 **Step 1: Run targeted package tests**
 

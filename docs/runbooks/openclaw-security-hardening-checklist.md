@@ -1,10 +1,10 @@
 # OpenClaw Security Hardening Checklist
 
-This checklist maps OpenClaw's security posture to Valinor production controls. All items apply to **both product tiers** (Teams: Docker containers, Enterprise: Firecracker microVMs) unless noted.
+This checklist maps OpenClaw's security posture to Heimdall production controls. All items apply to **both product tiers** (Teams: Docker containers, Enterprise: Firecracker microVMs) unless noted.
 
 ## P0 (Required Before Production)
 
-- [x] Enforce loopback-only OpenClaw endpoint defaults in `valinor-agent`. *(Both tiers)*
+- [x] Enforce loopback-only OpenClaw endpoint defaults in `heimdall-agent`. *(Both tiers)*
 - [x] Enforce OpenClaw runtime policy defaults from infrastructure: *(Both tiers)*
   - sandbox enabled (not host/main mode)
   - `tools.exec.workspaceOnly=true`
@@ -26,7 +26,7 @@ This checklist maps OpenClaw's security posture to Valinor production controls. 
 ## P2 (Hierarchical Memory Hardening)
 
 - [ ] Enforce read-only mounts for department/tenant/shared memory volumes. *(Both tiers)*
-- [ ] Validate `valinor_publish_memory` MCP tool permissions in control plane before writing to shared layers. *(Both tiers)*
+- [ ] Validate `heimdall_publish_memory` MCP tool permissions in control plane before writing to shared layers. *(Both tiers)*
 - [ ] Add per-volume mutex to prevent concurrent write corruption. *(Both tiers)*
 - [ ] Knowledge base grant audit trail — log all grant changes. *(Both tiers)*
 
@@ -34,7 +34,7 @@ This checklist maps OpenClaw's security posture to Valinor production controls. 
 
 ```bash
 # endpoint guard + bridge behavior
-go test ./cmd/valinor-agent -run 'OpenClaw|ValidateOpenClawURL' -v
+go test ./cmd/heimdall-agent -run 'OpenClaw|ValidateOpenClawURL' -v
 
 # runtime policy enforcement
 go test ./internal/orchestrator -run 'TestEnforceOpenClawRuntimePolicy' -v

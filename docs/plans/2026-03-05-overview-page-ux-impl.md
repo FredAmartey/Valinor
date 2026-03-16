@@ -17,7 +17,7 @@
 **Files:**
 - Create: `internal/audit/my_activity_handler.go`
 - Modify: `internal/platform/server/server.go:318-325`
-- Modify: `cmd/valinor/main.go` (if handler needs wiring)
+- Modify: `cmd/heimdall/main.go` (if handler needs wiring)
 
 **Step 1: Create the handler file**
 
@@ -36,9 +36,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // HandleMyActivity returns audit events for the authenticated user only.
@@ -149,7 +149,7 @@ Note: No RBAC middleware — the handler scopes to the authenticated user's own 
 
 **Step 3: Verify Go builds**
 
-Run: `cd /Users/fred/Documents/Valinor && go build ./...`
+Run: `cd /Users/fred/Documents/Heimdall && go build ./...`
 Expected: No errors.
 
 **Step 4: Commit**
@@ -383,7 +383,7 @@ export default async function OverviewPage() {
 
 **Step 3: Verify the build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build`
 Expected: Builds with no errors. The old `platform-overview.tsx` is no longer imported.
 
 **Step 4: Commit**
@@ -509,7 +509,7 @@ Key changes:
 
 **Step 2: Verify the build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build`
 Expected: Builds with no errors.
 
 **Step 3: Commit**
@@ -528,7 +528,7 @@ git commit -m "feat: switch RecentEvents between org-wide audit and personal act
 
 **Step 1: Verify no other imports reference the old file**
 
-Run: `grep -r "platform-overview" /Users/fred/Documents/Valinor/dashboard/src/`
+Run: `grep -r "platform-overview" /Users/fred/Documents/Heimdall/dashboard/src/`
 Expected: No matches (page.tsx was updated in Task 2).
 
 **Step 2: Delete the old file**
@@ -539,7 +539,7 @@ rm dashboard/src/components/overview/platform-overview.tsx
 
 **Step 3: Verify build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build`
 Expected: Builds with no errors.
 
 **Step 4: Commit**
@@ -555,11 +555,11 @@ git commit -m "chore: remove old PlatformOverview component"
 
 **Step 1: Start Go backend**
 
-Run: `cd /Users/fred/Documents/Valinor && go run ./cmd/valinor`
+Run: `cd /Users/fred/Documents/Heimdall && go run ./cmd/heimdall`
 
 **Step 2: Start dashboard**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run dev`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run dev`
 
 **Step 3: Test as platform admin**
 

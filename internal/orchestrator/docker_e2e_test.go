@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 )
 
 // requireDockerImage skips the test if Docker daemon is not available
@@ -31,9 +31,9 @@ func requireDockerImage(t *testing.T, image string) {
 }
 
 // TestDockerDriver_E2E tests the full flow: start container, connect via proxy, send ping, verify pong.
-// Requires Docker daemon and valinor/agent:dev image built.
+// Requires Docker daemon and heimdall/agent:dev image built.
 func TestDockerDriver_E2E(t *testing.T) {
-	const agentImage = "valinor/agent:dev"
+	const agentImage = "heimdall/agent:dev"
 	requireDockerImage(t, agentImage)
 
 	driver := orchestrator.NewDockerDriver(orchestrator.DockerDriverConfig{

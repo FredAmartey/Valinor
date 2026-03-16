@@ -206,7 +206,7 @@ func Load(configPaths ...string) (*Config, error) {
 		"log.level":                                        "info",
 		"log.format":                                       "json",
 		"auth.devmode":                                     false,
-		"auth.jwt.issuer":                                  "valinor",
+		"auth.jwt.issuer":                                  "heimdall",
 		"auth.jwt.expiryhours":                             24,
 		"auth.jwt.refreshexpiryhours":                      168,
 		"auth.oidc.redirecturl":                            "http://localhost:8080/auth/callback",
@@ -215,11 +215,11 @@ func Load(configPaths ...string) (*Config, error) {
 		"orchestrator.health_interval_secs":                10,
 		"orchestrator.reconcile_interval_secs":             30,
 		"orchestrator.max_consecutive_failures":            3,
-		"orchestrator.docker.image":                        "valinor-agent:latest",
+		"orchestrator.docker.image":                        "heimdall-agent:latest",
 		"orchestrator.docker.network_mode":                 "per-tenant",
 		"orchestrator.docker.default_cpus":                 1,
 		"orchestrator.docker.default_memory_mb":            512,
-		"orchestrator.docker.memory_base_path":             "/var/lib/valinor/memory",
+		"orchestrator.docker.memory_base_path":             "/var/lib/heimdall/memory",
 		"orchestrator.docker.workspace_quota_mb":           1024,
 		"orchestrator.firecracker.jailer.enabled":          false,
 		"orchestrator.firecracker.jailer.daemonize":        false,
@@ -274,10 +274,10 @@ func Load(configPaths ...string) (*Config, error) {
 	}
 
 	// Environment variables override everything
-	// VALINOR_SERVER_PORT -> server.port
-	_ = k.Load(env.Provider("VALINOR_", ".", func(s string) string {
+	// HEIMDALL_SERVER_PORT -> server.port
+	_ = k.Load(env.Provider("HEIMDALL_", ".", func(s string) string {
 		return strings.ReplaceAll(
-			strings.ToLower(strings.TrimPrefix(s, "VALINOR_")),
+			strings.ToLower(strings.TrimPrefix(s, "HEIMDALL_")),
 			"_", ".",
 		)
 	}), nil)

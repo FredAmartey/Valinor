@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/audit"
 )
 
 // IngressDecision represents the disposition of an inbound channel message.

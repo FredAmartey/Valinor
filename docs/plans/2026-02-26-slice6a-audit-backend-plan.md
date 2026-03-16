@@ -458,7 +458,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/heimdall-ai/heimdall/internal/audit"
 )
 
 // captureLogger is a test helper that captures audit events.
@@ -514,7 +514,7 @@ Expected: FAIL — constructor signatures don't accept audit.Logger
 **Step 3: Add audit.Logger to all handler structs**
 
 Modify `internal/tenant/handler.go`:
-- Add import `"github.com/valinor-ai/valinor/internal/audit"`
+- Add import `"github.com/heimdall-ai/heimdall/internal/audit"`
 - Add `auditLog audit.Logger` to `Handler` struct
 - Update `NewHandler` to accept `audit.Logger`:
   ```go
@@ -524,7 +524,7 @@ Modify `internal/tenant/handler.go`:
   ```
 
 Modify `internal/tenant/department_handler.go`:
-- Add import `"github.com/valinor-ai/valinor/internal/audit"`
+- Add import `"github.com/heimdall-ai/heimdall/internal/audit"`
 - Add `auditLog audit.Logger` to `DepartmentHandler` struct
 - Update `NewDepartmentHandler`:
   ```go
@@ -534,7 +534,7 @@ Modify `internal/tenant/department_handler.go`:
   ```
 
 Modify `internal/tenant/user_handler.go`:
-- Add import `"github.com/valinor-ai/valinor/internal/audit"`
+- Add import `"github.com/heimdall-ai/heimdall/internal/audit"`
 - Add `auditLog audit.Logger` to `UserHandler` struct
 - Update `NewUserHandler`:
   ```go
@@ -544,7 +544,7 @@ Modify `internal/tenant/user_handler.go`:
   ```
 
 Modify `internal/tenant/role_handler.go`:
-- Add import `"github.com/valinor-ai/valinor/internal/audit"`
+- Add import `"github.com/heimdall-ai/heimdall/internal/audit"`
 - Add `auditLog audit.Logger` to `RoleHandler` struct
 - Update `NewRoleHandler`:
   ```go
@@ -576,7 +576,7 @@ git commit -m "feat(tenant): add audit.Logger field to all handler constructors"
 
 **Step 1: Add audit.Logger field and update constructor**
 
-Add import `"github.com/valinor-ai/valinor/internal/audit"`.
+Add import `"github.com/heimdall-ai/heimdall/internal/audit"`.
 
 Update the Handler struct:
 
@@ -631,7 +631,7 @@ if h.auditLog != nil {
 }
 ```
 
-For getting the actor identity, use `auth.GetIdentity(r.Context())`. The tenant handlers need a new import of `"github.com/valinor-ai/valinor/internal/auth"`.
+For getting the actor identity, use `auth.GetIdentity(r.Context())`. The tenant handlers need a new import of `"github.com/heimdall-ai/heimdall/internal/auth"`.
 
 **Step 1: Add audit emission to tenant HandleCreate**
 
@@ -658,7 +658,7 @@ if h.auditLog != nil {
 }
 ```
 
-Add imports: `"github.com/valinor-ai/valinor/internal/auth"`, `"github.com/google/uuid"`.
+Add imports: `"github.com/heimdall-ai/heimdall/internal/auth"`, `"github.com/google/uuid"`.
 
 **Step 2: Add audit emission to DepartmentHandler.HandleCreate**
 
@@ -686,7 +686,7 @@ if h.auditLog != nil {
 }
 ```
 
-Add imports: `"github.com/valinor-ai/valinor/internal/audit"`, `"github.com/valinor-ai/valinor/internal/auth"`, `"github.com/google/uuid"`.
+Add imports: `"github.com/heimdall-ai/heimdall/internal/audit"`, `"github.com/heimdall-ai/heimdall/internal/auth"`, `"github.com/google/uuid"`.
 
 **Step 3: Add audit emission to UserHandler**
 
@@ -763,7 +763,7 @@ if h.auditLog != nil {
 }
 ```
 
-Add imports: `"github.com/valinor-ai/valinor/internal/audit"`, `"github.com/valinor-ai/valinor/internal/auth"`, `"github.com/google/uuid"`.
+Add imports: `"github.com/heimdall-ai/heimdall/internal/audit"`, `"github.com/heimdall-ai/heimdall/internal/auth"`, `"github.com/google/uuid"`.
 
 **Step 4: Add audit emission to RoleHandler**
 
@@ -915,7 +915,7 @@ if h.auditLog != nil {
 }
 ```
 
-Add import: `"github.com/valinor-ai/valinor/internal/audit"`.
+Add import: `"github.com/heimdall-ai/heimdall/internal/audit"`.
 
 After HandleDestroyAgent succeeds (before `w.WriteHeader` at line 204):
 ```go
@@ -979,11 +979,11 @@ git commit -m "feat(audit): emit CRUD audit events from all resource handlers"
 ### Task 7: Wire Audit Logger in main.go
 
 **Files:**
-- Modify: `cmd/valinor/main.go:108-154` and `238`
+- Modify: `cmd/heimdall/main.go:108-154` and `238`
 
 **Step 1: Update handler constructor calls**
 
-In `cmd/valinor/main.go`, the `auditLogger` variable is created at line 168. Move the handler creation that currently happens at lines 108-154 to AFTER the audit logger creation (line 178), or pass it through.
+In `cmd/heimdall/main.go`, the `auditLogger` variable is created at line 168. Move the handler creation that currently happens at lines 108-154 to AFTER the audit logger creation (line 178), or pass it through.
 
 The simplest approach: since `auditLogger` is initialized to `audit.NopLogger{}` at line 168 before the `if pool != nil` block, just reorder so handlers are created after line 178. However, the handlers are already inside `if pool != nil` blocks, and the `auditLogger` is available at that point. The key issue is that tenant/dept/user/role handlers are created BEFORE the audit logger (lines 108-155 vs lines 167-178).
 
@@ -1009,7 +1009,7 @@ agentHandler = orchestrator.NewHandler(orchManager, pusher, auditLogger)
 
 **Step 2: Verify full build**
 
-Run: `go build ./cmd/valinor/...`
+Run: `go build ./cmd/heimdall/...`
 Expected: success
 
 **Step 3: Run all tests**
@@ -1020,7 +1020,7 @@ Expected: ALL PASS
 **Step 4: Commit**
 
 ```bash
-git add cmd/valinor/main.go
+git add cmd/heimdall/main.go
 git commit -m "feat(audit): wire audit logger into all resource handlers"
 ```
 
@@ -1086,7 +1086,7 @@ go test ./internal/orchestrator/... -v
 go test ./...
 
 # Build
-go build ./cmd/valinor/...
+go build ./cmd/heimdall/...
 
 # Lint (if configured)
 golangci-lint run ./...

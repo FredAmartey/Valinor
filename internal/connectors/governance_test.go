@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/FredAmartey/heimdall/internal/activity"
+	"github.com/FredAmartey/heimdall/internal/policies"
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/activity"
-	"github.com/valinor-ai/valinor/internal/policies"
 )
 
 func TestEvaluateGovernanceDecision(t *testing.T) {

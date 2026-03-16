@@ -2,16 +2,16 @@
 
 ## Goal
 
-Translate OpenClaw's security model into concrete Valinor infrastructure controls so production behavior is secure-by-default.
+Translate OpenClaw's security model into concrete Heimdall infrastructure controls so production behavior is secure-by-default.
 
 ## Context
 
-OpenClaw documents a single-trust-boundary model. For Valinor, that means OpenClaw is an execution engine inside our isolation boundary, not the boundary itself.
+OpenClaw documents a single-trust-boundary model. For Heimdall, that means OpenClaw is an execution engine inside our isolation boundary, not the boundary itself.
 
 ## Security Decisions
 
 1. Loopback-only OpenClaw endpoint in guest
-- Valinor agent must reject non-loopback OpenClaw URLs by default.
+- Heimdall agent must reject non-loopback OpenClaw URLs by default.
 - Break-glass remote endpoint support may exist but must be explicit and unsafe-by-name.
 
 2. Runtime policy enforcement owned by infrastructure
@@ -32,7 +32,7 @@ OpenClaw documents a single-trust-boundary model. For Valinor, that means OpenCl
 ## Scope (This Batch)
 
 P0 scope in this PR:
-- Add startup/runtime guard in `valinor-agent` that rejects non-loopback OpenClaw URLs by default.
+- Add startup/runtime guard in `heimdall-agent` that rejects non-loopback OpenClaw URLs by default.
 - Add tests covering loopback and remote endpoint behavior.
 - Add explicit P0/P1 checklist doc to track hardening progress.
 
@@ -44,7 +44,7 @@ Out of scope for this PR:
 ## P0/P1 Checklist
 
 P0 (must complete before production):
-- [x] Loopback-only OpenClaw URL guard in `valinor-agent`.
+- [x] Loopback-only OpenClaw URL guard in `heimdall-agent`.
 - [ ] Enforce OpenClaw sandbox/workspace policy defaults in runtime config path.
 - [ ] Implement real persistent per-user context path (`/agents/{id}/context` no longer no-op).
 - [ ] Pin and verify guest runtime versions (OpenClaw + Node) in image build pipeline.
@@ -56,5 +56,5 @@ P1 (next hardening wave):
 
 ## Verification
 
-- `go test ./cmd/valinor-agent -run 'OpenClaw|ValidateOpenClawURL' -v`
+- `go test ./cmd/heimdall-agent -run 'OpenClaw|ValidateOpenClawURL' -v`
 - `go test ./... -count=1`

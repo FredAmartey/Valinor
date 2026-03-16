@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
 )
 
 func TestIntegration_FullLifecycle(t *testing.T) {

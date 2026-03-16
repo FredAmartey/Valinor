@@ -58,7 +58,7 @@ export function ArchitectureDiagram() {
 
   return (
     <section
-      aria-label="Valinor architecture diagram"
+      aria-label="Heimdall architecture diagram"
       className="rounded-[28px] border px-5 py-6 md:px-8 md:py-8"
       style={{
         background: c.glassBg,
@@ -86,7 +86,7 @@ export function ArchitectureDiagram() {
         <ConnectorLine />
 
         <Layer
-          title="Valinor control plane"
+          title="Heimdall control plane"
           detail="The control plane manages tenancy, policy, approvals, delivery, orchestration, and governance."
           accent
         />
@@ -119,7 +119,7 @@ export function ArchitectureDiagram() {
 
         <Layer
           title="OpenClaw runtime"
-          detail="Valinor is OpenClaw-first today, with trust surfaces that sit above the runtime instead of replacing it."
+          detail="Heimdall is OpenClaw-first today, with trust surfaces that sit above the runtime instead of replacing it."
           accent
         />
       </div>

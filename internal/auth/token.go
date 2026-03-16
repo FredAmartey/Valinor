@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type valinorClaims struct {
+type heimdallClaims struct {
 	jwt.RegisteredClaims
 	UserID          string   `json:"uid"`
 	TenantID        string   `json:"tid"`
@@ -56,7 +56,7 @@ func (s *TokenService) CreateRefreshToken(identity *Identity) (string, error) {
 func (s *TokenService) createToken(identity *Identity, tokenType string, expiryHours int) (string, error) {
 	now := time.Now()
 
-	claims := valinorClaims{
+	claims := heimdallClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   identity.UserID,
@@ -100,7 +100,7 @@ func (s *TokenService) CreateImpersonationToken(identity *Identity, targetTenant
 	}
 
 	now := time.Now()
-	claims := valinorClaims{
+	claims := heimdallClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   imp.UserID,
@@ -122,7 +122,7 @@ func (s *TokenService) CreateImpersonationToken(identity *Identity, targetTenant
 }
 
 func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &valinorClaims{}, func(token *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &heimdallClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
@@ -136,7 +136,7 @@ func (s *TokenService) ValidateToken(tokenString string) (*Identity, error) {
 		return nil, fmt.Errorf("%w: %v", ErrTokenInvalid, err)
 	}
 
-	claims, ok := token.Claims.(*valinorClaims)
+	claims, ok := token.Claims.(*heimdallClaims)
 	if !ok || !token.Valid {
 		return nil, ErrTokenInvalid
 	}

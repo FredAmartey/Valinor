@@ -2,7 +2,7 @@
 
 ## Problem
 
-The dashboard's NextAuth configuration treats Valinor as an OIDC server (`type: "oidc"`, `issuer: VALINOR_API_URL`), but Valinor is an OIDC client (relying party). NextAuth expects a discovery document at `/.well-known/openid-configuration` which Valinor does not serve. The dashboard cannot authenticate.
+The dashboard's NextAuth configuration treats Heimdall as an OIDC server (`type: "oidc"`, `issuer: HEIMDALL_API_URL`), but Heimdall is an OIDC client (relying party). NextAuth expects a discovery document at `/.well-known/openid-configuration` which Heimdall does not serve. The dashboard cannot authenticate.
 
 ## Solution
 
@@ -12,7 +12,7 @@ Add a `POST /auth/dev/login` endpoint to the Go API (dev mode only) and replace 
 
 ### Design Only (Deferred): Production OIDC via Clerk
 
-Dashboard connects to Clerk directly for OIDC auth. On successful login, exchanges the Clerk id_token with Valinor for platform JWTs via a new `POST /auth/exchange` endpoint.
+Dashboard connects to Clerk directly for OIDC auth. On successful login, exchanges the Clerk id_token with Heimdall for platform JWTs via a new `POST /auth/exchange` endpoint.
 
 ---
 
@@ -58,7 +58,7 @@ providers: [
       email: { label: "Email", type: "email" },
     },
     async authorize(credentials) {
-      const res = await fetch(`${VALINOR_API_URL}/auth/dev/login`, {
+      const res = await fetch(`${HEIMDALL_API_URL}/auth/dev/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: credentials.email }),
@@ -105,8 +105,8 @@ Update `dashboard/src/app/(auth)/login/page.tsx`:
 
 ```
 User → Dashboard → Clerk OIDC login → Clerk callback → Dashboard
-  → POST /auth/exchange (Clerk id_token) → Valinor validates → Valinor JWT
-  → Dashboard stores Valinor JWT in session
+  → POST /auth/exchange (Clerk id_token) → Heimdall validates → Heimdall JWT
+  → Dashboard stores Heimdall JWT in session
 ```
 
 ### New Go Endpoint: `POST /auth/exchange` (future)
@@ -114,20 +114,20 @@ User → Dashboard → Clerk OIDC login → Clerk callback → Dashboard
 - Accepts `{ "id_token": "clerk-issued-jwt" }`
 - Validates the Clerk id_token against Clerk's JWKS
 - Resolves user by OIDC subject + issuer (existing `FindOrCreateByOIDC`)
-- Issues Valinor access + refresh tokens
+- Issues Heimdall access + refresh tokens
 - Returns same shape as `/auth/dev/login` response
 
 ### Dashboard Changes (future)
 
 - Add Clerk as NextAuth provider (or use `@clerk/nextjs` directly)
 - On sign-in callback, call `POST /auth/exchange` with the Clerk id_token
-- Store Valinor JWTs in session (same as dev mode path)
+- Store Heimdall JWTs in session (same as dev mode path)
 
 ### Why Clerk
 
 - Full auth platform: user management UI, MFA, org/team support
 - First-class NextAuth adapter
-- Handles auth UX (sign-up, password reset, MFA) that Valinor shouldn't own
+- Handles auth UX (sign-up, password reset, MFA) that Heimdall shouldn't own
 - $25/mo for 1K MAU
 
 ---
@@ -153,7 +153,7 @@ User → Dashboard → Clerk OIDC login → Clerk callback → Dashboard
 
 1. Dashboard login page shows email input
 2. Entering a valid email signs in and shows the dashboard with real data
-3. Session includes real Valinor JWT — API calls work with real auth
+3. Session includes real Heimdall JWT — API calls work with real auth
 4. Token refresh works transparently via `POST /auth/token/refresh`
 5. Invalid email shows error message
 6. `POST /auth/dev/login` returns 404 when `devmode: false`
@@ -167,7 +167,7 @@ User → Dashboard → Clerk OIDC login → Clerk callback → Dashboard
 - `internal/auth/handler.go` — add `HandleDevLogin` method
 - `internal/auth/handler.go` — add `RegisterDevRoutes` method
 - `internal/auth/handler_test.go` — tests for dev login
-- `cmd/valinor/main.go` — register dev routes when `devmode: true`
+- `cmd/heimdall/main.go` — register dev routes when `devmode: true`
 - `internal/platform/server/server.go` — wire dev login route
 
 ### Dashboard (modified)
@@ -181,6 +181,6 @@ User → Dashboard → Clerk OIDC login → Clerk callback → Dashboard
 | Risk | Mitigation |
 |------|------------|
 | Dev login endpoint exposed in production | Only registered when `devmode: true`. Config default is `false` |
-| Credentials provider session differs from future OIDC | Both paths store the same shape: Valinor JWT + user claims |
+| Credentials provider session differs from future OIDC | Both paths store the same shape: Heimdall JWT + user claims |
 
 Rollback: Revert the two files on each side. Dashboard falls back to broken OIDC (status quo).

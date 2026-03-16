@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
 )
 
 // allowedInviteRoles is the set of roles that can be assigned via invite.

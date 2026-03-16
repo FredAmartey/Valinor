@@ -34,7 +34,7 @@ import (
 )
 
 func TestCreateImpersonationToken(t *testing.T) {
-	svc := NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+	svc := NewTokenService("test-secret-key-32-bytes-long!!", "heimdall", 1, 24)
 
 	identity := &Identity{
 		UserID:          "admin-user-id",
@@ -59,7 +59,7 @@ func TestCreateImpersonationToken(t *testing.T) {
 }
 
 func TestCreateImpersonationToken_ShortExpiry(t *testing.T) {
-	svc := NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+	svc := NewTokenService("test-secret-key-32-bytes-long!!", "heimdall", 1, 24)
 
 	identity := &Identity{
 		UserID:          "admin-user-id",
@@ -84,7 +84,7 @@ func TestCreateImpersonationToken_ShortExpiry(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestCreateImpersonation -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestCreateImpersonation -v`
 Expected: FAIL — `CreateImpersonationToken` and `ImpersonatorID` don't exist yet.
 
 **Step 3: Add `ImpersonatorID` to Identity**
@@ -99,7 +99,7 @@ ImpersonatorID string `json:"impersonator_id,omitempty"`
 
 In `internal/auth/token.go`:
 
-Add `ImpersonatorID` to `valinorClaims` struct (after `IsPlatformAdmin`):
+Add `ImpersonatorID` to `heimdallClaims` struct (after `IsPlatformAdmin`):
 
 ```go
 ImpersonatorID string `json:"imp,omitempty"`
@@ -136,7 +136,7 @@ func (s *TokenService) CreateImpersonationToken(identity *Identity, targetTenant
 	}
 
 	now := time.Now()
-	claims := valinorClaims{
+	claims := heimdallClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
 			Subject:   imp.UserID,
@@ -160,12 +160,12 @@ func (s *TokenService) CreateImpersonationToken(identity *Identity, targetTenant
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestCreateImpersonation -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestCreateImpersonation -v`
 Expected: PASS
 
 **Step 6: Run all auth tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -v`
 Expected: PASS (no regressions)
 
 **Step 7: Commit**
@@ -189,7 +189,7 @@ In `internal/platform/admin/impersonate_test.go`, replace `TestHandleImpersonate
 
 ```go
 func TestHandleImpersonate_Success(t *testing.T) {
-	tokenSvc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+	tokenSvc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "heimdall", 1, 24)
 	// pool is nil — tenant existence check is skipped when pool is nil
 	h := NewImpersonateHandler(tokenSvc, nil, nil)
 
@@ -224,7 +224,7 @@ Add these imports to the test file: `"encoding/json"` and `"github.com/stretchr/
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/platform/admin/ -run TestHandleImpersonate_Success -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/platform/admin/ -run TestHandleImpersonate_Success -v`
 Expected: FAIL — handler still returns 501.
 
 **Step 3: Wire the handler**
@@ -304,12 +304,12 @@ Remove the unused `fmt.Sprintf` import if the linter flags it (it's still used i
 
 **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/platform/admin/ -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/platform/admin/ -v`
 Expected: PASS (including the existing NotPlatformAdmin, InvalidTenantID, NoIdentity tests)
 
 **Step 5: Run full Go test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... 2>&1 | tail -20`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... 2>&1 | tail -20`
 Expected: All PASS
 
 **Step 6: Commit**
@@ -418,7 +418,7 @@ if (canReadUsers) {
 
 **Step 3: Verify build passes**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build 2>&1 | tail -20`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build 2>&1 | tail -20`
 Expected: Build succeeds with no errors.
 
 **Step 4: Commit**
@@ -473,7 +473,7 @@ session.user.impersonatingTenantName = token.impersonatingTenantName
 
 **Step 3: Verify build passes**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build 2>&1 | tail -20`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build 2>&1 | tail -20`
 Expected: Build succeeds.
 
 **Step 4: Commit**
@@ -548,7 +548,7 @@ The layout's inner column becomes:
 
 **Step 3: Verify build passes**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build 2>&1 | tail -20`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build 2>&1 | tail -20`
 Expected: Build succeeds.
 
 **Step 4: Commit**
@@ -631,7 +631,7 @@ Remove the amber placeholder `<p>` warning paragraph entirely.
 
 **Step 2: Verify build passes**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build 2>&1 | tail -20`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build 2>&1 | tail -20`
 Expected: Build succeeds.
 
 **Step 3: Commit**
@@ -647,17 +647,17 @@ git commit -m "feat: wire Enter Tenant button to impersonate endpoint"
 
 **Step 1: Go lint**
 
-Run: `cd /Users/fred/Documents/Valinor && golangci-lint run ./...`
+Run: `cd /Users/fred/Documents/Heimdall && golangci-lint run ./...`
 Expected: No errors. If gofmt issues, run `gofmt -w` on affected files.
 
 **Step 2: Go tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./...`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./...`
 Expected: All PASS.
 
 **Step 3: Dashboard build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build`
 Expected: Build succeeds.
 
 **Step 4: Fix any issues, commit fixes**

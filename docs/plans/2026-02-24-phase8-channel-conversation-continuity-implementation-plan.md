@@ -4,9 +4,9 @@
 
 **Goal:** Add tenant-scoped, user-scoped conversation continuity so inbound channel execution includes recent context and produces context-aware responses.
 
-**Architecture:** Reuse existing `channel_messages` persistence by storing request/response turn fields in metadata and reading the last 12 turns for `(tenant_id, user_id)` via RLS-scoped queries. Thread this history through `channels.ExecutionMessage` into proxy dispatch payload as `messages[]`, while keeping backward-compatible single-message fields. Update `valinor-agent` to normalize either payload shape into OpenClaw chat messages.
+**Architecture:** Reuse existing `channel_messages` persistence by storing request/response turn fields in metadata and reading the last 12 turns for `(tenant_id, user_id)` via RLS-scoped queries. Thread this history through `channels.ExecutionMessage` into proxy dispatch payload as `messages[]`, while keeping backward-compatible single-message fields. Update `heimdall-agent` to normalize either payload shape into OpenClaw chat messages.
 
-**Tech Stack:** Go, PostgreSQL/pgx, existing channels store/handler/execution pipeline, valinor-agent OpenClaw bridge, testify.
+**Tech Stack:** Go, PostgreSQL/pgx, existing channels store/handler/execution pipeline, heimdall-agent OpenClaw bridge, testify.
 
 ---
 
@@ -105,8 +105,8 @@ git commit -m "feat(channels): attach persisted conversation history to executio
 ### Task 3: Send Conversation History to Agent Dispatch Payload
 
 **Files:**
-- Modify: `cmd/valinor/channels_execution.go`
-- Test: `cmd/valinor/channels_execution_test.go`
+- Modify: `cmd/heimdall/channels_execution.go`
+- Test: `cmd/heimdall/channels_execution_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -120,12 +120,12 @@ Cover payload contract:
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/valinor -run 'DispatchChannelMessageToAgent_IncludesConversationMessages|DispatchChannelMessageToAgent_PreservesLegacyRoleContentFields' -v`
+Run: `go test ./cmd/heimdall -run 'DispatchChannelMessageToAgent_IncludesConversationMessages|DispatchChannelMessageToAgent_PreservesLegacyRoleContentFields' -v`
 Expected: FAIL due to payload mismatch.
 
 **Step 3: Write minimal implementation**
 
-- Add helper in `cmd/valinor/channels_execution.go` to build outbound message list from `ConversationHistory` + current content.
+- Add helper in `cmd/heimdall/channels_execution.go` to build outbound message list from `ConversationHistory` + current content.
 - Update `dispatchChannelMessageToAgent` signature to accept history and marshal:
   - `messages`
   - `role`
@@ -134,21 +134,21 @@ Expected: FAIL due to payload mismatch.
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test ./cmd/valinor -run 'DispatchChannelMessageToAgent_IncludesConversationMessages|DispatchChannelMessageToAgent_PreservesLegacyRoleContentFields|ChannelExecutor' -v`
+Run: `go test ./cmd/heimdall -run 'DispatchChannelMessageToAgent_IncludesConversationMessages|DispatchChannelMessageToAgent_PreservesLegacyRoleContentFields|ChannelExecutor' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/channels_execution.go cmd/valinor/channels_execution_test.go
+git add cmd/heimdall/channels_execution.go cmd/heimdall/channels_execution_test.go
 git commit -m "feat(channels): dispatch channel requests with conversation history context"
 ```
 
-### Task 4: Update valinor-agent OpenClaw Bridge for `messages[]` Payloads
+### Task 4: Update heimdall-agent OpenClaw Bridge for `messages[]` Payloads
 
 **Files:**
-- Modify: `cmd/valinor-agent/openclaw.go`
-- Test: `cmd/valinor-agent/openclaw_test.go`
+- Modify: `cmd/heimdall-agent/openclaw.go`
+- Test: `cmd/heimdall-agent/openclaw_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -160,7 +160,7 @@ Use mock OpenClaw server to assert incoming `messages` request body.
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/valinor-agent -run 'MessageArrayForwarded|FallbacksToLegacyRoleContent' -v`
+Run: `go test ./cmd/heimdall-agent -run 'MessageArrayForwarded|FallbacksToLegacyRoleContent' -v`
 Expected: FAIL due to parser/request builder mismatch.
 
 **Step 3: Write minimal implementation**
@@ -176,13 +176,13 @@ Expected: FAIL due to parser/request builder mismatch.
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test ./cmd/valinor-agent -run 'OpenClawProxy' -v`
+Run: `go test ./cmd/heimdall-agent -run 'OpenClawProxy' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor-agent/openclaw.go cmd/valinor-agent/openclaw_test.go
+git add cmd/heimdall-agent/openclaw.go cmd/heimdall-agent/openclaw_test.go
 git commit -m "feat(agent): support channel conversation message arrays for openclaw dispatch"
 ```
 
@@ -195,8 +195,8 @@ git commit -m "feat(agent): support channel conversation message arrays for open
 
 Run:
 - `go test ./internal/channels -v`
-- `go test ./cmd/valinor -v`
-- `go test ./cmd/valinor-agent -v`
+- `go test ./cmd/heimdall -v`
+- `go test ./cmd/heimdall-agent -v`
 
 Expected: PASS.
 

@@ -14,8 +14,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 const testCredentialCryptoKey = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
@@ -26,7 +26,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(

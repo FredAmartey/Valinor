@@ -41,7 +41,7 @@ Expected: PASS.
 **Files:**
 - Create: `internal/proxy/context_store.go`
 - Modify: `internal/proxy/handler.go`
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 Steps:
 1. Add `UserContextStore` interface and Postgres implementation using `database.WithTenantConnection`.

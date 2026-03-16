@@ -18,5 +18,10 @@ describe("FooterCta", () => {
       "href",
       expect.stringContaining("/docs/architecture.md"),
     )
+    expect(screen.getByText("Heimdall")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "GitHub" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/heimdall"),
+    )
   })
 })

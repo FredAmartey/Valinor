@@ -1,10 +1,10 @@
-# Valinor Product Overview
+# Heimdall Product Overview
 
-## What Is Valinor?
+## What Is Heimdall?
 
-Valinor is a security-first platform for AI agents.
+Heimdall is a security-first platform for AI agents.
 
-More specifically, Valinor gives teams, businesses, platform builders, and enterprises the visibility, isolation, governance, and auditability needed to use broad-access AI agents securely and with confidence.
+More specifically, Heimdall gives teams, businesses, platform builders, and enterprises the visibility, isolation, governance, and auditability needed to use broad-access AI agents securely and with confidence.
 
 These are not toy chatbots. They are agents that can:
 - read real data
@@ -12,11 +12,11 @@ These are not toy chatbots. They are agents that can:
 - message real users
 - take real actions across connected systems
 
-Valinor exists to make those agents safe to trust.
+Heimdall exists to make those agents safe to trust.
 
 ## Positioning
 
-Valinor provides security, observability, and governance for broad-access AI agents.
+Heimdall provides security, observability, and governance for broad-access AI agents.
 
 Public language:
 - Trust AI agents with real access
@@ -27,7 +27,7 @@ Internal product model:
 - visibility
 - control
 
-OpenClaw is the flagship runtime today, but Valinor should be understood as the enterprise security, observability, and governance layer above the runtime, not as "OpenClaw hosting".
+OpenClaw is the flagship runtime today, but Heimdall should be understood as the enterprise security, observability, and governance layer above the runtime, not as "OpenClaw hosting".
 
 ## The Core Problem
 
@@ -35,9 +35,9 @@ Once an agent has meaningful access, the main buyer question stops being "can it
 
 **Can we trust it?**
 
-Without Valinor, organizations have to solve:
+Without Heimdall, organizations have to solve:
 
-| Problem | Without Valinor | With Valinor |
+| Problem | Without Heimdall | With Heimdall |
 | --- | --- | --- |
 | Isolation | Shared runtime and weak boundaries create cross-customer and cross-team risk | Tenant, department, and user boundaries with isolated runtimes and scoped memory |
 | Visibility | Agents behave like black boxes | Activity timelines, traces, and runtime/security events |
@@ -46,7 +46,7 @@ Without Valinor, organizations have to solve:
 | Auditability | No trustworthy system of record | Audit events plus activity history tied to users, agents, and actions |
 | Channels and integrations | Slack, WhatsApp, Telegram, and external systems become bespoke reliability and security work | Governed channels, scoped connectors, delivery visibility, and approval-gated risky actions |
 
-## Who Valinor Is For
+## Who Heimdall Is For
 
 ### 1. Enterprise internal teams
 
@@ -58,7 +58,7 @@ Companies deploying agents to their own customers who need hard customer isolati
 
 ### 3. Regulated industries
 
-Healthcare, finance, legal, and other compliance-heavy environments where agent interactions must be logged, access controlled, and data isolated. Valinor's role-based access control, row-level security, audit trail and credential encryption address compliance requirements.
+Healthcare, finance, legal, and other compliance-heavy environments where agent interactions must be logged, access controlled, and data isolated. Heimdall's role-based access control, row-level security, audit trail and credential encryption address compliance requirements.
 
 ### 4. High-trust businesses
 
@@ -68,7 +68,7 @@ Organizations like sports clubs, agencies, recruiting firms, and other high-stak
 
 ### 1. Visibility
 
-Valinor makes agent behavior legible.
+Heimdall makes agent behavior legible.
 
 This includes:
 - agent activity timelines
@@ -80,7 +80,7 @@ This includes:
 
 ### 2. Isolation
 
-Valinor gives each customer, department, and user the right trust boundary.
+Heimdall gives each customer, department, and user the right trust boundary.
 
 This includes:
 - tenant isolation
@@ -92,7 +92,7 @@ This includes:
 
 ### 3. Governance
 
-Valinor lets organizations decide who can see, configure, approve, and operate what.
+Heimdall lets organizations decide who can see, configure, approve, and operate what.
 
 This includes:
 - RBAC
@@ -104,7 +104,7 @@ This includes:
 
 ### 4. Auditability
 
-Valinor gives teams and enterprises a reliable record of what happened.
+Heimdall gives teams and enterprises a reliable record of what happened.
 
 This includes:
 - audit trails for security and administrative actions
@@ -116,7 +116,7 @@ This includes:
 
 ### Isolation and Memory
 
-Valinor supports:
+Heimdall supports:
 - tenant isolation between customers
 - department isolation inside a tenant
 - per-user agents
@@ -127,7 +127,7 @@ This is the basis for "Chelsea cannot see Everton" style guarantees.
 
 ### Security and Governance
 
-Valinor secures AI agents across the full action lifecycle.
+Heimdall secures AI agents across the full action lifecycle.
 
 Messages are scanned before they reach the agent, risky behavior is governed during execution, and outbound actions can be reviewed, blocked, or audited before they reach users or external systems.
 
@@ -141,7 +141,7 @@ Security and governance capabilities include:
 
 ### Observability and Audit
 
-Valinor provides the operator layer for understanding agent behavior.
+Heimdall provides the operator layer for understanding agent behavior.
 
 This includes:
 - per-agent timelines
@@ -152,7 +152,7 @@ This includes:
 
 ### Channels and Delivery
 
-Valinor makes agents usable in real workflows, not just in a sandbox.
+Heimdall makes agents usable in real workflows, not just in a sandbox.
 
 This includes:
 - Slack, WhatsApp, Telegram, and other channel support
@@ -163,7 +163,7 @@ This includes:
 
 ### Integrations and Approvals
 
-Valinor governs how agents interact with external systems.
+Heimdall governs how agents interact with external systems.
 
 This includes:
 - MCP and connector registration
@@ -185,7 +185,7 @@ Consider two football clubs using the same platform:
 - each staff member can have their own agent
 - each agent can have personal, department, tenant, and approved shared memory
 
-Valinor is designed so a failure in one customer environment does not expose another customer's data. Those boundaries are enforced across runtime isolation, network posture, tenant-scoped credentials, database controls, memory scope, and policy.
+Heimdall is designed so a failure in one customer environment does not expose another customer's data. Those boundaries are enforced across runtime isolation, network posture, tenant-scoped credentials, database controls, memory scope, and policy.
 
 That is the kind of trust boundary serious teams actually need.
 
@@ -193,7 +193,7 @@ That is the kind of trust boundary serious teams actually need.
 
 OpenClaw is the flagship runtime today.
 
-Valinor should be designed so the trust layer is runtime-agnostic over time, but the product should not lead with broad "bring your own agent" marketing until the runtime contract, policy model, observability model, and support model are genuinely ready.
+Heimdall should be designed so the trust layer is runtime-agnostic over time, but the product should not lead with broad "bring your own agent" marketing until the runtime contract, policy model, observability model, and support model are genuinely ready.
 
 Current stance:
 - OpenClaw-first
@@ -202,7 +202,7 @@ Current stance:
 
 ## Product Tiers
 
-Valinor currently supports two product tiers:
+Heimdall currently supports two product tiers:
 
 | | Teams | Enterprise |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ Both tiers share the same governance, visibility, audit, channel, and connector 
 
 ## Security Model
 
-Valinor uses defense in depth.
+Heimdall uses defense in depth.
 
 Key layers:
 1. tenant and runtime isolation
@@ -257,9 +257,9 @@ The dashboard is where admins and operators:
 The dashboard should reflect the product story:
 not just configuration, but visibility, isolation, governance, and trust.
 
-## What Valinor Is Not
+## What Heimdall Is Not
 
-Valinor is not primarily:
+Heimdall is not primarily:
 - generic AI agent hosting
 - a simple deployment layer
 - just an integration layer
@@ -268,9 +268,9 @@ Valinor is not primarily:
 
 It should absorb the best capabilities from those categories without collapsing into any one of them.
 
-## Why Valinor Wins
+## Why Heimdall Wins
 
-Valinor's moat is the enterprise trust layer around agent behavior:
+Heimdall's moat is the enterprise trust layer around agent behavior:
 - visibility into what agents are doing
 - isolation between customers, teams, and users
 - governance over who can configure and approve what

@@ -1,4 +1,4 @@
-# Valinor — Project Rules
+# Heimdall — Project Rules
 
 ## Security
 

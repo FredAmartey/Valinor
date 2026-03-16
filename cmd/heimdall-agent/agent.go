@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 )
 
 // AgentConfig holds in-guest agent configuration.
@@ -42,7 +42,7 @@ type GovernedTool struct {
 	ApprovalSummaryTemplate string `json:"approval_summary_template,omitempty"`
 }
 
-// Agent is the in-guest valinor-agent that bridges the control plane to OpenClaw.
+// Agent is the in-guest heimdall-agent that bridges the control plane to OpenClaw.
 type Agent struct {
 	cfg           AgentConfig
 	httpClient    *http.Client

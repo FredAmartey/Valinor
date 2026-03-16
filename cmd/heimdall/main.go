@@ -12,23 +12,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/activity"
-	"github.com/valinor-ai/valinor/internal/approvals"
-	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/config"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/platform/server"
-	"github.com/valinor-ai/valinor/internal/platform/telemetry"
-	"github.com/valinor-ai/valinor/internal/policies"
-	"github.com/valinor-ai/valinor/internal/proxy"
-	"github.com/valinor-ai/valinor/internal/rbac"
-	"github.com/valinor-ai/valinor/internal/sentinel"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/FredAmartey/heimdall/internal/activity"
+	"github.com/FredAmartey/heimdall/internal/approvals"
+	"github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/platform/server"
+	"github.com/FredAmartey/heimdall/internal/platform/telemetry"
+	"github.com/FredAmartey/heimdall/internal/policies"
+	"github.com/FredAmartey/heimdall/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/rbac"
+	"github.com/FredAmartey/heimdall/internal/sentinel"
+	"github.com/FredAmartey/heimdall/internal/tenant"
 )
 
 func main() {
@@ -49,7 +49,7 @@ func run() error {
 	logger := telemetry.NewLogger(cfg.Log.Level, cfg.Log.Format)
 	telemetry.SetDefault(logger)
 
-	slog.Info("valinor starting",
+	slog.Info("heimdall starting",
 		"version", "0.2.0",
 		"port", cfg.Server.Port,
 	)

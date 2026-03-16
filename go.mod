@@ -1,4 +1,4 @@
-module github.com/valinor-ai/valinor
+module github.com/FredAmartey/heimdall
 
 go 1.25.8
 

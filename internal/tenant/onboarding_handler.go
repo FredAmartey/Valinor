@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/auth"
 )
 
 // OnboardingHandler handles tenant self-service creation for new users.

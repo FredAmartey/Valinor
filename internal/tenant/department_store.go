@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 // DepartmentStore handles department database operations.

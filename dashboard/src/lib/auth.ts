@@ -60,15 +60,15 @@ function decodeJwtRoles(token: string): string[] {
 
 if (
   process.env.NODE_ENV === "production" &&
-  process.env.VALINOR_DEV_MODE &&
+  process.env.HEIMDALL_DEV_MODE &&
   process.env.VERCEL_ENV === "production"
 ) {
-  throw new Error("VALINOR_DEV_MODE must not be enabled in production")
+  throw new Error("HEIMDALL_DEV_MODE must not be enabled in production")
 }
 
-const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
+const HEIMDALL_API_URL = process.env.HEIMDALL_API_URL ?? "http://localhost:8080"
 
-// Exchange an external OIDC id_token for Valinor platform tokens.
+// Exchange an external OIDC id_token for Heimdall platform tokens.
 // tenantSlug is passed explicitly because server-side fetches lack a browser
 // Origin header, so the backend cannot resolve the tenant from the request alone.
 async function exchangeIDToken(idToken: string, tenantSlug?: string, emailHint?: string): Promise<{
@@ -78,7 +78,7 @@ async function exchangeIDToken(idToken: string, tenantSlug?: string, emailHint?:
   created: boolean
   user: { id: string; email: string; display_name: string; tenant_id: string; is_platform_admin: boolean }
 } | null> {
-  const res = await fetch(`${VALINOR_API_URL}/auth/exchange`, {
+  const res = await fetch(`${HEIMDALL_API_URL}/auth/exchange`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -96,8 +96,8 @@ async function exchangeIDToken(idToken: string, tenantSlug?: string, emailHint?:
 
 export const authConfig: NextAuthConfig = {
   providers: [
-    // Dev mode credentials (when VALINOR_DEV_MODE is set)
-    ...(process.env.VALINOR_DEV_MODE
+    // Dev mode credentials (when HEIMDALL_DEV_MODE is set)
+    ...(process.env.HEIMDALL_DEV_MODE
       ? [
           Credentials({
             credentials: {
@@ -106,7 +106,7 @@ export const authConfig: NextAuthConfig = {
             async authorize(credentials) {
               if (!credentials?.email) return null
 
-              const res = await fetch(`${VALINOR_API_URL}/auth/dev/login`, {
+              const res = await fetch(`${HEIMDALL_API_URL}/auth/dev/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email: credentials.email }),
@@ -225,11 +225,13 @@ export const authConfig: NextAuthConfig = {
     authorized({ auth, request }) {
       const isLoggedIn = !!auth?.user
       const path = request.nextUrl.pathname
-      const isPublicAuth =
+      const isPublic =
         path.startsWith("/login") ||
         path.startsWith("/signup") ||
-        path.startsWith("/sso-callback")
-      if (isPublicAuth) return true
+        path.startsWith("/sso-callback") ||
+        path.startsWith("/landing") ||
+        path.startsWith("/images/")
+      if (isPublic) return true
       return isLoggedIn
     },
     async jwt({ token, user, account }) {
@@ -280,9 +282,9 @@ export const authConfig: NextAuthConfig = {
         return token
       }
 
-      // Token expired: refresh via Valinor API
+      // Token expired: refresh via Heimdall API
       try {
-        const res = await fetch(`${VALINOR_API_URL}/auth/token/refresh`, {
+        const res = await fetch(`${HEIMDALL_API_URL}/auth/token/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refresh_token: token.refreshToken }),
@@ -321,7 +323,7 @@ export const authConfig: NextAuthConfig = {
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig)
 
 /**
- * Read the Valinor access token from the server-side JWT.
+ * Read the Heimdall access token from the server-side JWT.
  * Use this in route handlers, server actions, and server components
  * that need the raw token (e.g. the BFF proxy).
  */

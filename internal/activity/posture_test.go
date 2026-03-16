@@ -8,7 +8,7 @@ import (
 
 func TestBuildSecurityOverview(t *testing.T) {
 	overview := buildSecurityOverview(SecurityOverviewConfig{
-		WSAllowedOrigins:        []string{"app.valinor.test"},
+		WSAllowedOrigins:        []string{"app.heimdall.test"},
 		WebSocketAuthEnabled:    true,
 		EnabledChannelProviders: []string{"slack", "telegram"},
 	}, securityOverviewStats{

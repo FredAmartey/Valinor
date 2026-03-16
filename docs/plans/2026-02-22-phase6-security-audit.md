@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add async audit pipeline, input sentinel (pattern + LLM), parameter-level tool validation, and canary token detection to Valinor.
+**Goal:** Add async audit pipeline, input sentinel (pattern + LLM), parameter-level tool validation, and canary token detection to Heimdall.
 
 **Architecture:** Four components wired as services via DI. Audit Logger is a buffered-channel service injected into handlers/middleware. Input Sentinel is a two-stage scanner (regex + Claude Haiku) injected into proxy Handler. Tool Call Validator and Canary Tokens enhance the existing in-guest agent. One new wire protocol frame type: `session_halt`.
 
@@ -47,7 +47,7 @@ GRANT DELETE ON audit_events TO PUBLIC;
 
 Run: `go test ./internal/platform/database/... -run TestMigrations -v -count=1`
 Expected: PASS (if migration test exists), or verify manually:
-Run: `go build ./cmd/valinor && echo "builds OK"`
+Run: `go build ./cmd/heimdall && echo "builds OK"`
 Expected: "builds OK"
 
 **Step 4: Commit**
@@ -183,7 +183,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // Store handles audit event persistence.
@@ -387,7 +387,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // LoggerConfig configures the async audit logger.
@@ -1364,7 +1364,7 @@ In `internal/proxy/integration_test.go`, find the `NewHandler(` call and add:
 handler := proxy.NewHandler(pool, store, proxy.HandlerConfig{...}, nil, nil)
 ```
 
-In `cmd/valinor/main.go:164`, update:
+In `cmd/heimdall/main.go:164`, update:
 ```go
 proxyHandler = proxy.NewHandler(connPool, orchManager, proxy.HandlerConfig{...}, nil, nil)
 ```
@@ -1377,7 +1377,7 @@ Expected: PASS
 **Step 4: Commit**
 
 ```bash
-git add internal/proxy/handler.go internal/proxy/handler_test.go internal/proxy/integration_test.go cmd/valinor/main.go
+git add internal/proxy/handler.go internal/proxy/handler_test.go internal/proxy/integration_test.go cmd/heimdall/main.go
 git commit -m "feat: inject sentinel and audit interfaces into proxy handler"
 ```
 
@@ -1787,9 +1787,9 @@ git commit -m "feat: add optional audit logging to RBAC middleware denials"
 ### Task 15: Agent — Extend Config Update for Tool Policies and Canary Tokens
 
 **Files:**
-- Modify: `cmd/valinor-agent/agent.go:25-31` (Agent struct)
-- Modify: `cmd/valinor-agent/agent.go:131-162` (handleConfigUpdate)
-- Create: `cmd/valinor-agent/policy.go` (ToolPolicy type)
+- Modify: `cmd/heimdall-agent/agent.go:25-31` (Agent struct)
+- Modify: `cmd/heimdall-agent/agent.go:131-162` (handleConfigUpdate)
+- Create: `cmd/heimdall-agent/policy.go` (ToolPolicy type)
 
 **Step 1: Create the policy types**
 
@@ -1806,7 +1806,7 @@ type ToolPolicy struct {
 
 **Step 2: Add fields to Agent struct**
 
-In `cmd/valinor-agent/agent.go`, update the Agent struct:
+In `cmd/heimdall-agent/agent.go`, update the Agent struct:
 
 ```go
 type Agent struct {
@@ -1846,7 +1846,7 @@ In the `a.mu.Lock()` block, add:
 
 **Step 4: Write a test for the extended config**
 
-Add to `cmd/valinor-agent/agent_test.go`:
+Add to `cmd/heimdall-agent/agent_test.go`:
 
 ```go
 func TestAgent_ConfigUpdate_ToolPoliciesAndCanary(t *testing.T) {
@@ -1899,13 +1899,13 @@ func TestAgent_ConfigUpdate_ToolPoliciesAndCanary(t *testing.T) {
 
 **Step 5: Run tests**
 
-Run: `go test ./cmd/valinor-agent/... -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -v -count=1`
 Expected: PASS
 
 **Step 6: Commit**
 
 ```bash
-git add cmd/valinor-agent/agent.go cmd/valinor-agent/agent_test.go cmd/valinor-agent/policy.go
+git add cmd/heimdall-agent/agent.go cmd/heimdall-agent/agent_test.go cmd/heimdall-agent/policy.go
 git commit -m "feat: extend agent config_update for tool policies and canary tokens"
 ```
 
@@ -1914,9 +1914,9 @@ git commit -m "feat: extend agent config_update for tool policies and canary tok
 ### Task 16: Agent — Parameter-Level Tool Validation
 
 **Files:**
-- Modify: `cmd/valinor-agent/agent.go:209-217` (isToolAllowed → split into name + param check)
-- Create: `cmd/valinor-agent/validator.go`
-- Create: `cmd/valinor-agent/validator_test.go`
+- Modify: `cmd/heimdall-agent/agent.go:209-217` (isToolAllowed → split into name + param check)
+- Create: `cmd/heimdall-agent/validator.go`
+- Create: `cmd/heimdall-agent/validator_test.go`
 
 **Step 1: Write the failing test**
 
@@ -1977,7 +1977,7 @@ func TestValidateToolCall_EmptyAllowlist(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test ./cmd/valinor-agent/... -run TestValidateToolCall -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -run TestValidateToolCall -v -count=1`
 Expected: FAIL — `undefined: agent.validateToolCall`
 
 **Step 3: Write the validator**
@@ -2053,7 +2053,7 @@ func (a *Agent) validateToolCall(toolName string, arguments string) ValidationRe
 
 **Step 4: Update forwardToOpenClaw to use validateToolCall**
 
-In `cmd/valinor-agent/openclaw.go`, replace the `isToolAllowed` call (around line 96) with `validateToolCall`:
+In `cmd/heimdall-agent/openclaw.go`, replace the `isToolAllowed` call (around line 96) with `validateToolCall`:
 
 Replace:
 ```go
@@ -2076,13 +2076,13 @@ And update the payload to include the reason:
 
 **Step 5: Run all agent tests**
 
-Run: `go test ./cmd/valinor-agent/... -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -v -count=1`
 Expected: PASS
 
 **Step 6: Commit**
 
 ```bash
-git add cmd/valinor-agent/validator.go cmd/valinor-agent/validator_test.go cmd/valinor-agent/openclaw.go
+git add cmd/heimdall-agent/validator.go cmd/heimdall-agent/validator_test.go cmd/heimdall-agent/openclaw.go
 git commit -m "feat: add parameter-level tool call validation in agent"
 ```
 
@@ -2091,9 +2091,9 @@ git commit -m "feat: add parameter-level tool call validation in agent"
 ### Task 17: Agent — Canary Token Detection
 
 **Files:**
-- Modify: `cmd/valinor-agent/openclaw.go:122-139` (response sending)
-- Create: `cmd/valinor-agent/canary.go`
-- Create: `cmd/valinor-agent/canary_test.go`
+- Modify: `cmd/heimdall-agent/openclaw.go:122-139` (response sending)
+- Create: `cmd/heimdall-agent/canary.go`
+- Create: `cmd/heimdall-agent/canary_test.go`
 
 **Step 1: Write the failing test**
 
@@ -2130,7 +2130,7 @@ func TestCheckCanary_EmptyTokens(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `go test ./cmd/valinor-agent/... -run TestCheckCanary -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -run TestCheckCanary -v -count=1`
 Expected: FAIL — `undefined: agent.checkCanary`
 
 **Step 3: Write the canary checker**
@@ -2156,7 +2156,7 @@ func (a *Agent) checkCanary(content string) (bool, string) {
 
 **Step 4: Integrate canary detection into forwardToOpenClaw**
 
-In `cmd/valinor-agent/openclaw.go`, before sending the done chunk (around line 122 "Send content as done chunk"), add canary detection:
+In `cmd/heimdall-agent/openclaw.go`, before sending the done chunk (around line 122 "Send content as done chunk"), add canary detection:
 
 ```go
 	// Check for canary token leak
@@ -2181,7 +2181,7 @@ In `cmd/valinor-agent/openclaw.go`, before sending the done chunk (around line 1
 
 **Step 5: Write an integration test for canary detection**
 
-Add to `cmd/valinor-agent/openclaw_test.go`:
+Add to `cmd/heimdall-agent/openclaw_test.go`:
 
 ```go
 func TestOpenClawProxy_CanaryDetected(t *testing.T) {
@@ -2243,13 +2243,13 @@ func TestOpenClawProxy_CanaryDetected(t *testing.T) {
 
 **Step 6: Run all agent tests**
 
-Run: `go test ./cmd/valinor-agent/... -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -v -count=1`
 Expected: PASS
 
 **Step 7: Commit**
 
 ```bash
-git add cmd/valinor-agent/canary.go cmd/valinor-agent/canary_test.go cmd/valinor-agent/openclaw.go cmd/valinor-agent/openclaw_test.go
+git add cmd/heimdall-agent/canary.go cmd/heimdall-agent/canary_test.go cmd/heimdall-agent/openclaw.go cmd/heimdall-agent/openclaw_test.go
 git commit -m "feat: add canary token detection in agent OpenClaw responses"
 ```
 
@@ -2259,7 +2259,7 @@ git commit -m "feat: add canary token detection in agent OpenClaw responses"
 
 **Files:**
 - Modify: `internal/platform/config/config.go:13-20` (add SentinelConfig)
-- Modify: `cmd/valinor/main.go:136-168` (construct audit + sentinel, pass to proxy)
+- Modify: `cmd/heimdall/main.go:136-168` (construct audit + sentinel, pass to proxy)
 
 **Step 1: Add SentinelConfig to config**
 
@@ -2308,7 +2308,7 @@ Add defaults in `Load`:
 
 **Step 2: Wire audit and sentinel in main.go**
 
-In `cmd/valinor/main.go`, after RBAC setup (around line 134) and before orchestrator (line 136), add:
+In `cmd/heimdall/main.go`, after RBAC setup (around line 134) and before orchestrator (line 136), add:
 
 ```go
 	// Audit
@@ -2401,7 +2401,7 @@ Expected: success
 **Step 4: Commit**
 
 ```bash
-git add internal/platform/config/config.go cmd/valinor/main.go
+git add internal/platform/config/config.go cmd/heimdall/main.go
 git commit -m "feat: wire audit logger and sentinel into main.go DI"
 ```
 
@@ -2453,8 +2453,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // Handler serves audit query endpoints.
@@ -2591,7 +2591,7 @@ Expected: PASS
 **Step 6: Commit**
 
 ```bash
-git add internal/audit/handler.go internal/audit/handler_test.go internal/platform/server/server.go cmd/valinor/main.go
+git add internal/audit/handler.go internal/audit/handler_test.go internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat: add audit query handler (GET /api/v1/audit/events)"
 ```
 
@@ -2601,7 +2601,7 @@ git commit -m "feat: add audit query handler (GET /api/v1/audit/events)"
 
 **Files:**
 - Modify: `internal/proxy/push.go:13-25` (payload struct)
-- Modify: `cmd/valinor/main.go` (configPusherAdapter)
+- Modify: `cmd/heimdall/main.go` (configPusherAdapter)
 - Modify: `internal/orchestrator/handler.go` (if it passes tool_policies)
 
 **Step 1: Extend the PushConfig payload**
@@ -2641,7 +2641,7 @@ type ConfigPusher interface {
 }
 ```
 
-In `cmd/valinor/main.go`, update the adapter:
+In `cmd/heimdall/main.go`, update the adapter:
 
 ```go
 func (a *configPusherAdapter) PushConfig(ctx context.Context, agentID string, cid uint32, config map[string]any, toolAllowlist []string, toolPolicies map[string]any, canaryTokens []string) error {
@@ -2661,7 +2661,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add internal/proxy/push.go cmd/valinor/main.go internal/orchestrator/orchestrator.go internal/orchestrator/handler.go
+git add internal/proxy/push.go cmd/heimdall/main.go internal/orchestrator/orchestrator.go internal/orchestrator/handler.go
 git commit -m "feat: extend PushConfig for tool policies and canary tokens"
 ```
 

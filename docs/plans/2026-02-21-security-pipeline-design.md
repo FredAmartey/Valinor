@@ -5,7 +5,7 @@
 
 ## Overview
 
-Defense-in-depth security pipeline for Valinor. Code quality and security are enforced at four layers: CLAUDE.md self-review, pre-commit hooks, CI scanners, and AI-powered PR review.
+Defense-in-depth security pipeline for Heimdall. Code quality and security are enforced at four layers: CLAUDE.md self-review, pre-commit hooks, CI scanners, and AI-powered PR review.
 
 ## Architecture: Parallel Workflows (Approach B)
 

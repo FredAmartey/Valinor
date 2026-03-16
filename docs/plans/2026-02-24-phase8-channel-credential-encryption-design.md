@@ -12,7 +12,7 @@ Encrypt tenant-scoped channel provider secrets at rest using an app-managed key 
   - `access_token`
   - `signing_secret`
   - `secret_token`
-- Config/env wiring for encryption key via `VALINOR_CHANNELS_CREDENTIALS_KEY`.
+- Config/env wiring for encryption key via `HEIMDALL_CHANNELS_CREDENTIALS_KEY`.
 - Store-layer write encryption and read decryption.
 - Forward-only compatibility: plaintext legacy rows remain readable.
 - Fail-closed behavior for encrypted values that cannot be decrypted.
@@ -39,7 +39,7 @@ Encrypt tenant-scoped channel provider secrets at rest using an app-managed key 
 
 - Add `channels.credentials.key` config path.
 - Key format: base64-encoded 32-byte raw key.
-- Expected env var: `VALINOR_CHANNELS_CREDENTIALS_KEY`.
+- Expected env var: `HEIMDALL_CHANNELS_CREDENTIALS_KEY`.
 - Runtime components that resolve credentials (webhook verifier and outbox sender) use a store instance configured with this key.
 
 ## Security and Failure Semantics

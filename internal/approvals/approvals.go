@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
 const (

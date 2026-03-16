@@ -1,8 +1,8 @@
 -- Seed default system roles and assign them to dev users.
 -- Run once after initial dev setup:
---   psql postgres://valinor:valinor@localhost:5432/valinor -f scripts/seed_dev_roles.sql
+--   psql postgres://heimdall:heimdall@localhost:5432/heimdall -f scripts/seed_dev_roles.sql
 --
--- Role names must match those registered in cmd/valinor/main.go.
+-- Role names must match those registered in cmd/heimdall/main.go.
 -- The permissions column is used by the RBAC evaluator (loaded at startup and after mutations).
 
 DO $$

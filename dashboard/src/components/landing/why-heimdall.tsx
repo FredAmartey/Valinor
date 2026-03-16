@@ -77,7 +77,7 @@ const cards = [
   },
 ];
 
-export function WhyValinor() {
+export function WhyHeimdall() {
   const { dark } = useTheme();
   const c = palette(dark);
 
@@ -92,7 +92,7 @@ export function WhyValinor() {
           className="mb-3 text-sm font-semibold uppercase tracking-widest"
           style={{ color: c.gold }}
         >
-          Why Valinor
+          Why Heimdall
         </p>
         <h2
           className="mb-12 max-w-2xl text-3xl font-bold leading-tight md:text-4xl"

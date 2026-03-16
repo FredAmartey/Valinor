@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/channels"
-	"github.com/valinor-ai/valinor/internal/platform/config"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 const (

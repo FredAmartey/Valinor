@@ -564,7 +564,7 @@ git commit -m "feat(dashboard): add /connectors page with permission gate"
 
 **Step 1: Start the Go backend**
 
-Run: `go run ./cmd/valinor`
+Run: `go run ./cmd/heimdall`
 
 **Step 2: Start the dashboard**
 

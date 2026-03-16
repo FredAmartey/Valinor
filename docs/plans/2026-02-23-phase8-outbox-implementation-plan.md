@@ -159,8 +159,8 @@ git commit -m "feat(channels): add outbox retry, dead-letter, and recovery trans
 - Modify: `internal/channels/execution.go`
 - Modify: `internal/channels/handler.go`
 - Modify: `internal/channels/handler_test.go`
-- Modify: `cmd/valinor/channels_execution.go`
-- Modify: `cmd/valinor/channels_execution_test.go`
+- Modify: `cmd/heimdall/channels_execution.go`
+- Modify: `cmd/heimdall/channels_execution_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -177,7 +177,7 @@ Update executor tests to assert response content is carried in `ExecutionResult`
 
 **Step 2: Run tests to verify failures**
 
-Run: `go test ./internal/channels ./cmd/valinor -run 'Outbox|Execution' -v`
+Run: `go test ./internal/channels ./cmd/heimdall -run 'Outbox|Execution' -v`
 Expected: FAIL with missing enqueue hook/response field.
 
 **Step 3: Write minimal implementation**
@@ -190,13 +190,13 @@ Expected: FAIL with missing enqueue hook/response field.
 
 **Step 4: Run tests to verify pass**
 
-Run: `go test ./internal/channels ./cmd/valinor -run 'Outbox|Execution' -v`
+Run: `go test ./internal/channels ./cmd/heimdall -run 'Outbox|Execution' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add internal/channels/execution.go internal/channels/handler.go internal/channels/handler_test.go cmd/valinor/channels_execution.go cmd/valinor/channels_execution_test.go
+git add internal/channels/execution.go internal/channels/handler.go internal/channels/handler_test.go cmd/heimdall/channels_execution.go cmd/heimdall/channels_execution_test.go
 git commit -m "feat(channels): enqueue executed responses and fail closed on outbox errors"
 ```
 
@@ -245,14 +245,14 @@ git add internal/channels/outbox_dispatcher.go internal/channels/outbox_dispatch
 git commit -m "feat(channels): add provider-agnostic outbox dispatcher with retries"
 ```
 
-### Task 6: Wire Dispatcher in `valinor` and Add Config Defaults
+### Task 6: Wire Dispatcher in `heimdall` and Add Config Defaults
 
 **Files:**
 - Modify: `internal/platform/config/config.go`
 - Modify: `internal/platform/config/config_test.go`
-- Create: `cmd/valinor/channels_outbox_worker.go`
-- Modify: `cmd/valinor/main.go`
-- Modify: `cmd/valinor/main_test.go`
+- Create: `cmd/heimdall/channels_outbox_worker.go`
+- Modify: `cmd/heimdall/main.go`
+- Modify: `cmd/heimdall/main_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -265,7 +265,7 @@ Add main wiring test:
 
 **Step 2: Run tests to verify failures**
 
-Run: `go test ./internal/platform/config ./cmd/valinor -run 'Outbox|BuildChannelHandler' -v`
+Run: `go test ./internal/platform/config ./cmd/heimdall -run 'Outbox|BuildChannelHandler' -v`
 Expected: FAIL due missing config fields/worker wiring.
 
 **Step 3: Write minimal implementation**
@@ -276,14 +276,14 @@ Expected: FAIL due missing config fields/worker wiring.
 
 **Step 4: Run tests to verify pass**
 
-Run: `go test ./internal/platform/config ./cmd/valinor -run 'Outbox|BuildChannelHandler' -v`
+Run: `go test ./internal/platform/config ./cmd/heimdall -run 'Outbox|BuildChannelHandler' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add internal/platform/config/config.go internal/platform/config/config_test.go cmd/valinor/channels_outbox_worker.go cmd/valinor/main.go cmd/valinor/main_test.go
-git commit -m "feat(valinor): wire in-process channel outbox worker"
+git add internal/platform/config/config.go internal/platform/config/config_test.go cmd/heimdall/channels_outbox_worker.go cmd/heimdall/main.go cmd/heimdall/main_test.go
+git commit -m "feat(heimdall): wire in-process channel outbox worker"
 ```
 
 ### Task 7: Final Integration Coverage and Full Verification
@@ -313,7 +313,7 @@ Adjust SQL/locking/recovery edge cases to satisfy integration assertions.
 
 Run:
 - `go test ./internal/channels -v`
-- `go test ./cmd/valinor -v`
+- `go test ./cmd/heimdall -v`
 - `go test ./internal/platform/database -run TestRLS_TenantIsolation -v`
 - `go test ./...`
 Expected: all PASS.
@@ -321,7 +321,7 @@ Expected: all PASS.
 **Step 5: Commit**
 
 ```bash
-git add internal/channels/integration_test.go internal/channels/*.go cmd/valinor/*.go internal/platform/config/*.go internal/platform/database/rls_test.go migrations/000011_channel_outbox.*
+git add internal/channels/integration_test.go internal/channels/*.go cmd/heimdall/*.go internal/platform/config/*.go internal/platform/database/rls_test.go migrations/000011_channel_outbox.*
 git commit -m "test(channels): add outbox integration coverage and finalize reliability path"
 ```
 

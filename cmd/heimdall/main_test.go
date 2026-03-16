@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/config"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/FredAmartey/heimdall/internal/platform/config"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 )
 
 func TestBuildConnectorHandler(t *testing.T) {

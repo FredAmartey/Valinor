@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 )
 
 func TestEndToEnd_MessageRoundTrip(t *testing.T) {
@@ -94,7 +94,7 @@ func TestEndToEnd_MessageRoundTrip(t *testing.T) {
 	assert.Contains(t, w2.Body.String(), "event: done")
 }
 
-// runMockAgent simulates a valinor-agent that replies to messages.
+// runMockAgent simulates a heimdall-agent that replies to messages.
 func runMockAgent(t *testing.T, ctx context.Context, ln net.Listener) {
 	t.Helper()
 	conn, err := ln.Accept()

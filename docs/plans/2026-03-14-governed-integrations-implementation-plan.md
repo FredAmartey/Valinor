@@ -6,17 +6,17 @@
 
 **Architecture:** Extend connector tool metadata to declare governed write actions, introduce a durable pending connector action record for pause/resume, route governed connector executions through policy evaluation before external execution, and integrate the results into activity, approvals, security, and audit surfaces. Keep V1 scoped to agent-initiated connector writes only; leave connector CRUD and read-only connector approvals untouched.
 
-**Tech Stack:** Go, PostgreSQL/pgx, Next.js dashboard, existing Valinor activity/approvals/policies/proxy/runtime plumbing, Go tests, TypeScript/React query surfaces.
+**Tech Stack:** Go, PostgreSQL/pgx, Next.js dashboard, existing Heimdall activity/approvals/policies/proxy/runtime plumbing, Go tests, TypeScript/React query surfaces.
 
 ---
 
 ### Task 1: Add durable storage for governed connector actions
 
 **Files:**
-- Create: `/Users/fred/Documents/Valinor/migrations/000020_governed_connector_actions.up.sql`
-- Create: `/Users/fred/Documents/Valinor/migrations/000020_governed_connector_actions.down.sql`
-- Create: `/Users/fred/Documents/Valinor/internal/connectors/actions.go`
-- Create: `/Users/fred/Documents/Valinor/internal/connectors/actions_test.go`
+- Create: `/Users/fred/Documents/Heimdall/migrations/000020_governed_connector_actions.up.sql`
+- Create: `/Users/fred/Documents/Heimdall/migrations/000020_governed_connector_actions.down.sql`
+- Create: `/Users/fred/Documents/Heimdall/internal/connectors/actions.go`
+- Create: `/Users/fred/Documents/Heimdall/internal/connectors/actions_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -75,10 +75,10 @@ git commit -m "feat: add governed connector action store"
 ### Task 2: Extend connector tool metadata for governance
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/connectors.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/store.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/store_test.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/handler_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/connectors.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/store.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/store_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/handler_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -123,10 +123,10 @@ git commit -m "feat: add connector governance metadata"
 ### Task 3: Add policy evaluation for governed connector writes
 
 **Files:**
-- Create: `/Users/fred/Documents/Valinor/internal/connectors/governance.go`
-- Create: `/Users/fred/Documents/Valinor/internal/connectors/governance_test.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/policies/store.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/policies/store_test.go`
+- Create: `/Users/fred/Documents/Heimdall/internal/connectors/governance.go`
+- Create: `/Users/fred/Documents/Heimdall/internal/connectors/governance_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/policies/store.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/policies/store_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -167,12 +167,12 @@ git commit -m "feat: evaluate policy for governed connector writes"
 ### Task 4: Pause agent runs on approval-required connector writes
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/cmd/valinor-agent/openclaw.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/proxy/protocol.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/proxy/handler.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/proxy/handler_test.go`
-- Modify: `/Users/fred/Documents/Valinor/cmd/valinor-agent/openclaw_test.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/activity/activity.go`
+- Modify: `/Users/fred/Documents/Heimdall/cmd/heimdall-agent/openclaw.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/proxy/protocol.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/proxy/handler.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/proxy/handler_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/cmd/heimdall-agent/openclaw_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/activity/activity.go`
 
 **Step 1: Write the failing tests**
 
@@ -184,7 +184,7 @@ Add runtime/proxy tests for:
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/valinor-agent ./internal/proxy -run 'Connector|Approval|RuntimeEvent' -v`
+Run: `go test ./cmd/heimdall-agent ./internal/proxy -run 'Connector|Approval|RuntimeEvent' -v`
 Expected: FAIL because connector writes are not yet governed in the runtime bridge.
 
 **Step 3: Write minimal implementation**
@@ -198,24 +198,24 @@ Add new activity kinds/statuses only if existing ones are insufficient; prefer r
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test ./cmd/valinor-agent ./internal/proxy -run 'Connector|Approval|RuntimeEvent' -v`
+Run: `go test ./cmd/heimdall-agent ./internal/proxy -run 'Connector|Approval|RuntimeEvent' -v`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor-agent/openclaw.go cmd/valinor-agent/openclaw_test.go internal/proxy/protocol.go internal/proxy/handler.go internal/proxy/handler_test.go internal/activity/activity.go
+git add cmd/heimdall-agent/openclaw.go cmd/heimdall-agent/openclaw_test.go internal/proxy/protocol.go internal/proxy/handler.go internal/proxy/handler_test.go internal/activity/activity.go
 git commit -m "feat: pause runs for governed connector approvals"
 ```
 
 ### Task 5: Create approval requests and persist waiting connector actions
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/internal/approvals/approvals.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/approvals/approvals_test.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/actions.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/actions_test.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/activity/store.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/approvals/approvals.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/approvals/approvals_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/actions.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/actions_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/activity/store.go`
 
 **Step 1: Write the failing tests**
 
@@ -255,12 +255,12 @@ git commit -m "feat: persist approval-required connector actions"
 ### Task 6: Resume or deny connector actions after approval resolution
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/internal/approvals/approvals.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/approvals/approvals_test.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/actions.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/connectors/actions_test.go`
-- Modify: `/Users/fred/Documents/Valinor/cmd/valinor-agent/openclaw.go`
-- Modify: `/Users/fred/Documents/Valinor/cmd/valinor-agent/openclaw_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/approvals/approvals.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/approvals/approvals_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/actions.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/connectors/actions_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/cmd/heimdall-agent/openclaw.go`
+- Modify: `/Users/fred/Documents/Heimdall/cmd/heimdall-agent/openclaw_test.go`
 
 **Step 1: Write the failing tests**
 
@@ -271,7 +271,7 @@ Cover:
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/approvals ./internal/connectors ./cmd/valinor-agent -run 'Resume|Denied|ConnectorAction' -v`
+Run: `go test ./internal/approvals ./internal/connectors ./cmd/heimdall-agent -run 'Resume|Denied|ConnectorAction' -v`
 Expected: FAIL because approval resolution only resumes channel outbox work today.
 
 **Step 3: Write minimal implementation**
@@ -285,27 +285,27 @@ Keep this scoped to connector action continuation, not arbitrary run replay.
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test ./internal/approvals ./internal/connectors ./cmd/valinor-agent -run 'Resume|Denied|ConnectorAction' -v`
+Run: `go test ./internal/approvals ./internal/connectors ./cmd/heimdall-agent -run 'Resume|Denied|ConnectorAction' -v`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add internal/approvals/approvals.go internal/approvals/approvals_test.go internal/connectors/actions.go internal/connectors/actions_test.go cmd/valinor-agent/openclaw.go cmd/valinor-agent/openclaw_test.go
+git add internal/approvals/approvals.go internal/approvals/approvals_test.go internal/connectors/actions.go internal/connectors/actions_test.go cmd/heimdall-agent/openclaw.go cmd/heimdall-agent/openclaw_test.go
 git commit -m "feat: resume governed connector actions after approval"
 ```
 
 ### Task 7: Surface governed connector actions in timeline, approvals, and security views
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/internal/activity/activity.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/activity/posture.go`
-- Modify: `/Users/fred/Documents/Valinor/internal/activity/handler.go`
-- Modify: `/Users/fred/Documents/Valinor/dashboard/src/lib/types.ts`
-- Modify: `/Users/fred/Documents/Valinor/dashboard/src/lib/queries/activity.ts`
-- Modify: `/Users/fred/Documents/Valinor/dashboard/src/components/agents/agent-activity-timeline.tsx`
-- Modify: `/Users/fred/Documents/Valinor/dashboard/src/components/approvals/approvals-queue.tsx`
-- Modify: `/Users/fred/Documents/Valinor/dashboard/src/components/security/security-events-view.tsx`
+- Modify: `/Users/fred/Documents/Heimdall/internal/activity/activity.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/activity/posture.go`
+- Modify: `/Users/fred/Documents/Heimdall/internal/activity/handler.go`
+- Modify: `/Users/fred/Documents/Heimdall/dashboard/src/lib/types.ts`
+- Modify: `/Users/fred/Documents/Heimdall/dashboard/src/lib/queries/activity.ts`
+- Modify: `/Users/fred/Documents/Heimdall/dashboard/src/components/agents/agent-activity-timeline.tsx`
+- Modify: `/Users/fred/Documents/Heimdall/dashboard/src/components/approvals/approvals-queue.tsx`
+- Modify: `/Users/fred/Documents/Heimdall/dashboard/src/components/security/security-events-view.tsx`
 
 **Step 1: Write the failing tests**
 
@@ -346,10 +346,10 @@ git commit -m "feat: surface governed connector actions in trust views"
 ### Task 8: Add audit coverage and full verification
 
 **Files:**
-- Modify: `/Users/fred/Documents/Valinor/internal/audit/` (relevant files discovered during implementation)
-- Modify: `/Users/fred/Documents/Valinor/internal/platform/server/server_test.go`
-- Modify: `/Users/fred/Documents/Valinor/docs/product-overview.md`
-- Modify: `/Users/fred/Documents/Valinor/docs/architecture.md`
+- Modify: `/Users/fred/Documents/Heimdall/internal/audit/` (relevant files discovered during implementation)
+- Modify: `/Users/fred/Documents/Heimdall/internal/platform/server/server_test.go`
+- Modify: `/Users/fred/Documents/Heimdall/docs/product-overview.md`
+- Modify: `/Users/fred/Documents/Heimdall/docs/architecture.md`
 
 **Step 1: Write the failing tests**
 

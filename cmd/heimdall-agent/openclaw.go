@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/FredAmartey/heimdall/internal/proxy"
 )
 
 const maxToolIterations = 10

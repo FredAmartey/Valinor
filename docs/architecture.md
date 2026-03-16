@@ -1,17 +1,17 @@
-# Valinor Architecture
+# Heimdall Architecture
 
 ## Overview
 
-Valinor is the security, observability, and governance layer above the agent runtime.
+Heimdall is the security, observability, and governance layer above the agent runtime.
 
 It is designed for broad-access AI agents: agents that can read real data, call real tools, message real users, and take real actions across connected systems. The runtime matters, but the durable architectural value is whether those agents can be isolated, governed, observed, and audited well enough for serious teams to trust them.
 
-Valinor is OpenClaw-first today. Over time, the trust layer should remain runtime-extensible, but the current system is intentionally shaped around making agents like OpenClaw safe for real teams and enterprises.
+Heimdall is OpenClaw-first today. Over time, the trust layer should remain runtime-extensible, but the current system is intentionally shaped around making agents like OpenClaw safe for real teams and enterprises.
 
 ```mermaid
 flowchart TD
     U["Users and operators"] --> C["Channels and integrations"]
-    U --> CP["Valinor control plane"]
+    U --> CP["Heimdall control plane"]
     C --> CP
     CP --> P["Policy and approvals"]
     CP --> A["Activity and audit"]
@@ -24,14 +24,14 @@ flowchart TD
 
 ## Core Components
 
-Valinor is organized around a few core layers:
+Heimdall is organized around a few core layers:
 
 - **Control plane**
   Owns tenancy, users, departments, roles, policy defaults, approvals, channels, connectors, and runtime orchestration.
 - **Proxy**
   Mediates requests into the runtime, performs ingress checks, correlates events, and persists activity and audit records.
 - **Runtime**
-  Runs `valinor-agent` plus the OpenClaw runtime inside an isolated execution environment.
+  Runs `heimdall-agent` plus the OpenClaw runtime inside an isolated execution environment.
 - **Channels**
   Handle inbound and outbound delivery across Slack, WhatsApp, Telegram, and related systems.
 - **Connectors**
@@ -43,11 +43,11 @@ Valinor is organized around a few core layers:
 
 ## Runtime Model
 
-Valinor is OpenClaw-first today.
+Heimdall is OpenClaw-first today.
 
 That means:
 
-- the primary runtime contract is built around OpenClaw plus `valinor-agent`
+- the primary runtime contract is built around OpenClaw plus `heimdall-agent`
 - the trust surfaces are designed to sit above the runtime, not replace it
 - runtime-extensible support can come later, once the runtime contract, policy model, observability model, and support model are mature enough
 
@@ -60,7 +60,7 @@ The runtime layer supports two product tiers:
 
 ## Isolation Model
 
-Valinor is designed around explicit trust boundaries.
+Heimdall is designed around explicit trust boundaries.
 
 The main isolation layers are:
 
@@ -83,7 +83,7 @@ These layers are meant to work together. No single mechanism is the whole bounda
 
 ## Security Model
 
-Valinor secures agents across ingress, execution, and egress.
+Heimdall secures agents across ingress, execution, and egress.
 
 - **Ingress**
   Messages and requests are checked before they reach the runtime, including prompt-injection and instruction-override defenses.
@@ -101,7 +101,7 @@ This is designed to make high-access agents safer without reducing everything to
 
 ## Event and Ledger Model
 
-Valinor keeps two complementary ledgers:
+Heimdall keeps two complementary ledgers:
 
 - **`agent_activity_events`**
   The operator truth layer. This captures the behavior story: prompts, runtime events, tool activity, approvals, channel delivery, security findings, and outcomes.
@@ -117,7 +117,7 @@ Both are important. One is not a replacement for the other.
 
 ## Channels and Integrations
 
-Valinor is built for agents that operate in real workflows, not just in a sandbox.
+Heimdall is built for agents that operate in real workflows, not just in a sandbox.
 
 That means the architecture includes:
 
@@ -133,7 +133,7 @@ Channels and integrations are not bolt-ons. They are part of the trust model bec
 
 ## Product Tiers
 
-Valinor currently supports two product tiers:
+Heimdall currently supports two product tiers:
 
 | | Teams | Enterprise |
 | --- | --- | --- |
@@ -144,9 +144,9 @@ Valinor currently supports two product tiers:
 
 Both tiers share the same governance, visibility, audit, channel, and connector model.
 
-## What Valinor Does Not Try to Own
+## What Heimdall Does Not Try to Own
 
-Valinor does not try to own every layer of the agent experience.
+Heimdall does not try to own every layer of the agent experience.
 
 In particular, it should not primarily compete on:
 

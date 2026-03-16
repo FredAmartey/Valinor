@@ -28,7 +28,7 @@ Without strict channel gates, duplicate webhook deliveries, replayed messages, a
 ### 1) Identity Linking and Entitlement Matrix
 
 - Channel identity is modeled as `(tenant_id, platform, platform_user_id)`.
-- Mapping is one-to-one with a Valinor user per tenant at any point in time.
+- Mapping is one-to-one with a Heimdall user per tenant at any point in time.
 - Link states are `pending_verification`, `verified`, `revoked`.
 - Only `verified` links can execute agent actions.
 - Required permissions:
@@ -165,7 +165,7 @@ Phase 8 cannot be marked complete unless:
 - `internal/channels/integration_test.go`
 - `internal/platform/server/server_test.go`
 - `internal/platform/config/config_test.go`
-- `cmd/valinor/main_test.go`
+- `cmd/heimdall/main_test.go`
 
 ### Operational Runbooks
 

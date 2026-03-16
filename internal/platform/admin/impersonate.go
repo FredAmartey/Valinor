@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/auth"
 )
 
 // ImpersonateHandler handles emergency impersonation requests.

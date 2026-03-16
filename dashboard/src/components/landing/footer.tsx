@@ -6,7 +6,7 @@ import { useTheme, palette, RING_GRADIENT } from "./theme"
 const FOOTER_LINKS = [
   { label: "Architecture", href: "/architecture" },
   { label: "Docs", href: TECHNICAL_ARCHITECTURE_URL },
-  { label: "GitHub", href: "https://github.com/FredAmartey/Valinor" },
+  { label: "GitHub", href: "https://github.com/FredAmartey/heimdall" },
   { label: "Contact", href: CONTACT_SECTION_URL },
 ] as const
 
@@ -83,7 +83,7 @@ export function FooterCta() {
             className="text-sm font-semibold"
             style={{ color: c.textSec }}
           >
-            Valinor
+            Heimdall
           </span>
           <div className="flex gap-6">
             {FOOTER_LINKS.map((link) => (
@@ -101,7 +101,7 @@ export function FooterCta() {
             ))}
           </div>
           <span className="text-xs" style={{ color: c.textMuted }}>
-            &copy; {new Date().getFullYear()} Valinor. All rights reserved.
+            &copy; {new Date().getFullYear()} Heimdall. All rights reserved.
           </span>
         </div>
       </footer>

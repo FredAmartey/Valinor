@@ -2,7 +2,7 @@
 
 > **Scope:** This runbook applies to the **Enterprise tier** (Firecracker microVMs). For the **Teams tier** (Docker containers), see [docker-teams-tier-setup.md](docker-teams-tier-setup.md).
 
-This runbook defines the practical path to build and validate Firecracker support in Valinor.
+This runbook defines the practical path to build and validate Firecracker support in Heimdall.
 
 ## 0) Linux KVM host prerequisites
 
@@ -24,7 +24,7 @@ Then verify KVM:
 Use a pinned Firecracker release tag for repeatability:
 
 ```bash
-./scripts/firecracker/bootstrap-linux-kvm.sh v1.11.0 /var/lib/valinor
+./scripts/firecracker/bootstrap-linux-kvm.sh v1.11.0 /var/lib/heimdall
 ```
 
 This will:
@@ -34,16 +34,16 @@ This will:
 - install pinned guest runtime versions:
   - Node.js `v22.22.0` (verified by SHA-256)
   - OpenClaw `2026.2.23` (verified by npm `sha512-...` integrity)
-- build `/var/lib/valinor/rootfs.ext4`
-- write `/var/lib/valinor/runtime-versions.json`
+- build `/var/lib/heimdall/rootfs.ext4`
+- write `/var/lib/heimdall/runtime-versions.json`
 
 Runtime override knobs (must provide matching verification values):
 
 ```bash
-VALINOR_GUEST_NODE_VERSION=v22.22.0
-VALINOR_GUEST_NODE_SHA256=<sha256-for-arch>
-VALINOR_GUEST_OPENCLAW_VERSION=2026.2.23
-VALINOR_GUEST_OPENCLAW_INTEGRITY=sha512-...
+HEIMDALL_GUEST_NODE_VERSION=v22.22.0
+HEIMDALL_GUEST_NODE_SHA256=<sha256-for-arch>
+HEIMDALL_GUEST_OPENCLAW_VERSION=2026.2.23
+HEIMDALL_GUEST_OPENCLAW_INTEGRITY=sha512-...
 ```
 
 If you want individual steps:
@@ -51,13 +51,13 @@ If you want individual steps:
 ```bash
 ./scripts/firecracker/check-kvm.sh
 ./scripts/firecracker/install-firecracker.sh v1.11.0
-./scripts/firecracker/fetch-ci-artifacts.sh v1.11.0 /var/lib/valinor
+./scripts/firecracker/fetch-ci-artifacts.sh v1.11.0 /var/lib/heimdall
 ```
 
 Inspect pinned runtime manifest:
 
 ```bash
-cat /var/lib/valinor/runtime-versions.json
+cat /var/lib/heimdall/runtime-versions.json
 ```
 
 ## 2) Fast local verification (any OS)
@@ -65,7 +65,7 @@ cat /var/lib/valinor/runtime-versions.json
 These checks prove code compiles and non-Linux fallback behavior remains stable:
 
 ```bash
-go test ./cmd/valinor -v
+go test ./cmd/heimdall -v
 go test ./internal/orchestrator -run TestMockDriver -v
 go build ./...
 ```
@@ -75,8 +75,8 @@ go build ./...
 Use this on macOS/Windows to ensure Linux-only Firecracker test code compiles:
 
 ```bash
-GOOS=linux GOARCH=amd64 go test ./cmd/valinor -c -o /tmp/valinor_cmd_linux.test
-GOOS=linux GOARCH=amd64 go test ./internal/orchestrator -c -o /tmp/valinor_orchestrator_linux.test
+GOOS=linux GOARCH=amd64 go test ./cmd/heimdall -c -o /tmp/heimdall_cmd_linux.test
+GOOS=linux GOARCH=amd64 go test ./internal/orchestrator -c -o /tmp/heimdall_orchestrator_linux.test
 ```
 
 ## 4) Linux CI-level behavior tests (fake Firecracker helper)
@@ -98,10 +98,10 @@ What this covers:
 ## 5) Real Firecracker end-to-end test (Linux, opt-in)
 
 This uses the actual Firecracker binary and assets. Required environment:
-- `VALINOR_FIRECRACKER_E2E=1`
-- `VALINOR_FIRECRACKER_KERNEL_PATH=/absolute/path/to/vmlinux`
-- `VALINOR_FIRECRACKER_ROOT_DRIVE=/absolute/path/to/rootfs.ext4`
-- optional `VALINOR_FIRECRACKER_BIN=/absolute/path/to/firecracker`
+- `HEIMDALL_FIRECRACKER_E2E=1`
+- `HEIMDALL_FIRECRACKER_KERNEL_PATH=/absolute/path/to/vmlinux`
+- `HEIMDALL_FIRECRACKER_ROOT_DRIVE=/absolute/path/to/rootfs.ext4`
+- optional `HEIMDALL_FIRECRACKER_BIN=/absolute/path/to/firecracker`
 
 Before running e2e:
 
@@ -112,13 +112,13 @@ Before running e2e:
 Run:
 
 ```bash
-VALINOR_FIRECRACKER_E2E=1 \
-VALINOR_FIRECRACKER_KERNEL_PATH=/var/lib/valinor/vmlinux \
-VALINOR_FIRECRACKER_ROOT_DRIVE=/var/lib/valinor/rootfs.ext4 \
+HEIMDALL_FIRECRACKER_E2E=1 \
+HEIMDALL_FIRECRACKER_KERNEL_PATH=/var/lib/heimdall/vmlinux \
+HEIMDALL_FIRECRACKER_ROOT_DRIVE=/var/lib/heimdall/rootfs.ext4 \
 go test ./internal/orchestrator -run TestFirecrackerDriver_RealBinaryLifecycle -v
 ```
 
-## 6) Start Valinor with Firecracker driver
+## 6) Start Heimdall with Firecracker driver
 
 Example config (no jailer):
 
@@ -130,8 +130,8 @@ orchestrator:
   reconcile_interval_secs: 30
   max_consecutive_failures: 3
   firecracker:
-    kernel_path: "/var/lib/valinor/vmlinux"
-    root_drive: "/var/lib/valinor/rootfs.ext4"
+    kernel_path: "/var/lib/heimdall/vmlinux"
+    root_drive: "/var/lib/heimdall/rootfs.ext4"
     jailer_path: ""
     workspace:
       enabled: true
@@ -146,15 +146,15 @@ Example config (phase-1 jailer mode):
 orchestrator:
   driver: "firecracker"
   firecracker:
-    kernel_path: "/var/lib/valinor/vmlinux"
-    root_drive: "/var/lib/valinor/rootfs.ext4"
+    kernel_path: "/var/lib/heimdall/vmlinux"
+    root_drive: "/var/lib/heimdall/rootfs.ext4"
     jailer:
       enabled: true
       binary_path: "/usr/local/bin/jailer"
       chroot_base_dir: "/srv/jailer"
       uid: 1001
       gid: 1001
-      netns_path: "/var/run/netns/valinor-egress"
+      netns_path: "/var/run/netns/heimdall-egress"
       daemonize: false
     workspace:
       enabled: true
@@ -165,8 +165,8 @@ orchestrator:
       guest_mac: "06:00:ac:10:00:02" # optional
 ```
 
-Set `daemonize: true` if you want detached jailer execution. Valinor now supervises the daemonized Firecracker process using the jailer `.pid` file under the jail root.
-Valinor also persists per-VM metadata to `<stateRoot>/<vmID>/vm-state.json`, so daemonized VMs can be reattached after a Valinor process restart for health, stop, and cleanup operations.
+Set `daemonize: true` if you want detached jailer execution. Heimdall now supervises the daemonized Firecracker process using the jailer `.pid` file under the jail root.
+Heimdall also persists per-VM metadata to `<stateRoot>/<vmID>/vm-state.json`, so daemonized VMs can be reattached after a Heimdall process restart for health, stop, and cleanup operations.
 
 Startup preflight now fails early if:
 - `kernel_path` or `root_drive` is missing or not an absolute file path
@@ -187,13 +187,13 @@ Run this on a Linux host with KVM:
 ```bash
 set -euo pipefail
 
-cd /path/to/Valinor
+cd /path/to/Heimdall
 
 # Host capability
 ./scripts/firecracker/check-kvm.sh
 
 # Baseline compile + non-Linux fallback behavior
-go test ./cmd/valinor -v
+go test ./cmd/heimdall -v
 go test ./internal/orchestrator -run TestMockDriver -v
 go build ./...
 
@@ -201,9 +201,9 @@ go build ./...
 go test ./internal/orchestrator -run 'TestFirecrackerDriver_(Start|Reattach|Cleanup)' -v
 
 # Real Firecracker e2e
-VALINOR_FIRECRACKER_E2E=1 \
-VALINOR_FIRECRACKER_KERNEL_PATH=/var/lib/valinor/vmlinux \
-VALINOR_FIRECRACKER_ROOT_DRIVE=/var/lib/valinor/rootfs.ext4 \
+HEIMDALL_FIRECRACKER_E2E=1 \
+HEIMDALL_FIRECRACKER_KERNEL_PATH=/var/lib/heimdall/vmlinux \
+HEIMDALL_FIRECRACKER_ROOT_DRIVE=/var/lib/heimdall/rootfs.ext4 \
 go test ./internal/orchestrator -run TestFirecrackerDriver_RealBinaryLifecycle -v
 ```
 

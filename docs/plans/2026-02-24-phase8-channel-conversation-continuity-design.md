@@ -20,7 +20,7 @@ When a linked user sends a new WhatsApp/Slack/Telegram message, the agent receiv
 - Add store API to fetch recent conversation turns for `(tenant_id, user_id)` from `channel_messages`.
 - Use a fixed history window of last `12` turns.
 - Pass history through channel execution path into proxy dispatch payload.
-- Update `valinor-agent` OpenClaw bridge to consume either:
+- Update `heimdall-agent` OpenClaw bridge to consume either:
   - `messages[]` (preferred), or
   - existing `role`/`content` payload (fallback compatibility).
 - Tests for store query behavior, execution wiring, dispatch payload, and agent request translation.
@@ -71,7 +71,7 @@ Only include turns with non-empty request text; include response text when avail
 
 ### Agent Bridge
 
-`valinor-agent` accepts payloads with:
+`heimdall-agent` accepts payloads with:
 
 - `messages: [{role, content}]` (primary)
 - fallback to a single message built from `role`/`content` if `messages` is absent
@@ -92,7 +92,7 @@ OpenClaw request always uses the normalized `messages` array.
 ## Verification Plan
 
 - `go test ./internal/channels -run 'Conversation|History|HandleWebhook' -v`
-- `go test ./cmd/valinor -run 'ChannelExecutor|DispatchChannelMessageToAgent' -v`
-- `go test ./cmd/valinor-agent -run 'OpenClawProxy' -v`
+- `go test ./cmd/heimdall -run 'ChannelExecutor|DispatchChannelMessageToAgent' -v`
+- `go test ./cmd/heimdall-agent -run 'OpenClawProxy' -v`
 - `go test ./... -count=1`
 

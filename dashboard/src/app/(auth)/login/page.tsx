@@ -9,7 +9,7 @@ import { AuthDivider } from "@/components/auth/auth-divider"
 import { getClerk } from "@/lib/clerk"
 import Link from "next/link"
 
-const isDevMode = process.env.NEXT_PUBLIC_VALINOR_DEV_MODE === "true"
+const isDevMode = process.env.NEXT_PUBLIC_HEIMDALL_DEV_MODE === "true"
 const isClerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 const tenantSlug = process.env.NEXT_PUBLIC_TENANT_SLUG
 

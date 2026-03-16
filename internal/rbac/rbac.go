@@ -3,7 +3,7 @@ package rbac
 import (
 	"context"
 
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/auth"
 )
 
 // Decision represents the result of an authorization check.

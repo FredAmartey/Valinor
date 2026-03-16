@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/audit"
 )
 
 type captureAuditLogger struct {

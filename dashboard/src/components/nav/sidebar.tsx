@@ -90,7 +90,7 @@ export function Sidebar() {
     <aside className="flex h-full w-60 flex-col border-r border-zinc-200 bg-white">
       <div className="flex h-14 items-center border-b border-zinc-200 px-4">
         <span className="text-lg font-semibold tracking-tight text-zinc-900">
-          Valinor
+          Heimdall
         </span>
       </div>
       <nav className="flex flex-1 flex-col p-3">

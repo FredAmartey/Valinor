@@ -2,18 +2,18 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Enforce loopback-only OpenClaw endpoint defaults in `valinor-agent` and document the production hardening checklist.
+**Goal:** Enforce loopback-only OpenClaw endpoint defaults in `heimdall-agent` and document the production hardening checklist.
 
-**Architecture:** Add a small URL validation layer in `cmd/valinor-agent` and enforce it both at startup and message-forwarding time. Keep break-glass support explicit via a CLI flag. Track remaining hardening items in a dedicated checklist doc.
+**Architecture:** Add a small URL validation layer in `cmd/heimdall-agent` and enforce it both at startup and message-forwarding time. Keep break-glass support explicit via a CLI flag. Track remaining hardening items in a dedicated checklist doc.
 
-**Tech Stack:** Go, stdlib `net/url` + `net`, existing valinor-agent/proxy tests.
+**Tech Stack:** Go, stdlib `net/url` + `net`, existing heimdall-agent/proxy tests.
 
 ---
 
 ### Task 1: Add failing tests for URL security validation
 
 **Files:**
-- Create: `cmd/valinor-agent/security_test.go`
+- Create: `cmd/heimdall-agent/security_test.go`
 
 **Step 1: Write failing unit tests**
 - Add table-driven tests for URL validation behavior:
@@ -22,13 +22,13 @@
   - pass when override enabled: remote host accepted.
 
 **Step 2: Run to verify RED**
-- Run: `go test ./cmd/valinor-agent -run TestValidateOpenClawURL -v`
+- Run: `go test ./cmd/heimdall-agent -run TestValidateOpenClawURL -v`
 - Expected: FAIL (validator function not implemented).
 
 ### Task 2: Implement minimal URL validator
 
 **Files:**
-- Create: `cmd/valinor-agent/security.go`
+- Create: `cmd/heimdall-agent/security.go`
 
 **Step 1: Implement validator**
 - Add `validateOpenClawURL(raw string, allowRemote bool) error`.
@@ -37,15 +37,15 @@
   - allow only loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) unless `allowRemote=true`
 
 **Step 2: Run targeted tests to verify GREEN**
-- Run: `go test ./cmd/valinor-agent -run TestValidateOpenClawURL -v`
+- Run: `go test ./cmd/heimdall-agent -run TestValidateOpenClawURL -v`
 - Expected: PASS.
 
 ### Task 3: Enforce guard in startup and runtime forwarding
 
 **Files:**
-- Modify: `cmd/valinor-agent/main.go`
-- Modify: `cmd/valinor-agent/openclaw.go`
-- Modify: `cmd/valinor-agent/openclaw_test.go`
+- Modify: `cmd/heimdall-agent/main.go`
+- Modify: `cmd/heimdall-agent/openclaw.go`
+- Modify: `cmd/heimdall-agent/openclaw_test.go`
 
 **Step 1: Write failing behavior test first**
 - Add test in `openclaw_test.go`:
@@ -54,7 +54,7 @@
   - assert immediate `error` frame with `code=invalid_config`
 
 **Step 2: Verify RED**
-- Run: `go test ./cmd/valinor-agent -run TestOpenClawProxy_RejectsRemoteEndpoint -v`
+- Run: `go test ./cmd/heimdall-agent -run TestOpenClawProxy_RejectsRemoteEndpoint -v`
 - Expected: FAIL before implementation.
 
 **Step 3: Implement startup guard**
@@ -65,7 +65,7 @@
 - In `forwardToOpenClaw`, validate configured URL with `allowRemote=false` and return `invalid_config` error frame if invalid.
 
 **Step 5: Verify GREEN**
-- Run: `go test ./cmd/valinor-agent -run 'OpenClaw|ValidateOpenClawURL' -v`
+- Run: `go test ./cmd/heimdall-agent -run 'OpenClaw|ValidateOpenClawURL' -v`
 - Expected: PASS.
 
 ### Task 4: Add hardening checklist doc
@@ -91,5 +91,5 @@
 - Expected: PASS.
 
 **Step 2: Commit**
-- `git add cmd/valinor-agent/main.go cmd/valinor-agent/openclaw.go cmd/valinor-agent/openclaw_test.go cmd/valinor-agent/security.go cmd/valinor-agent/security_test.go docs/plans/2026-02-24-phase8-openclaw-runtime-hardening-*.md docs/runbooks/openclaw-security-hardening-checklist.md`
+- `git add cmd/heimdall-agent/main.go cmd/heimdall-agent/openclaw.go cmd/heimdall-agent/openclaw_test.go cmd/heimdall-agent/security.go cmd/heimdall-agent/security_test.go docs/plans/2026-02-24-phase8-openclaw-runtime-hardening-*.md docs/runbooks/openclaw-security-hardening-checklist.md`
 - `git commit -m "feat(agent): enforce local openclaw endpoint defaults"`

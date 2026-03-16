@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/channels"
+	"github.com/FredAmartey/heimdall/internal/channels"
 )
 
 func TestSlackVerifier_ValidSignature(t *testing.T) {

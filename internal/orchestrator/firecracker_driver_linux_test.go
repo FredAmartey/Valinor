@@ -24,15 +24,15 @@ import (
 )
 
 const (
-	firecrackerTestHelperEnv   = "VALINOR_TEST_FIRECRACKER_HELPER"
-	firecrackerTestFailPathEnv = "VALINOR_TEST_FIRECRACKER_FAIL_PATH"
-	firecrackerRequireSMTEnv   = "VALINOR_TEST_FIRECRACKER_REQUIRE_SMT"
-	firecrackerRequireHTEnv    = "VALINOR_TEST_FIRECRACKER_REQUIRE_HT"
-	jailerTestHelperEnv        = "VALINOR_TEST_JAILER_HELPER"
-	jailerTestArgsFileEnv      = "VALINOR_TEST_JAILER_ARGS_FILE"
-	jailerTestChildEnv         = "VALINOR_TEST_JAILER_CHILD"
-	jailerTestChildSockEnv     = "VALINOR_TEST_JAILER_CHILD_SOCK"
-	jailerTestChildPIDFileEnv  = "VALINOR_TEST_JAILER_CHILD_PIDFILE"
+	firecrackerTestHelperEnv   = "HEIMDALL_TEST_FIRECRACKER_HELPER"
+	firecrackerTestFailPathEnv = "HEIMDALL_TEST_FIRECRACKER_FAIL_PATH"
+	firecrackerRequireSMTEnv   = "HEIMDALL_TEST_FIRECRACKER_REQUIRE_SMT"
+	firecrackerRequireHTEnv    = "HEIMDALL_TEST_FIRECRACKER_REQUIRE_HT"
+	jailerTestHelperEnv        = "HEIMDALL_TEST_JAILER_HELPER"
+	jailerTestArgsFileEnv      = "HEIMDALL_TEST_JAILER_ARGS_FILE"
+	jailerTestChildEnv         = "HEIMDALL_TEST_JAILER_CHILD"
+	jailerTestChildSockEnv     = "HEIMDALL_TEST_JAILER_CHILD_SOCK"
+	jailerTestChildPIDFileEnv  = "HEIMDALL_TEST_JAILER_CHILD_PIDFILE"
 )
 
 func TestMain(m *testing.M) {
@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestFirecrackerDriver_StartStopCleanup(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
 
 	tmp := shortTempDir(t)
@@ -93,7 +93,7 @@ func TestFirecrackerDriver_StartStopCleanup(t *testing.T) {
 }
 
 func TestFirecrackerDriver_StartFailsWhenMachineConfigRejected(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
 	t.Setenv(firecrackerTestFailPathEnv, "/machine-config")
 
@@ -123,7 +123,7 @@ func TestFirecrackerDriver_StartFailsWhenMachineConfigRejected(t *testing.T) {
 }
 
 func TestFirecrackerDriver_StartRejectsInvalidVMID(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
 
 	tmp := shortTempDir(t)
@@ -149,7 +149,7 @@ func TestFirecrackerDriver_StartRejectsInvalidVMID(t *testing.T) {
 }
 
 func TestFirecrackerDriver_StartRejectsUnsafePathOverrides(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
 
 	tmp := shortTempDir(t)
@@ -233,7 +233,7 @@ func TestFirecrackerDriver_ManagementRejectsInvalidVMID(t *testing.T) {
 }
 
 func TestFirecrackerDriver_StartUsesSMTMachineConfigWhenRequired(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
 	t.Setenv(firecrackerRequireSMTEnv, "1")
 
@@ -262,7 +262,7 @@ func TestFirecrackerDriver_StartUsesSMTMachineConfigWhenRequired(t *testing.T) {
 }
 
 func TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", os.Args[0])
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", os.Args[0])
 	t.Setenv(firecrackerTestHelperEnv, "1")
 
 	tmp := shortTempDir(t)
@@ -297,7 +297,7 @@ func TestFirecrackerDriver_StartAutoCreatesQuotaDataDrive(t *testing.T) {
 }
 
 func TestFirecrackerDriver_StartFailsWhenNetworkInterfaceRejected(t *testing.T) {
-	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 	t.Setenv(firecrackerTestFailPathEnv, "/network-interfaces/eth0")
 
@@ -314,7 +314,7 @@ func TestFirecrackerDriver_StartFailsWhenNetworkInterfaceRejected(t *testing.T) 
 		ChrootBaseDir: filepath.Join(tmp, "jailer"),
 		UID:           1001,
 		GID:           1001,
-		NetNSPath:     "/var/run/netns/valinor",
+		NetNSPath:     "/var/run/netns/heimdall",
 		NetworkPolicy: "outbound_only",
 		TapDevice:     "tap0",
 	})
@@ -374,7 +374,7 @@ func TestFirecrackerDriver_StartStopCleanup_WithJailer(t *testing.T) {
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
-	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 	t.Setenv(jailerTestArgsFileEnv, argsPath)
 
@@ -429,7 +429,7 @@ func TestFirecrackerDriver_StartStopCleanup_WithJailerDaemonize(t *testing.T) {
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
-	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 	t.Setenv(jailerTestArgsFileEnv, argsPath)
 
@@ -479,7 +479,7 @@ func TestFirecrackerDriver_ReattachDaemonizedJailerAfterDriverRestart(t *testing
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
-	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 
 	jailerCfg := FirecrackerJailerConfig{
@@ -530,7 +530,7 @@ func TestFirecrackerDriver_CleanupDaemonizedJailerAfterDriverRestart(t *testing.
 	require.NoError(t, os.WriteFile(kernelPath, []byte("kernel"), 0o644))
 	require.NoError(t, os.WriteFile(rootDrive, []byte("rootfs"), 0o644))
 
-	t.Setenv("VALINOR_FIRECRACKER_BIN", "true")
+	t.Setenv("HEIMDALL_FIRECRACKER_BIN", "true")
 	t.Setenv(jailerTestHelperEnv, "1")
 
 	jailerCfg := FirecrackerJailerConfig{

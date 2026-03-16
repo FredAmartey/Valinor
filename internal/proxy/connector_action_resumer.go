@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/FredAmartey/heimdall/internal/approvals"
+	auditlog "github.com/FredAmartey/heimdall/internal/audit"
+	"github.com/FredAmartey/heimdall/internal/connectors"
+	"github.com/FredAmartey/heimdall/internal/orchestrator"
+	"github.com/FredAmartey/heimdall/internal/platform/database"
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/approvals"
-	auditlog "github.com/valinor-ai/valinor/internal/audit"
-	"github.com/valinor-ai/valinor/internal/connectors"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/database"
 )
 
 type ConnectorActionResolver struct {
