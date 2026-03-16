@@ -12,7 +12,7 @@
 - Right side: stylized glassmorphism card showing agent dashboard mockup (semi-transparent, blurred bg, subtle gold border accent) — static visual, not interactive
 - Light mode: inverts to `#e4e4e8` bg, white glass cards, same gold accents
 
-### 2. Problem / Solution ("Why Valinor")
+### 2. Problem / Solution ("Why Heimdall")
 - Slightly lighter dark bg (`#111114`) for visual rhythm
 - 3 pain-point cards in horizontal row:
   1. **Isolation** — "Every tenant gets its own sandbox"

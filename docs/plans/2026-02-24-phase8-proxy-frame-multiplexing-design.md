@@ -55,7 +55,7 @@ Keep one connection per agent in `internal/proxy/pool.go`. Existing dial/reuse s
 ### Caller integration
 
 - `internal/proxy/handler.go`: replace direct `Recv` usage with request-stream `Recv` loops keyed by request ID.
-- `cmd/valinor/channels_execution.go`: same change in `dispatchChannelMessageToAgent`.
+- `cmd/heimdall/channels_execution.go`: same change in `dispatchChannelMessageToAgent`.
 
 ## Error Handling
 
@@ -73,7 +73,7 @@ Keep one connection per agent in `internal/proxy/pool.go`. Existing dial/reuse s
 2. Regression tests for handler/channel execution compile and behavior with new API.
 3. Full package verification:
    - `go test ./internal/proxy -v`
-   - `go test ./cmd/valinor -v`
+   - `go test ./cmd/heimdall -v`
    - `go test ./...`
 
 ## Risks and Mitigations

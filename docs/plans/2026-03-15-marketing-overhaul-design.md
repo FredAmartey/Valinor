@@ -6,7 +6,7 @@ Complete visual overhaul of the landing page (`/landing`) and architecture page 
 
 ## Goals
 
-- Dark, cosmic, royal aesthetic inspired by StarSling.dev and the Tolkien origins of "Valinor"
+- Dark, cosmic, royal aesthetic inspired by StarSling.dev and the Tolkien origins of "Heimdall"
 - Premium, technical, modern — conveys "serious infrastructure" not "consumer app"
 - Sparkling gold accents, nebula backgrounds, silver-white text on pure black
 - Responsive across desktop, tablet, and mobile
@@ -20,7 +20,7 @@ Complete visual overhaul of the landing page (`/landing`) and architecture page 
 
 ## Visual Language
 
-The visual identity draws from Tolkien's Valinor — an ancient civilization whose technology feels impossibly advanced. Dark, luminous, refined. Elvish craftsmanship rendered as a product page.
+The visual identity draws from Tolkien's Heimdall — an ancient civilization whose technology feels impossibly advanced. Dark, luminous, refined. Elvish craftsmanship rendered as a product page.
 
 ### Palette
 
@@ -74,7 +74,7 @@ animation: shimmer 4s ease infinite;
 
 - Full-width, `position: sticky`, top: 0
 - Background: `#000000e6` with `backdrop-filter: blur(24px)`
-- Left: Valinor wordmark (Afacad, all-caps, tracking-wide)
+- Left: Heimdall wordmark (Afacad, all-caps, tracking-wide)
 - Center/right: 3 nav links — Features, Pricing, Architecture (silver-gray, hover to white)
 - Far right: White pill CTA ("Get Started →")
 - "Architecture" link routes to `/architecture`
@@ -101,7 +101,7 @@ animation: shimmer 4s ease infinite;
 
 - Three glass cards in a horizontal row, equal width
 - Each card: gold line-art icon at top, white Afacad title, silver-gray Geist description
-- Content from existing "Why Valinor" copy:
+- Content from existing "Why Heimdall" copy:
   - Card 1: Isolation That Holds
   - Card 2: Security That Shows Its Work
   - Card 3: Useful From Day One
@@ -131,9 +131,9 @@ animation: shimmer 4s ease infinite;
 ### Section 8 — Footer
 
 - Black background, full-width, subtle top border (gold-tinted)
-- Left column: Valinor wordmark + one-line brand description in gray
+- Left column: Heimdall wordmark + one-line brand description in gray
 - Right columns: Product links, Company links, Socials (white headers, gray link text)
-- Bottom bar: "© 2026 Valinor. All rights reserved." left, Privacy + Terms right
+- Bottom bar: "© 2026 Heimdall. All rights reserved." left, Privacy + Terms right
 
 ## Architecture Page Structure (`/architecture`)
 

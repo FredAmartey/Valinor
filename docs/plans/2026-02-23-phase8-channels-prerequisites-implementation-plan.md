@@ -204,8 +204,8 @@ git commit -m "feat: wire channel handlers and routes"
 ### Task 6: RBAC Defaults and Config Flags
 
 **Files:**
-- Modify: `cmd/valinor/main.go`
-- Modify: `cmd/valinor/main_test.go`
+- Modify: `cmd/heimdall/main.go`
+- Modify: `cmd/heimdall/main_test.go`
 - Modify: `internal/platform/config/config.go`
 - Modify: `config.yaml`
 
@@ -216,7 +216,7 @@ git commit -m "feat: wire channel handlers and routes"
 
 **Step 2: Run tests to confirm failure**
 
-Run: `go test ./cmd/valinor -run TestMain -v`
+Run: `go test ./cmd/heimdall -run TestMain -v`
 Expected: FAIL
 
 **Step 3: Implement RBAC and config changes**
@@ -227,13 +227,13 @@ Expected: FAIL
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cmd/valinor ./internal/platform/config -v`
+Run: `go test ./cmd/heimdall ./internal/platform/config -v`
 Expected: PASS
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/main.go cmd/valinor/main_test.go internal/platform/config/config.go config.yaml
+git add cmd/heimdall/main.go cmd/heimdall/main_test.go internal/platform/config/config.go config.yaml
 git commit -m "feat: add channel RBAC defaults and feature flags"
 ```
 

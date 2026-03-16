@@ -11,27 +11,27 @@ The dashboard only supports dev-mode credentials login (email-only, no password)
 | Identity provider | Clerk | Full auth platform: hosted login, MFA, user management. $25/mo for 1K MAU |
 | Dashboard integration | Clerk as NextAuth OIDC provider | Keeps existing NextAuth session/JWT infrastructure. Minimal rewrite. Easy to swap IdP later |
 | Dev mode | Keep alongside Clerk | Local development stays frictionless. Clerk activates via config |
-| Tenant resolution | Subdomain-based | `gondolin.valinor.app` → tenant `gondolin-fc`. Reuses existing `TenantResolver` |
+| Tenant resolution | Subdomain-based | `gondolin.heimdall.app` → tenant `gondolin-fc`. Reuses existing `TenantResolver` |
 
 ## Architecture
 
 ```
-User → Dashboard (gondolin.valinor.app)
+User → Dashboard (gondolin.heimdall.app)
   → NextAuth sign-in → Clerk OIDC redirect → Clerk hosted login
   → Clerk callback → NextAuth signIn callback
   → POST /auth/exchange { id_token: "clerk-jwt" }
-  → Valinor validates Clerk token via JWKS
+  → Heimdall validates Clerk token via JWKS
   → Resolves tenant from subdomain (TenantResolver)
   → FindOrCreateByOIDC (oidc_subject + oidc_issuer)
-  → Issues Valinor access + refresh tokens
-  → NextAuth stores Valinor JWTs in session (same as dev mode)
+  → Issues Heimdall access + refresh tokens
+  → NextAuth stores Heimdall JWTs in session (same as dev mode)
 ```
 
 ## Backend Changes
 
 ### New Endpoint: `POST /auth/exchange`
 
-Accepts an external OIDC id_token and returns Valinor tokens.
+Accepts an external OIDC id_token and returns Heimdall tokens.
 
 **Request:**
 ```json
@@ -94,7 +94,7 @@ Lightweight JWKS fetcher with in-memory cache:
 ```yaml
 auth:
   devmode: true                    # existing — enables POST /auth/dev/login
-  signing_key: "..."               # existing — Valinor JWT signing key
+  signing_key: "..."               # existing — Heimdall JWT signing key
   oidc:
     enabled: false                 # toggle for production
     issuer: "https://clerk.example.com"
@@ -139,7 +139,7 @@ After Clerk authenticates, the NextAuth `signIn` callback intercepts the OIDC re
 
 1. Extract `id_token` from the account object (`account.id_token`)
 2. Call `POST ${VALINOR_API_URL}/auth/exchange` with the id_token
-3. Attach the returned Valinor tokens to the user object
+3. Attach the returned Heimdall tokens to the user object
 4. The existing `jwt` callback stores them in the session token
 
 This mirrors how the dev credentials provider works — both paths produce the same user object shape with `accessToken`, `refreshToken`, and user claims.
@@ -152,7 +152,7 @@ This mirrors how the dev credentials provider works — both paths produce the s
 
 ### What Stays Unchanged
 
-- JWT callback (stores Valinor tokens — same shape from both providers)
+- JWT callback (stores Heimdall tokens — same shape from both providers)
 - Session callback (exposes accessToken, user roles, tenantId)
 - Token refresh flow (`POST /auth/token/refresh`)
 - Middleware route protection
@@ -165,7 +165,7 @@ This mirrors how the dev credentials provider works — both paths produce the s
 The exchange endpoint resolves tenant from the request's `Origin` header:
 
 ```
-Origin: https://gondolin.valinor.app
+Origin: https://gondolin.heimdall.app
   → subdomain: gondolin
   → TenantResolver.Resolve("gondolin")
   → tenant_id: a1b2c3d4-0001-4000-8000-000000000001
@@ -186,7 +186,7 @@ Platform admins (matched by `oidc_issuer` + `oidc_subject` in the users table wi
 
 ### Go
 
-- `POST /auth/exchange` with valid mock id_token → 200 + Valinor tokens
+- `POST /auth/exchange` with valid mock id_token → 200 + Heimdall tokens
 - `POST /auth/exchange` with expired token → 401
 - `POST /auth/exchange` with wrong audience → 401
 - `POST /auth/exchange` with wrong issuer → 401
@@ -199,8 +199,8 @@ Platform admins (matched by `oidc_issuer` + `oidc_subject` in the users table wi
 
 - Login page renders Clerk button when `AUTH_CLERK_ISSUER` is set
 - Login page renders dev mode when `VALINOR_DEV_MODE` is set
-- signIn callback exchanges id_token for Valinor tokens (mock API)
-- Session contains Valinor JWT after Clerk sign-in
+- signIn callback exchanges id_token for Heimdall tokens (mock API)
+- Session contains Heimdall JWT after Clerk sign-in
 
 ## Risks
 
@@ -208,5 +208,5 @@ Platform admins (matched by `oidc_issuer` + `oidc_subject` in the users table wi
 |------|------------|
 | Clerk outage blocks login | Dev mode available as fallback. Existing sessions remain valid (JWT-based) |
 | JWKS fetch fails | Cached keys serve requests. Log error. Return 503 only if cache is empty |
-| User exists in Clerk but not Valinor | `FindOrCreateByOIDC` auto-creates with default role (no permissions until assigned) |
+| User exists in Clerk but not Heimdall | `FindOrCreateByOIDC` auto-creates with default role (no permissions until assigned) |
 | Subdomain spoofing via Origin header | Origin validated against configured `base_domain`. Mismatches rejected |

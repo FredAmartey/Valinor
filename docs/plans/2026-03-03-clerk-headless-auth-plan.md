@@ -4,7 +4,7 @@
 
 **Goal:** Replace Clerk OIDC redirect with headless `@clerk/clerk-js` SDK for custom login/sign-up pages, plus add tenant self-service creation and invite system.
 
-**Architecture:** Frontend uses `@clerk/clerk-js` headless to authenticate users (password + social OAuth). Clerk session tokens are exchanged for Valinor tokens via the existing `POST /auth/exchange` backend endpoint. New backend endpoints handle tenant self-service creation and invite codes. NextAuth keeps its JWT strategy — the Clerk OIDC provider is replaced with a credentials provider that accepts Clerk session tokens.
+**Architecture:** Frontend uses `@clerk/clerk-js` headless to authenticate users (password + social OAuth). Clerk session tokens are exchanged for Heimdall tokens via the existing `POST /auth/exchange` backend endpoint. New backend endpoints handle tenant self-service creation and invite codes. NextAuth keeps its JWT strategy — the Clerk OIDC provider is replaced with a credentials provider that accepts Clerk session tokens.
 
 **Tech Stack:** `@clerk/clerk-js` (headless, ~40KB), NextAuth v5 (JWT strategy), Go backend (existing auth handler), PostgreSQL (new `tenant_invites` table), shadcn/ui components.
 
@@ -51,12 +51,12 @@ DROP TABLE IF EXISTS tenant_invites;
 
 **Step 3: Run the migration**
 
-Run: `cd /Users/fred/Documents/Valinor && go run cmd/valinor/main.go migrate up`
+Run: `cd /Users/fred/Documents/Heimdall && go run cmd/heimdall/main.go migrate up`
 (or use the migrate tool directly if available)
 
 If migrate command isn't built in, apply manually:
 ```bash
-/usr/local/Cellar/postgresql@15/15.13/bin/psql postgres://valinor:valinor@localhost:5432/valinor -f migrations/000016_tenant_invites.up.sql
+/usr/local/Cellar/postgresql@15/15.13/bin/psql postgres://heimdall:heimdall@localhost:5432/heimdall -f migrations/000016_tenant_invites.up.sql
 ```
 
 Expected: Table created successfully.
@@ -118,7 +118,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/FredAmartey/valinor/internal/tenant"
+	"github.com/FredAmartey/heimdall/internal/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -202,7 +202,7 @@ func TestInviteStore_Redeem(t *testing.T) {
 
 **Step 3: Run tests to verify they fail**
 
-Run: `cd /Users/fred/Documents/Valinor && CGO_ENABLED=0 go test ./internal/tenant/ -run TestInviteStore -v -short`
+Run: `cd /Users/fred/Documents/Heimdall && CGO_ENABLED=0 go test ./internal/tenant/ -run TestInviteStore -v -short`
 Expected: Compilation error — `NewInviteStore` undefined.
 
 **Step 4: Implement the invite store**
@@ -339,7 +339,7 @@ func (s *InviteStore) Delete(ctx context.Context, id string) error {
 
 **Step 5: Run tests**
 
-Run: `cd /Users/fred/Documents/Valinor && CGO_ENABLED=0 go test ./internal/tenant/ -run TestInviteStore -v`
+Run: `cd /Users/fred/Documents/Heimdall && CGO_ENABLED=0 go test ./internal/tenant/ -run TestInviteStore -v`
 Expected: Tests may need DB setup; if using `-short` they skip. Run without `-short` if testcontainers available.
 
 **Step 6: Commit**
@@ -369,8 +369,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/FredAmartey/valinor/internal/auth"
-	"github.com/FredAmartey/valinor/internal/platform/middleware"
+	"github.com/FredAmartey/heimdall/internal/auth"
+	"github.com/FredAmartey/heimdall/internal/platform/middleware"
 )
 
 type InviteHandler struct {
@@ -521,7 +521,7 @@ InviteHandler *tenant.InviteHandler
 
 **Step 5: Wire InviteStore and InviteHandler in main.go**
 
-In `cmd/valinor/main.go`, after creating the tenant store:
+In `cmd/heimdall/main.go`, after creating the tenant store:
 
 ```go
 inviteStore := tenant.NewInviteStore(pool)
@@ -532,7 +532,7 @@ inviteHandler := tenant.NewInviteHandler(inviteStore)
 **Step 6: Commit**
 
 ```bash
-git add internal/tenant/invite_handler.go internal/platform/server/server.go cmd/valinor/main.go
+git add internal/tenant/invite_handler.go internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat: add invite endpoints — create, list, delete"
 ```
 
@@ -678,7 +678,7 @@ git commit -m "feat: add tenant self-service creation with slug generation"
 
 **Step 1: Install the package**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm install @clerk/clerk-js`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm install @clerk/clerk-js`
 
 **Step 2: Add publishable key to .env.example**
 
@@ -832,7 +832,7 @@ This was added for the OIDC provider and is no longer needed since we're using c
 
 **Step 4: Verify TypeScript compiles**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: No errors.
 
 **Step 5: Commit**
@@ -865,7 +865,7 @@ export function AuthCard({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-sm space-y-6 rounded-2xl bg-white p-8 shadow-2xl shadow-black/20">
         <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Valinor
+            Heimdall
           </h1>
         </div>
         {children}
@@ -1027,7 +1027,7 @@ export default function LoginPage() {
       // Set the active session in Clerk
       await clerk.setActive({ session: signInAttempt.createdSessionId })
 
-      // Get session token to exchange for Valinor tokens
+      // Get session token to exchange for Heimdall tokens
       const token = await clerk.session?.getToken()
       if (!token) {
         setError("Failed to get session token.")
@@ -1189,7 +1189,7 @@ export default function LoginPage() {
 
 **Step 2: Verify TypeScript compiles**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 
 **Step 3: Commit**
 
@@ -1252,7 +1252,7 @@ export default function SignUpPage() {
       await signUpAttempt.prepareEmailAddressVerification({ strategy: "email_code" })
 
       // Store signup state for verification page
-      sessionStorage.setItem("valinor_signup_pending", "true")
+      sessionStorage.setItem("heimdall_signup_pending", "true")
       router.push("/signup/verify")
     } catch (err: unknown) {
       setLoading(false)
@@ -1436,7 +1436,7 @@ export default function VerifyPage() {
       // Set active session
       await clerk.setActive({ session: result.createdSessionId })
 
-      // Get session token and exchange for Valinor tokens
+      // Get session token and exchange for Heimdall tokens
       const token = await clerk.session?.getToken()
       if (!token) {
         setError("Failed to get session token.")
@@ -1457,7 +1457,7 @@ export default function VerifyPage() {
       }
 
       // Clear signup state
-      sessionStorage.removeItem("valinor_signup_pending")
+      sessionStorage.removeItem("heimdall_signup_pending")
 
       // Go to team selection
       router.push("/signup/team")
@@ -1763,7 +1763,7 @@ export default function SSOCallbackPage() {
           afterSignUpUrl: "/signup/team",
         })
 
-        // If there's an active session, exchange for Valinor tokens
+        // If there's an active session, exchange for Heimdall tokens
         if (clerk.session) {
           const token = await clerk.session.getToken()
           if (!token) {
@@ -1952,7 +1952,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/FredAmartey/valinor/internal/tenant"
+	"github.com/FredAmartey/heimdall/internal/tenant"
 )
 
 type InviteRedeemHandler struct {
@@ -2087,7 +2087,7 @@ inviteRedeemHandler := auth.NewInviteRedeemHandler(authStore, inviteStore, token
 **Step 5: Commit**
 
 ```bash
-git add internal/auth/invite_handler.go internal/auth/store.go internal/platform/server/server.go cmd/valinor/main.go
+git add internal/auth/invite_handler.go internal/auth/store.go internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat: add invite redemption endpoint with role assignment"
 ```
 
@@ -2100,13 +2100,13 @@ git commit -m "feat: add invite redemption endpoint with role assignment"
 **Step 1: Start backend**
 
 ```bash
-cd /Users/fred/Documents/Valinor && go run cmd/valinor/main.go
+cd /Users/fred/Documents/Heimdall && go run cmd/heimdall/main.go
 ```
 
 **Step 2: Start dashboard**
 
 ```bash
-cd /Users/fred/Documents/Valinor/dashboard && npm run dev
+cd /Users/fred/Documents/Heimdall/dashboard && npm run dev
 ```
 
 **Step 3: Test dev mode login**
@@ -2140,10 +2140,10 @@ cd /Users/fred/Documents/Valinor/dashboard && npm run dev
 
 **Step 1: Run TypeScript check**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 
 **Step 2: Run Go checks**
 
-Run: `cd /Users/fred/Documents/Valinor && CGO_ENABLED=0 go vet ./...`
+Run: `cd /Users/fred/Documents/Heimdall && CGO_ENABLED=0 go vet ./...`
 
 **Step 3: Fix any issues and commit**

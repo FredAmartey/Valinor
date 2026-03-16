@@ -1,10 +1,10 @@
-# Valinor: Enterprise AI Agent Control Plane
+# Heimdall: Enterprise AI Agent Control Plane
 
 ## Context
 
 OpenClaw is a popular open-source AI agent runtime (247k+ GitHub stars) designed as a single-user tool. It stores data as local Markdown files, has no permission system, no multi-tenancy, and its trust model assumes a single operator. Enterprises need AI agents but cannot safely deploy OpenClaw without: tenant isolation, RBAC, audit logging, prompt injection defense, and secure tool execution.
 
-**Valinor** is a horizontal infrastructure platform — a secure control plane that orchestrates isolated OpenClaw instances per tenant. It enables startups and enterprises across any sector to deploy AI agent workforces safely. Valinor is to AI agents what Stripe is to payments: the infrastructure layer that handles security, isolation, and compliance so clients can focus on their product.
+**Heimdall** is a horizontal infrastructure platform — a secure control plane that orchestrates isolated OpenClaw instances per tenant. It enables startups and enterprises across any sector to deploy AI agent workforces safely. Heimdall is to AI agents what Stripe is to payments: the infrastructure layer that handles security, isolation, and compliance so clients can focus on their product.
 
 **Two product tiers** serve different isolation needs:
 
@@ -17,7 +17,7 @@ OpenClaw is a popular open-source AI agent runtime (247k+ GitHub stars) designed
 
 Both tiers share the same control plane, dashboard, RBAC, audit, Sentinel, channels, and MCP connectors. The `VMDriver` interface abstracts the runtime — configuration selects the driver at startup.
 
-**Product positioning:** Valinor serves platform builders (e.g., "Marcelo AI" for football, "Harvey AI" for legal). These clients build domain-specific products with their own web/desktop UIs. Valinor provides the secure agent infrastructure underneath. End users never see Valinor — they interact through the client's product and messaging apps.
+**Product positioning:** Heimdall serves platform builders (e.g., "Marcelo AI" for football, "Harvey AI" for legal). These clients build domain-specific products with their own web/desktop UIs. Heimdall provides the secure agent infrastructure underneath. End users never see Heimdall — they interact through the client's product and messaging apps.
 
 ---
 
@@ -44,7 +44,7 @@ Single Go binary with 9 internal modules separated by Go interfaces. Deploys as 
 ```
 Client API / WhatsApp / Telegram / Slack
          |
-    [Valinor API Gateway]
+    [Heimdall API Gateway]
          |
     [Auth Middleware] — validate JWT / resolve identity from platform user ID
          |
@@ -55,7 +55,7 @@ Client API / WhatsApp / Telegram / Slack
     [Proxy] — route to agent via TCP (Docker) or vsock (Firecracker)
          |
     [Docker Container / Firecracker MicroVM]
-      [Valinor Agent] — tool allow-list enforcement, health reporting
+      [Heimdall Agent] — tool allow-list enforcement, health reporting
         [OpenClaw] — processes message, calls MCP tools
            |
       [Tool Call Validator] — deterministic RBAC check on every tool call
@@ -68,8 +68,8 @@ Client API / WhatsApp / Telegram / Slack
 ### Project Structure
 
 ```
-valinor/
-  cmd/valinor/main.go              # composition root, DI wiring
+heimdall/
+  cmd/heimdall/main.go              # composition root, DI wiring
   internal/
     platform/                       # shared infrastructure
       config/                       # env/YAML config loading
@@ -119,14 +119,14 @@ valinor/
       channels.go                   # ChannelService interface
       whatsapp.go                   # WhatsApp webhook handler
       telegram.go                   # Telegram webhook handler
-      resolver.go                   # platform user ID → Valinor identity
+      resolver.go                   # platform user ID → Heimdall identity
       store.go                      # channel_links DB operations
     connectors/
       connectors.go                 # ConnectorService interface
       registry.go                   # MCP server registration
       broker.go                     # connection brokering + credential injection
       store.go                      # connector configs DB ops
-  valinor-agent/                    # separate binary for inside MicroVMs
+  heimdall-agent/                    # separate binary for inside MicroVMs
     main.go                         # in-guest sidecar agent
     allowlist.go                    # tool allow-list enforcement
     sentinel.go                     # tool call validation
@@ -340,7 +340,7 @@ CREATE POLICY tenant_isolation ON users
 - Roles scoped per department: user can be `dept_head` in Scouting but `read_only` in First Team
 - Resource policies for exceptions (e.g., temporary cross-department access for a transfer deal)
 
-### Layer 3: In-Guest Tool Restriction (Valinor Agent)
+### Layer 3: In-Guest Tool Restriction (Heimdall Agent)
 - Small Go binary inside each container/MicroVM alongside OpenClaw
 - Maintains tool allow-list configured from control plane
 - Blocks unauthorized tool calls before they execute
@@ -386,20 +386,20 @@ type VMDriver interface {
 Implementations: `DockerDriver` (Teams), `FirecrackerDriver` (Enterprise), `MockDriver` (tests).
 
 ### Teams Tier: Docker Containers
-- Container image: `valinor-agent` (Go binary) + OpenClaw Gateway (Node.js) in one container
+- Container image: `heimdall-agent` (Go binary) + OpenClaw Gateway (Node.js) in one container
 - Per-tenant Docker networks (internal bridge, no external access)
 - TCP transport: control plane connects to agent via `127.0.0.1:<basePort + CID>`
 - Resource limits via Docker cgroups (`--cpus`, `--memory`)
 - Hierarchical memory volumes mounted per container (see Memory section)
 
 ### Enterprise Tier: Firecracker MicroVMs
-- Minimal Linux rootfs: valinor-agent binary + OpenClaw runtime (Node.js) + locked-down filesystem (read-only root, writable `/data` per user)
+- Minimal Linux rootfs: heimdall-agent binary + OpenClaw runtime (Node.js) + locked-down filesystem (read-only root, writable `/data` per user)
 - virtio-vsock: direct socket between host and guest (no TCP/IP networking), each VM gets unique Context ID (CID)
 - Lower latency than network, no firewall rules needed
 - Hardware-level isolation: separate kernel per agent
 
 ### Health Checks
-- Valinor Agent heartbeats every 10 seconds (over TCP for Docker, vsock for Firecracker)
+- Heimdall Agent heartbeats every 10 seconds (over TCP for Docker, vsock for Firecracker)
 - 3 missed heartbeats → mark unhealthy → replace with new warm agent
 - Old agent destroyed, resources reclaimed
 
@@ -411,7 +411,7 @@ Implementations: `DockerDriver` (Teams), `FirecrackerDriver` (Enterprise), `Mock
 
 ## Hierarchical Memory Model
 
-Valinor enforces four-layer memory isolation with hierarchical read-up and admin-controlled overrides.
+Heimdall enforces four-layer memory isolation with hierarchical read-up and admin-controlled overrides.
 
 ### Volume Mounts Per Agent
 
@@ -439,16 +439,16 @@ OpenClaw reads all four paths natively as local Markdown files.
 - Admin overrides allow selective cross-department sharing via knowledge base grants
 
 ### Publishing to Shared Memory
-Agents publish via the built-in `valinor_publish_memory` MCP tool. The control plane validates permissions, handles concurrency, and writes to the appropriate shared volume.
+Agents publish via the built-in `heimdall_publish_memory` MCP tool. The control plane validates permissions, handles concurrency, and writes to the appropriate shared volume.
 
 ### Dynamic Context Injection
-At message dispatch time, Valinor prepends small dynamic context (recent alerts, conversation summaries) via the existing context snapshot system. ~5ms added latency.
+At message dispatch time, Heimdall prepends small dynamic context (recent alerts, conversation summaries) via the existing context snapshot system. ~5ms added latency.
 
 ---
 
 ## Client Integration (MCP Connectors)
 
-Clients register MCP servers with Valinor to bridge their platform with agents:
+Clients register MCP servers with Heimdall to bridge their platform with agents:
 
 ```
 POST /api/v1/connectors
@@ -462,14 +462,14 @@ POST /api/v1/connectors
 ```
 
 ### Context Synchronization
-- **Push (client → Valinor):** Client pushes context updates when users take actions in the web app (`POST /api/v1/agents/:id/context`). Agent memory stays current.
+- **Push (client → Heimdall):** Client pushes context updates when users take actions in the web app (`POST /api/v1/agents/:id/context`). Agent memory stays current.
 - **Pull (agent → client via MCP):** Agent queries client data on demand via registered MCP tools. Source of truth is the client's database.
 
 ### RBAC on MCP Tools
 Tool allow-lists map to registered MCP tools per role. RBAC applies at both the tool level and parameter level.
 
 ### Memory Isolation & Sharing Model
-Valinor enforces four explicit memory scopes. Every memory write must target one scope, and reads are limited by tenant + role + scope policy.
+Heimdall enforces four explicit memory scopes. Every memory write must target one scope, and reads are limited by tenant + role + scope policy.
 
 | Scope | Owner | Visibility | Typical Use |
 |------|-------|------------|-------------|
@@ -527,7 +527,7 @@ Rules:
 - `POST /webhooks/telegram` — Telegram webhook
 
 **Phase 8 gates (must be implemented before channel rollout):**
-- Verified identity linking flow: `platform + platform_user_id` must map to exactly one Valinor user, with explicit verification state.
+- Verified identity linking flow: `platform + platform_user_id` must map to exactly one Heimdall user, with explicit verification state.
 - Webhook authenticity: provider signature verification required on every inbound request.
 - Message idempotency and replay defense: dedupe key per provider message ID with TTL window, reject duplicates and stale replays.
 - Correlation IDs: each inbound message must propagate a stable request/audit correlation ID through auth, RBAC, sentinel, proxy, and audit.
@@ -579,7 +579,7 @@ Rules:
 | **2. Auth + RBAC** | 3-4 | `auth`, `rbac` | OIDC login, JWT validation, role definitions, policy evaluation middleware |
 | **3. Tenant + Users** | 5-6 | `tenant` | Tenant CRUD, department hierarchy, user management, role assignment |
 | **4. VM Orchestrator** | 7-9 | `orchestrator` | VMDriver interface, Docker + Firecracker drivers, warm pool, provisioning, health checks |
-| **5. Proxy + Lifecycle** | 10-11 | `proxy`, `lifecycle` | TCP/vsock comms, request routing, OpenClaw lifecycle, in-guest Valinor Agent |
+| **5. Proxy + Lifecycle** | 10-11 | `proxy`, `lifecycle` | TCP/vsock comms, request routing, OpenClaw lifecycle, in-guest Heimdall Agent |
 | **6. Security + Audit** | 12-13 | `audit`, Layer 5 | Input Sentinel, Tool Call Validator, canary tokens, async audit pipeline |
 | **7. Connectors** | 14 | `connectors` | MCP server registration, connection brokering, context push/pull API |
 | **8. Channels** | 15-16 | `channels` | WhatsApp webhook integration, identity linking, message relay through RBAC |
@@ -589,14 +589,14 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 
 ### Critical Files
 
-- `cmd/valinor/main.go` — Composition root, all module wiring
+- `cmd/heimdall/main.go` — Composition root, all module wiring
 - `internal/orchestrator/manager.go` — Agent runtime orchestration (most complex module)
 - `internal/orchestrator/docker_driver.go` — Docker container lifecycle (Teams tier)
 - `internal/orchestrator/firecracker_driver.go` — Firecracker VM lifecycle (Enterprise tier)
 - `internal/proxy/handler.go` — Host↔agent communication (critical data path)
 - `internal/rbac/evaluator.go` — Policy evaluation engine (security-critical, on hot path)
 - `internal/platform/middleware/middleware.go` — Request pipeline spine
-- `valinor-agent/main.go` — In-guest sidecar (tool restriction, health reporting)
+- `heimdall-agent/main.go` — In-guest sidecar (tool restriction, health reporting)
 - `internal/channels/whatsapp.go` — WhatsApp webhook + identity resolution
 - `internal/connectors/broker.go` — MCP connection brokering
 
@@ -615,8 +615,8 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 ## Verification Plan
 
 ### Phase 1 (Foundation)
-- `go build ./cmd/valinor` compiles successfully
-- `./valinor --config config.yaml` starts HTTP server on configured port
+- `go build ./cmd/heimdall` compiles successfully
+- `./heimdall --config config.yaml` starts HTTP server on configured port
 - `GET /healthz` returns 200
 - PostgreSQL migrations apply cleanly
 - Structured JSON logs appear on stdout
@@ -642,8 +642,8 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 ### Phase 5 (Proxy + Lifecycle)
 - Send message via API → receive OpenClaw response
 - SSE streaming works end-to-end
-- valinor-agent spawns OpenClaw as child process
-- In-guest Valinor Agent enforces tool allow-list
+- heimdall-agent spawns OpenClaw as child process
+- In-guest Heimdall Agent enforces tool allow-list
 
 ### Phase 6 (Security + Audit)
 - Input Sentinel blocks known injection patterns
@@ -660,7 +660,7 @@ Phase 8 is gated by `docs/plans/2026-02-22-phase8-channels-prerequisites.md`.
 
 ### Phase 8 (Channels)
 - WhatsApp webhook receives messages
-- Phone number resolves to Valinor user
+- Phone number resolves to Heimdall user
 - RBAC applies to messaging requests
 - Agent response returns via WhatsApp
 - Duplicate webhook deliveries are deduplicated (idempotency key)

@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add Clerk as a production OIDC provider alongside the existing dev-mode credentials login, using a token exchange pattern where the dashboard authenticates with Clerk and exchanges the id_token for Valinor JWTs.
+**Goal:** Add Clerk as a production OIDC provider alongside the existing dev-mode credentials login, using a token exchange pattern where the dashboard authenticates with Clerk and exchanges the id_token for Heimdall JWTs.
 
-**Architecture:** Dashboard adds Clerk as a NextAuth OIDC provider. On sign-in, the NextAuth `signIn` callback sends Clerk's `id_token` to a new `POST /auth/exchange` endpoint on the Go backend. The backend validates the token via Clerk's JWKS, resolves the tenant from the request origin subdomain, creates/finds the user by OIDC subject, and returns Valinor access + refresh tokens. The existing JWT/session callbacks store these tokens identically to the dev-mode path.
+**Architecture:** Dashboard adds Clerk as a NextAuth OIDC provider. On sign-in, the NextAuth `signIn` callback sends Clerk's `id_token` to a new `POST /auth/exchange` endpoint on the Go backend. The backend validates the token via Clerk's JWKS, resolves the tenant from the request origin subdomain, creates/finds the user by OIDC subject, and returns Heimdall access + refresh tokens. The existing JWT/session callbacks store these tokens identically to the dev-mode path.
 
 **Tech Stack:** Go (stdlib `crypto`, `net/http`), NextAuth v5, Clerk OIDC, PostgreSQL
 
@@ -34,7 +34,7 @@ type OIDCConfig struct {
 
 **Step 2: Verify build**
 
-Run: `cd /Users/fred/Documents/Valinor && go build ./...`
+Run: `cd /Users/fred/Documents/Heimdall && go build ./...`
 Expected: Clean build (no code references the new fields yet)
 
 **Step 3: Commit**
@@ -160,7 +160,7 @@ func TestJWKSClient_CacheExpiry(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestJWKS -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestJWKS -v`
 Expected: FAIL — `NewJWKSClient` undefined
 
 **Step 3: Write the implementation**
@@ -283,7 +283,7 @@ func parseRSAPublicKey(nStr, eStr string) (*rsa.PublicKey, error) {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestJWKS -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestJWKS -v`
 Expected: PASS (all 4 subtests)
 
 **Step 5: Commit**
@@ -423,7 +423,7 @@ func TestIDTokenValidator_WrongAudience(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestIDTokenValidator -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestIDTokenValidator -v`
 Expected: FAIL — `NewIDTokenValidator` undefined
 
 **Step 3: Write the implementation**
@@ -514,7 +514,7 @@ func (v *IDTokenValidator) Validate(tokenString string) (*OIDCUserInfo, error) {
 
 **Step 4: Check if golang-jwt/jwt/v5 is already a dependency**
 
-Run: `cd /Users/fred/Documents/Valinor && grep 'golang-jwt' go.mod`
+Run: `cd /Users/fred/Documents/Heimdall && grep 'golang-jwt' go.mod`
 
 If not present, run: `go get github.com/golang-jwt/jwt/v5`
 
@@ -522,7 +522,7 @@ Note: The existing `internal/auth/token.go` already uses `github.com/golang-jwt/
 
 **Step 5: Run test to verify it passes**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestIDTokenValidator -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestIDTokenValidator -v`
 Expected: PASS (all 4 tests)
 
 **Step 6: Commit**
@@ -573,7 +573,7 @@ func setupExchangeTest(t *testing.T) (*Handler, *rsa.PrivateKey, string) {
 	}))
 	t.Cleanup(jwksSrv.Close)
 
-	tokenSvc := NewTokenService("test-signing-key-32-chars-long!!", "valinor", 1, 24)
+	tokenSvc := NewTokenService("test-signing-key-32-chars-long!!", "heimdall", 1, 24)
 
 	h := NewHandler(HandlerConfig{
 		TokenSvc: tokenSvc,
@@ -634,7 +634,7 @@ func TestHandleExchange_ValidToken_NoStore(t *testing.T) {
 }
 
 func TestHandleExchange_NotConfigured(t *testing.T) {
-	tokenSvc := NewTokenService("test-signing-key-32-chars-long!!", "valinor", 1, 24)
+	tokenSvc := NewTokenService("test-signing-key-32-chars-long!!", "heimdall", 1, 24)
 	h := NewHandler(HandlerConfig{TokenSvc: tokenSvc})
 	// No idTokenValidator set
 
@@ -650,7 +650,7 @@ func TestHandleExchange_NotConfigured(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestHandleExchange -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestHandleExchange -v`
 Expected: FAIL — `HandleExchange` undefined, `idTokenValidator` unknown field
 
 **Step 3: Write the implementation**
@@ -698,7 +698,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 4. Add the `HandleExchange` method (new method, add after `HandleDevLogin` around line 171):
 
 ```go
-// HandleExchange validates an external OIDC id_token and returns Valinor tokens.
+// HandleExchange validates an external OIDC id_token and returns Heimdall tokens.
 // Used by the dashboard to exchange Clerk id_tokens for platform JWTs.
 func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 	if h.idTokenValidator == nil {
@@ -827,7 +827,7 @@ If `ResolveFromOrigin` doesn't exist, we need to check what method the TenantRes
 
 **Step 5: Run test to verify it passes**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -run TestHandleExchange -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -run TestHandleExchange -v`
 Expected: PASS (all 4 tests)
 
 **Step 6: Commit**
@@ -842,11 +842,11 @@ git commit -m "feat(auth): add POST /auth/exchange endpoint for OIDC token excha
 ### Task 5: Wire the exchange endpoint in main.go
 
 **Files:**
-- Modify: `cmd/valinor/main.go:98-105`
+- Modify: `cmd/heimdall/main.go:98-105`
 
 **Step 1: Add id_token validator wiring**
 
-In `cmd/valinor/main.go`, after the `authHandler` is created (around line 105), add the OIDC configuration:
+In `cmd/heimdall/main.go`, after the `authHandler` is created (around line 105), add the OIDC configuration:
 
 ```go
 	authHandler := auth.NewHandler(auth.HandlerConfig{
@@ -883,18 +883,18 @@ func (h *Handler) SetIDTokenValidator(v *IDTokenValidator) {
 
 **Step 3: Verify build**
 
-Run: `cd /Users/fred/Documents/Valinor && go build ./...`
+Run: `cd /Users/fred/Documents/Heimdall && go build ./...`
 Expected: Clean build
 
 **Step 4: Run full test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... 2>&1 | tail -20`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... 2>&1 | tail -20`
 Expected: All packages pass
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/main.go internal/auth/handler.go
+git add cmd/heimdall/main.go internal/auth/handler.go
 git commit -m "feat(auth): wire OIDC token exchange in main.go when configured"
 ```
 
@@ -919,7 +919,7 @@ import type { NextAuthConfig, Account } from "next-auth"
 
 const VALINOR_API_URL = process.env.VALINOR_API_URL ?? "http://localhost:8080"
 
-// Exchange an external OIDC id_token for Valinor platform tokens.
+// Exchange an external OIDC id_token for Heimdall platform tokens.
 async function exchangeIDToken(idToken: string): Promise<{
   accessToken: string
   refreshToken: string
@@ -1018,11 +1018,11 @@ export const authConfig: NextAuthConfig = {
         return token
       }
 
-      // Initial sign-in from OIDC (Clerk) — exchange id_token for Valinor tokens
+      // Initial sign-in from OIDC (Clerk) — exchange id_token for Heimdall tokens
       if (account?.provider === "clerk" && account.id_token) {
         const data = await exchangeIDToken(account.id_token)
         if (!data) {
-          throw new Error("Valinor token exchange failed")
+          throw new Error("Heimdall token exchange failed")
         }
         const roles = decodeJwtRoles(data.accessToken)
         token.accessToken = data.accessToken
@@ -1040,7 +1040,7 @@ export const authConfig: NextAuthConfig = {
         return token
       }
 
-      // Token expired: refresh via Valinor API
+      // Token expired: refresh via Heimdall API
       try {
         const res = await fetch(`${VALINOR_API_URL}/auth/token/refresh`, {
           method: "POST",
@@ -1120,7 +1120,7 @@ AUTH_URL=http://localhost:3000
 
 **Step 4: Verify build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: No type errors
 
 **Step 5: Commit**
@@ -1188,7 +1188,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-            Valinor Dashboard
+            Heimdall Dashboard
           </h1>
           <p className="mt-2 text-sm text-zinc-500">
             Sign in to manage your AI agent infrastructure.
@@ -1272,7 +1272,7 @@ NEXT_PUBLIC_VALINOR_DEV_MODE=true
 
 **Step 3: Verify build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: No type errors
 
 **Step 4: Commit**
@@ -1293,11 +1293,11 @@ git commit -m "feat(dashboard): update login page for Clerk + dev mode dual-prov
 
 Run: `grep -n 'func.*TenantResolver' internal/auth/*.go`
 
-Review what methods exist. The HandleCallback (handler.go:274-294) shows the current tenant resolution pattern. We need a method that takes an `Origin` header value like `https://gondolin.valinor.app` and returns a tenant ID.
+Review what methods exist. The HandleCallback (handler.go:274-294) shows the current tenant resolution pattern. We need a method that takes an `Origin` header value like `https://gondolin.heimdall.app` and returns a tenant ID.
 
 **Step 2: Write failing test for ResolveFromOrigin**
 
-If the method doesn't exist, create a test in the appropriate test file that calls `resolver.ResolveFromOrigin("https://gondolin.valinor.app")` and expects the tenant ID back.
+If the method doesn't exist, create a test in the appropriate test file that calls `resolver.ResolveFromOrigin("https://gondolin.heimdall.app")` and expects the tenant ID back.
 
 **Step 3: Implement ResolveFromOrigin**
 
@@ -1305,7 +1305,7 @@ Parse the URL, extract the subdomain relative to the configured `baseDomain`, an
 
 **Step 4: Run tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/auth/ -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/auth/ -v`
 Expected: All pass
 
 **Step 5: Commit**
@@ -1323,23 +1323,23 @@ git commit -m "feat(auth): add ResolveFromOrigin to TenantResolver"
 
 **Step 1: Run Go test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... 2>&1 | tail -25`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... 2>&1 | tail -25`
 Expected: All 16+ packages pass
 
 **Step 2: Run dashboard build**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: No type errors
 
 **Step 3: Run existing E2E tests (dev mode still works)**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx playwright test --reporter=list`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx playwright test --reporter=list`
 Expected: All 18 tests pass (dev mode login is unchanged)
 
 **Step 4: Manual smoke test**
 
 1. Ensure `config.yaml` has `auth.devmode: true` and `auth.oidc.enabled: false`
-2. Start backend: `cd /tmp/valinor && ./valinor`
+2. Start backend: `cd /tmp/heimdall && ./heimdall`
 3. Start dashboard: `cd dashboard && npm run dev`
 4. Visit `http://localhost:3000/login`
 5. Dev mode login should work as before

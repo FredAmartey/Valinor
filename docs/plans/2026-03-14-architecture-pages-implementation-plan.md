@@ -19,7 +19,7 @@
 
 **Step 1: Write the failing existence check**
 
-Run: `test -f /Users/fred/Documents/Valinor/.worktrees/architecture-pages/docs/architecture.md`
+Run: `test -f /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/docs/architecture.md`
 Expected: non-zero exit status because the file does not exist yet
 
 **Step 2: Write the markdown document**
@@ -27,7 +27,7 @@ Expected: non-zero exit status because the file does not exist yet
 Create `docs/architecture.md` with these exact top-level sections:
 
 ```md
-# Valinor Architecture
+# Heimdall Architecture
 
 ## Overview
 ## Core Components
@@ -37,15 +37,15 @@ Create `docs/architecture.md` with these exact top-level sections:
 ## Event and Ledger Model
 ## Channels and Integrations
 ## Product Tiers
-## What Valinor Does Not Try to Own
+## What Heimdall Does Not Try to Own
 ```
 
 Inside the document:
-- describe Valinor as the security, observability, and governance layer above the runtime
+- describe Heimdall as the security, observability, and governance layer above the runtime
 - keep OpenClaw-first language
 - include a mermaid diagram that shows:
   - users and channels
-  - Valinor control plane
+  - Heimdall control plane
   - policy / approvals / activity / audit
   - runtime tier layer
   - OpenClaw runtime
@@ -58,8 +58,8 @@ Inside the document:
 Run:
 
 ```bash
-rg -n "^## (Overview|Core Components|Runtime Model|Isolation Model|Security Model|Event and Ledger Model|Channels and Integrations|Product Tiers|What Valinor Does Not Try to Own)$" /Users/fred/Documents/Valinor/.worktrees/architecture-pages/docs/architecture.md
-rg -n "^```mermaid$|agent_activity_events|audit_events" /Users/fred/Documents/Valinor/.worktrees/architecture-pages/docs/architecture.md
+rg -n "^## (Overview|Core Components|Runtime Model|Isolation Model|Security Model|Event and Ledger Model|Channels and Integrations|Product Tiers|What Heimdall Does Not Try to Own)$" /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/docs/architecture.md
+rg -n "^```mermaid$|agent_activity_events|audit_events" /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/docs/architecture.md
 ```
 
 Expected:
@@ -70,8 +70,8 @@ Expected:
 **Step 4: Commit**
 
 ```bash
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages add docs/architecture.md
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages commit -m "docs: add technical architecture reference"
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages add docs/architecture.md
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages commit -m "docs: add technical architecture reference"
 ```
 
 ### Task 2: Create the architecture diagram component with a focused rendering test
@@ -102,7 +102,7 @@ describe("ArchitectureDiagram", () => {
     )
 
     expect(screen.getByText("Users and operators")).toBeDefined()
-    expect(screen.getByText("Valinor control plane")).toBeDefined()
+    expect(screen.getByText("Heimdall control plane")).toBeDefined()
     expect(screen.getByText("Policy and approvals")).toBeDefined()
     expect(screen.getByText("Activity and audit")).toBeDefined()
     expect(screen.getByText("Teams runtime")).toBeDefined()
@@ -118,7 +118,7 @@ describe("ArchitectureDiagram", () => {
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- src/components/architecture/architecture-diagram.test.tsx
 ```
 
@@ -132,7 +132,7 @@ Create `dashboard/src/components/architecture/architecture-diagram.tsx` as a `"u
 - labels these layers exactly:
   - `Users and operators`
   - `Channels and integrations`
-  - `Valinor control plane`
+  - `Heimdall control plane`
   - `Policy and approvals`
   - `Activity and audit`
   - `Teams runtime`
@@ -145,7 +145,7 @@ Create `dashboard/src/components/architecture/architecture-diagram.tsx` as a `"u
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- src/components/architecture/architecture-diagram.test.tsx
 ```
 
@@ -154,10 +154,10 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages add \
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages add \
   dashboard/src/components/architecture/architecture-diagram.tsx \
   dashboard/src/components/architecture/architecture-diagram.test.tsx
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages commit -m "feat(marketing): add architecture diagram component"
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages commit -m "feat(marketing): add architecture diagram component"
 ```
 
 ### Task 3: Build the buyer-facing architecture page route
@@ -204,7 +204,7 @@ describe("ArchitecturePage", () => {
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- src/components/architecture/architecture-page.test.tsx
 ```
 
@@ -227,7 +227,7 @@ Create `dashboard/src/components/architecture/architecture-page.tsx` as a `"use 
 
 ```ts
 const TECHNICAL_ARCHITECTURE_URL =
-  "https://github.com/FredAmartey/Valinor/blob/master/docs/architecture.md"
+  "https://github.com/FredAmartey/Heimdall/blob/master/docs/architecture.md"
 ```
 
 - does **not** reuse the floating one-page landing toolbar
@@ -243,9 +243,9 @@ import { ThemeProvider } from "@/components/landing/theme"
 import { ArchitecturePage } from "@/components/architecture/architecture-page"
 
 export const metadata: Metadata = {
-  title: "Valinor Architecture — Trust boundaries for broad-access AI agents",
+  title: "Heimdall Architecture — Trust boundaries for broad-access AI agents",
   description:
-    "See how Valinor isolates customers, governs risky actions, and secures AI agents across ingress, execution, and egress.",
+    "See how Heimdall isolates customers, governs risky actions, and secures AI agents across ingress, execution, and egress.",
 }
 
 export default function ArchitectureRoute() {
@@ -262,7 +262,7 @@ export default function ArchitectureRoute() {
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- src/components/architecture/architecture-page.test.tsx
 ```
 
@@ -271,11 +271,11 @@ Expected: PASS
 **Step 6: Commit**
 
 ```bash
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages add \
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages add \
   dashboard/src/components/architecture/architecture-page.tsx \
   dashboard/src/components/architecture/architecture-page.test.tsx \
   'dashboard/src/app/(marketing)/architecture/page.tsx'
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages commit -m "feat(marketing): add architecture page"
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages commit -m "feat(marketing): add architecture page"
 ```
 
 ### Task 4: Link the architecture surfaces into the marketing experience
@@ -316,7 +316,7 @@ describe("FooterCta", () => {
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- src/components/landing/footer.test.tsx
 ```
 
@@ -327,7 +327,7 @@ Expected: FAIL because the footer still uses placeholder `href="#"` links
 Modify `dashboard/src/components/landing/footer.tsx` to:
 - replace placeholder footer links with real URLs
 - include `Architecture` linking to `/architecture`
-- include `Docs` linking to `https://github.com/FredAmartey/Valinor/blob/master/docs/architecture.md`
+- include `Docs` linking to `https://github.com/FredAmartey/Heimdall/blob/master/docs/architecture.md`
 - keep `GitHub` and `Contact`
 - preserve the existing visual style
 
@@ -340,7 +340,7 @@ Optional:
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- src/components/landing/footer.test.tsx
 ```
 
@@ -349,10 +349,10 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages add \
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages add \
   dashboard/src/components/landing/footer.tsx \
   dashboard/src/components/landing/footer.test.tsx
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages commit -m "feat(marketing): link architecture and docs from footer"
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages commit -m "feat(marketing): link architecture and docs from footer"
 ```
 
 ### Task 5: Verify the full architecture-pages slice end to end
@@ -365,7 +365,7 @@ git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages commit -m "fe
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run test:run -- \
   src/components/architecture/architecture-diagram.test.tsx \
   src/components/architecture/architecture-page.test.tsx \
@@ -379,7 +379,7 @@ Expected: all targeted tests PASS
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npx tsc --noEmit
 ```
 
@@ -390,7 +390,7 @@ Expected: PASS
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages/dashboard
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/dashboard
 npm run build
 ```
 
@@ -403,7 +403,7 @@ Expected:
 Run:
 
 ```bash
-cd /Users/fred/Documents/Valinor/.worktrees/architecture-pages
+cd /Users/fred/Documents/Heimdall/.worktrees/architecture-pages
 go test ./...
 ```
 
@@ -412,7 +412,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages status --short
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages status --short
 ```
 
 Expected:
@@ -431,8 +431,8 @@ Run:
 
 ```bash
 rg -n "control plane|OpenClaw-first|agent_activity_events|audit_events|Product Tiers|Lifecycle security" \
-  /Users/fred/Documents/Valinor/.worktrees/architecture-pages/docs/architecture.md \
-  /Users/fred/Documents/Valinor/.worktrees/architecture-pages/docs/product-overview.md
+  /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/docs/architecture.md \
+  /Users/fred/Documents/Heimdall/.worktrees/architecture-pages/docs/product-overview.md
 ```
 
 Expected:
@@ -448,7 +448,7 @@ If the wording diverges:
 **Step 3: Commit**
 
 ```bash
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages add docs/architecture.md docs/product-overview.md
-git -C /Users/fred/Documents/Valinor/.worktrees/architecture-pages commit -m "docs: align architecture terminology"
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages add docs/architecture.md docs/product-overview.md
+git -C /Users/fred/Documents/Heimdall/.worktrees/architecture-pages commit -m "docs: align architecture terminology"
 ```
 

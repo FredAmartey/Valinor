@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add Agent Management view to the Valinor admin dashboard with live status updates, inline configuration, provisioning, and destroy.
+**Goal:** Add Agent Management view to the Heimdall admin dashboard with live status updates, inline configuration, provisioning, and destroy.
 
 **Architecture:** Extends the existing Next.js 15 dashboard with new route group, components, and shared TanStack Query hooks for agents. Card grid layout with 10s polling for live health updates. Refactors the overview's local `agentKeys` to a shared hooks file.
 

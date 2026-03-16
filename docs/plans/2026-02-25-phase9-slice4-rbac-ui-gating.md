@@ -12,7 +12,7 @@
 
 ## Background
 
-The backend enforces RBAC on every endpoint. The four roles (mirroring `cmd/valinor/main.go`):
+The backend enforces RBAC on every endpoint. The four roles (mirroring `cmd/heimdall/main.go`):
 
 | Role | Permissions |
 |---|---|
@@ -246,7 +246,7 @@ Expected: FAIL — `permissions` module not found.
 Create `dashboard/src/lib/permissions.ts`:
 
 ```typescript
-// Mirrors cmd/valinor/main.go rbacEngine.RegisterRole() calls.
+// Mirrors cmd/heimdall/main.go rbacEngine.RegisterRole() calls.
 // Keep in sync with the backend when roles change.
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   org_admin: ["*"],
@@ -519,7 +519,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-60 flex-col border-r border-zinc-200 bg-white">
       <div className="flex h-14 items-center border-b border-zinc-200 px-4">
-        <span className="text-lg font-semibold tracking-tight text-zinc-900">Valinor</span>
+        <span className="text-lg font-semibold tracking-tight text-zinc-900">Heimdall</span>
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-3">
         {navItems.map((item) => (

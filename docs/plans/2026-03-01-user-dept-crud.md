@@ -426,7 +426,7 @@ func (h *UserHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 **Step 2: Verify build**
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: Clean build.
 
 **Step 3: Commit**
@@ -550,7 +550,7 @@ func (h *DepartmentHandler) HandleDelete(w http.ResponseWriter, r *http.Request)
 
 **Step 2: Verify build**
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: Clean build.
 
 **Step 3: Commit**
@@ -601,7 +601,7 @@ Inside the `if deps.UserHandler != nil && deps.RBAC != nil` block (after the DEL
 
 **Step 2: Verify build + all backend tests**
 
-Run: `go build ./cmd/valinor && go test ./internal/tenant/ -v -count=1`
+Run: `go build ./cmd/heimdall && go test ./internal/tenant/ -v -count=1`
 Expected: Clean build, all tests pass (existing + new).
 
 **Step 3: Commit**
@@ -897,7 +897,7 @@ Expected: All tests pass (existing + new store tests).
 
 **Step 2: Build backend**
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: Clean build.
 
 **Step 3: Check frontend types**
@@ -912,7 +912,7 @@ Expected: No new failures (pre-existing failures from missing tenant/user query 
 
 **Step 5: Manual smoke test**
 
-1. Start backend: `go run ./cmd/valinor`
+1. Start backend: `go run ./cmd/heimdall`
 2. Start dashboard: `cd dashboard && npm run dev`
 3. Login as `turgon@gondolin.fc` (org_admin)
 4. Navigate to Users → click a user → click Edit → change display name → Save

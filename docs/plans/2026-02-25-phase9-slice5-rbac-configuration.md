@@ -100,7 +100,7 @@ func TestEvaluator_ReloadRoles_ErrorPreservesExisting(t *testing.T) {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/rbac/ -run TestEvaluator_ReloadRoles -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/rbac/ -run TestEvaluator_ReloadRoles -v`
 Expected: compilation errors — `RoleDef`, `WithRoleLoader`, `ReloadRoles` not defined.
 
 **Step 3: Implement RoleLoader and ReloadRoles**
@@ -192,7 +192,7 @@ Since `NewEvaluator` signature changed to accept variadic options, all existing 
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/rbac/ -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/rbac/ -v`
 Expected: all tests pass, including existing ones.
 
 **Step 6: Commit**
@@ -258,7 +258,7 @@ func TestRoleStore_LoadRoles(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/tenant/ -run TestRoleStore_LoadRoles -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/tenant/ -run TestRoleStore_LoadRoles -v`
 Expected: compilation error — `LoadRoles` method not defined.
 
 **Step 3: Implement LoadRoles**
@@ -295,11 +295,11 @@ func (s *RoleStore) LoadRoles(ctx context.Context, pool *pgxpool.Pool) ([]rbac.R
 }
 ```
 
-This requires importing `rbac` — add `"github.com/valinor-ai/valinor/internal/rbac"` to imports. Also add `"github.com/jackc/pgx/v5/pgxpool"` if not already present.
+This requires importing `rbac` — add `"github.com/heimdall-ai/heimdall/internal/rbac"` to imports. Also add `"github.com/jackc/pgx/v5/pgxpool"` if not already present.
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/tenant/ -run TestRoleStore_LoadRoles -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/tenant/ -run TestRoleStore_LoadRoles -v`
 Expected: PASS.
 
 **Step 5: Commit**
@@ -314,7 +314,7 @@ git commit -m "feat: add LoadRoles to RoleStore for DB-backed evaluator"
 ## Task 3: Wire DB-Backed Evaluator in main.go
 
 **Files:**
-- Modify: `cmd/valinor/main.go:137-157`
+- Modify: `cmd/heimdall/main.go:137-157`
 
 **Step 1: Write a RoleLoaderAdapter**
 
@@ -340,7 +340,7 @@ func (a *RoleLoaderAdapter) LoadRoles(ctx context.Context) ([]rbac.RoleDef, erro
 
 **Step 2: Update main.go — replace hardcoded roles with ReloadRoles**
 
-Replace lines 137–157 of `cmd/valinor/main.go`:
+Replace lines 137–157 of `cmd/heimdall/main.go`:
 
 ```go
 // RBAC
@@ -375,18 +375,18 @@ if pool != nil {
 
 **Step 3: Verify compilation**
 
-Run: `cd /Users/fred/Documents/Valinor && go build ./cmd/valinor/`
+Run: `cd /Users/fred/Documents/Heimdall && go build ./cmd/heimdall/`
 Expected: builds successfully.
 
 **Step 4: Run full backend test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... -short -count=1`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... -short -count=1`
 Expected: all tests pass.
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/main.go internal/tenant/role_store.go
+git add cmd/heimdall/main.go internal/tenant/role_store.go
 git commit -m "feat: wire DB-backed RBAC evaluator in main.go"
 ```
 
@@ -597,7 +597,7 @@ t.Run("Delete_AssignedRole_Rejected", func(t *testing.T) {
 
 **Step 3: Run tests to verify they fail**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/tenant/ -run "TestRoleHandler/Update|TestRoleHandler/Delete" -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/tenant/ -run "TestRoleHandler/Update|TestRoleHandler/Delete" -v`
 Expected: compilation errors — `HandleUpdate`, `HandleDelete` not defined.
 
 **Step 4: Add store methods — Update, Delete, CountAssignments**
@@ -788,7 +788,7 @@ func (h *RoleHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
 
 **Step 6: Run tests to verify they pass**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/tenant/ -run TestRoleHandler -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/tenant/ -run TestRoleHandler -v`
 Expected: all role handler tests pass.
 
 **Step 7: Commit**
@@ -849,17 +849,17 @@ Add this block:
 
 **Step 3: Update all NewRoleHandler call sites**
 
-In `cmd/valinor/main.go`, find the `NewRoleHandler` call and add `rbacEngine` as the last argument. In test files, pass `nil` for the evaluator parameter.
+In `cmd/heimdall/main.go`, find the `NewRoleHandler` call and add `rbacEngine` as the last argument. In test files, pass `nil` for the evaluator parameter.
 
 **Step 4: Run all tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... -short -count=1`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... -short -count=1`
 Expected: all pass.
 
 **Step 5: Commit**
 
 ```bash
-git add internal/tenant/role_handler.go cmd/valinor/main.go internal/tenant/role_handler_test.go
+git add internal/tenant/role_handler.go cmd/heimdall/main.go internal/tenant/role_handler_test.go
 git commit -m "feat: reload RBAC evaluator after role create/update/delete"
 ```
 
@@ -902,7 +902,7 @@ for _, p := range req.Permissions {
 
 **Step 3: Verify compilation and run tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go build ./cmd/valinor/ && go test ./... -short -count=1`
+Run: `cd /Users/fred/Documents/Heimdall && go build ./cmd/heimdall/ && go test ./... -short -count=1`
 Expected: builds and all tests pass.
 
 **Step 4: Commit**
@@ -981,7 +981,7 @@ Also add the `UpdateRoleRequest` import to the existing imports at the top of `r
 
 **Step 3: Verify TypeScript compilation**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: no errors.
 
 **Step 4: Commit**
@@ -1070,7 +1070,7 @@ describe("PermissionMatrix", () => {
 
 **Step 3: Run tests to verify they fail**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx vitest run src/components/rbac/permission-matrix.test.tsx`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx vitest run src/components/rbac/permission-matrix.test.tsx`
 Expected: fails — file not found.
 
 **Step 4: Implement PermissionMatrix component**
@@ -1172,7 +1172,7 @@ export function PermissionMatrix({ permissions, readonly, onChange }: Permission
 
 **Step 5: Run tests to verify they pass**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx vitest run src/components/rbac/permission-matrix.test.tsx`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx vitest run src/components/rbac/permission-matrix.test.tsx`
 Expected: all 5 tests pass.
 
 **Step 6: Commit**
@@ -1404,7 +1404,7 @@ export function RoleDetail({ role, onDeleted }: RoleDetailProps) {
 
 **Step 3: Verify TypeScript compilation**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: no errors.
 
 **Step 4: Commit**
@@ -1531,7 +1531,7 @@ export function CreateRoleDialog({ open, onClose, onCreated }: CreateRoleDialogP
 
 **Step 2: Verify TypeScript compilation**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: no errors.
 
 **Step 3: Commit**
@@ -1635,7 +1635,7 @@ export function RBACView() {
 
 **Step 3: Verify TypeScript compilation**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: no errors.
 
 **Step 4: Commit**
@@ -1677,7 +1677,7 @@ Replace `selectedRole` / `setSelectedRole` usage:
 
 **Step 2: Verify TypeScript compilation**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: no errors.
 
 **Step 3: Commit**
@@ -1744,7 +1744,7 @@ describe("RBACView", () => {
 
 **Step 2: Run tests**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx vitest run src/components/rbac/`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx vitest run src/components/rbac/`
 Expected: all tests pass.
 
 **Step 3: Commit**
@@ -1760,25 +1760,25 @@ git commit -m "test: add RBACView smoke tests"
 
 **Step 1: Run Go tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... -short -count=1`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... -short -count=1`
 Expected: all pass.
 
 **Step 2: Run dashboard tests**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx vitest run`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx vitest run`
 Expected: all pass.
 
 **Step 3: TypeScript check**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npx tsc --noEmit`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npx tsc --noEmit`
 Expected: no errors.
 
 **Step 4: Build dashboard**
 
-Run: `cd /Users/fred/Documents/Valinor/dashboard && npm run build`
+Run: `cd /Users/fred/Documents/Heimdall/dashboard && npm run build`
 Expected: builds successfully.
 
 **Step 5: Build Go binary**
 
-Run: `cd /Users/fred/Documents/Valinor && go build ./cmd/valinor/`
+Run: `cd /Users/fred/Documents/Heimdall && go build ./cmd/heimdall/`
 Expected: builds successfully.

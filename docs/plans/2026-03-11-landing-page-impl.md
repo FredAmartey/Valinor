@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build a lead-generation landing page for Valinor with dark/light mode, glassmorphism design, gold accents, and the floating toolbar as page navigation.
+**Goal:** Build a lead-generation landing page for Heimdall with dark/light mode, glassmorphism design, gold accents, and the floating toolbar as page navigation.
 
 **Architecture:** New `(marketing)` route group with its own layout (no sidebar). Theme state lives in a React context shared by all sections and the toolbar. Each section is an isolated component. The toolbar is adapted from `floating-toolbar.tsx` with landing-page-specific nav items and scroll-spy.
 
@@ -341,7 +341,7 @@ This layout has no sidebar, no auth — just a bare shell with the theme provide
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Valinor — Enterprise AI Agent Infrastructure",
+  title: "Heimdall — Enterprise AI Agent Infrastructure",
   description: "Deploy isolated AI agent instances per customer with multi-tenancy, RBAC, audit, and multi-channel messaging.",
 }
 
@@ -538,10 +538,10 @@ git commit -m "feat(landing): add hero section with glassmorphism dashboard mock
 
 ---
 
-### Task 5: Why Valinor Section
+### Task 5: Why Heimdall Section
 
 **Files:**
-- Create: `dashboard/src/components/landing/why-valinor.tsx`
+- Create: `dashboard/src/components/landing/why-heimdall.tsx`
 
 3 glassmorphism pain-point cards on a slightly lighter background.
 
@@ -584,7 +584,7 @@ const CARDS = [
   },
 ]
 
-export function WhyValinor() {
+export function WhyHeimdall() {
   const { dark } = useTheme()
   const c = palette(dark)
 
@@ -599,7 +599,7 @@ export function WhyValinor() {
           className="text-sm font-medium tracking-widest uppercase mb-3"
           style={{ color: c.gold }}
         >
-          Why Valinor
+          Why Heimdall
         </p>
         <h2
           className="text-3xl md:text-4xl font-semibold tracking-tight mb-16"
@@ -649,8 +649,8 @@ export function WhyValinor() {
 
 ```bash
 cd dashboard && npx tsc --noEmit 2>&1 | grep "landing/why"
-git add dashboard/src/components/landing/why-valinor.tsx
-git commit -m "feat(landing): add why-valinor section with glass cards"
+git add dashboard/src/components/landing/why-heimdall.tsx
+git commit -m "feat(landing): add why-heimdall section with glass cards"
 ```
 
 ---
@@ -1004,7 +1004,7 @@ export function FooterCta() {
           Ready to deploy your agent fleet?
         </h2>
         <p className="text-base mb-10 max-w-[48ch]" style={{ color: c.textSec }}>
-          Get started with Valinor and ship enterprise-grade AI agents in days, not months.
+          Get started with Heimdall and ship enterprise-grade AI agents in days, not months.
         </p>
         <button
           className="relative cursor-pointer border-none bg-transparent p-0"
@@ -1028,7 +1028,7 @@ export function FooterCta() {
       {/* Footer */}
       <footer className="py-10 px-6">
         <div className="mx-auto max-w-[1200px] flex flex-col md:flex-row items-center justify-between gap-4">
-          <span className="text-sm font-semibold" style={{ color: c.textSec }}>Valinor</span>
+          <span className="text-sm font-semibold" style={{ color: c.textSec }}>Heimdall</span>
           <div className="flex gap-6">
             {["Docs", "GitHub", "Contact"].map((link) => (
               <a
@@ -1042,7 +1042,7 @@ export function FooterCta() {
             ))}
           </div>
           <span className="text-xs" style={{ color: c.textMuted }}>
-            &copy; {new Date().getFullYear()} Valinor. All rights reserved.
+            &copy; {new Date().getFullYear()} Heimdall. All rights reserved.
           </span>
         </div>
       </footer>
@@ -1082,7 +1082,7 @@ import { useState, useEffect, useCallback } from "react"
 import { ThemeProvider, useTheme, palette, GRAIN_URL } from "@/components/landing/theme"
 import { LandingToolbar, LANDING_NAV } from "@/components/landing/landing-toolbar"
 import { Hero } from "@/components/landing/hero"
-import { WhyValinor } from "@/components/landing/why-valinor"
+import { WhyHeimdall } from "@/components/landing/why-heimdall"
 import { Features } from "@/components/landing/features"
 import { Tiers } from "@/components/landing/tiers"
 import { FooterCta } from "@/components/landing/footer"
@@ -1149,7 +1149,7 @@ function LandingContent() {
 
       {/* Page content */}
       <Hero />
-      <WhyValinor />
+      <WhyHeimdall />
       <Features />
       <Tiers />
       <FooterCta />
@@ -1209,7 +1209,7 @@ Navigate to `http://localhost:3000` — should show the landing page
 
 ```bash
 git add -A
-git commit -m "feat(landing): complete Valinor landing page with dark/light mode"
+git commit -m "feat(landing): complete Heimdall landing page with dark/light mode"
 ```
 
 ---
@@ -1221,7 +1221,7 @@ git commit -m "feat(landing): complete Valinor landing page with dark/light mode
 | `dashboard/src/components/landing/theme.tsx` | Theme context + shared palette + design tokens |
 | `dashboard/src/components/landing/landing-toolbar.tsx` | Adapted floating toolbar for landing nav |
 | `dashboard/src/components/landing/hero.tsx` | Hero section with dashboard mockup |
-| `dashboard/src/components/landing/why-valinor.tsx` | 3 pain-point glass cards |
+| `dashboard/src/components/landing/why-heimdall.tsx` | 3 pain-point glass cards |
 | `dashboard/src/components/landing/features.tsx` | Zigzag feature rows with mock visuals |
 | `dashboard/src/components/landing/tiers.tsx` | Teams vs Enterprise tier cards |
 | `dashboard/src/components/landing/footer.tsx` | Footer CTA + footer links |
@@ -1230,4 +1230,4 @@ git commit -m "feat(landing): complete Valinor landing page with dark/light mode
 
 ## Parallelization
 
-Tasks 4, 5, 6, 7, 8 (Hero, WhyValinor, Features, Tiers, Footer) are **independent** and can be dispatched as parallel subagents after Tasks 1-3 are complete.
+Tasks 4, 5, 6, 7, 8 (Hero, WhyHeimdall, Features, Tiers, Footer) are **independent** and can be dispatched as parallel subagents after Tasks 1-3 are complete.

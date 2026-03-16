@@ -89,7 +89,7 @@ git commit -m "feat(channels): add tenant provider credential store APIs"
 - Modify: `internal/channels/handler_test.go`
 - Modify: `internal/platform/server/server.go`
 - Modify: `internal/platform/server/server_test.go`
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Step 1: Write failing tests**
 
@@ -114,27 +114,27 @@ Add handler wiring funcs and endpoint handlers, sanitize output, and route regis
 - `channels:providers:read`
 - `channels:providers:write`
 
-Register default permissions in `cmd/valinor/main.go` role bootstrap.
+Register default permissions in `cmd/heimdall/main.go` role bootstrap.
 
 **Step 4: Run tests to verify pass**
 
-Run: `go test ./internal/channels ./internal/platform/server ./cmd/valinor -run 'Credential|Providers|BuildChannelHandler' -v`
+Run: `go test ./internal/channels ./internal/platform/server ./cmd/heimdall -run 'Credential|Providers|BuildChannelHandler' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add internal/channels/handler.go internal/channels/handler_test.go internal/platform/server/server.go internal/platform/server/server_test.go cmd/valinor/main.go
+git add internal/channels/handler.go internal/channels/handler_test.go internal/platform/server/server.go internal/platform/server/server_test.go cmd/heimdall/main.go
 git commit -m "feat(channels): add tenant credential management endpoints"
 ```
 
 ### Task 4: Resolve Outbox Sender Credentials Per Tenant
 
 **Files:**
-- Modify: `cmd/valinor/channels_outbox_worker.go`
-- Modify: `cmd/valinor/channels_outbox_sender_whatsapp.go`
-- Modify: `cmd/valinor/channels_outbox_sender_whatsapp_test.go`
-- Modify: `cmd/valinor/main_test.go`
+- Modify: `cmd/heimdall/channels_outbox_worker.go`
+- Modify: `cmd/heimdall/channels_outbox_sender_whatsapp.go`
+- Modify: `cmd/heimdall/channels_outbox_sender_whatsapp_test.go`
+- Modify: `cmd/heimdall/main_test.go`
 
 **Step 1: Write failing tests**
 
@@ -147,7 +147,7 @@ Adjust worker build tests to remove global token requirement and require pool fo
 
 **Step 2: Run tests to verify failures**
 
-Run: `go test ./cmd/valinor -run 'OutboxSender|BuildChannelOutboxWorker|Credential' -v`
+Run: `go test ./cmd/heimdall -run 'OutboxSender|BuildChannelOutboxWorker|Credential' -v`
 Expected: FAIL due old static sender behavior.
 
 **Step 3: Write minimal implementation**
@@ -157,13 +157,13 @@ Keep fail-closed with `channels.NewOutboxPermanentError` for missing/invalid ten
 
 **Step 4: Run tests to verify pass**
 
-Run: `go test ./cmd/valinor -run 'OutboxSender|BuildChannelOutboxWorker|Credential' -v`
+Run: `go test ./cmd/heimdall -run 'OutboxSender|BuildChannelOutboxWorker|Credential' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/channels_outbox_worker.go cmd/valinor/channels_outbox_sender_whatsapp.go cmd/valinor/channels_outbox_sender_whatsapp_test.go cmd/valinor/main_test.go
+git add cmd/heimdall/channels_outbox_worker.go cmd/heimdall/channels_outbox_sender_whatsapp.go cmd/heimdall/channels_outbox_sender_whatsapp_test.go cmd/heimdall/main_test.go
 git commit -m "feat(channels): resolve outbox sender credentials per tenant"
 ```
 
@@ -176,7 +176,7 @@ git commit -m "feat(channels): resolve outbox sender credentials per tenant"
 
 Run:
 - `go test ./internal/channels -v`
-- `go test ./cmd/valinor -v`
+- `go test ./cmd/heimdall -v`
 - `go test ./internal/platform/server -v`
 - `go test ./internal/platform/database -run TestRLS_TenantIsolation -v`
 

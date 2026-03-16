@@ -71,7 +71,7 @@ type VMHandle struct {
 ### DockerDriver (integration tests)
 
 - Uses `testcontainers-go` to run a lightweight container simulating a VM
-- Container image: configurable (default `valinor-agent:latest`)
+- Container image: configurable (default `heimdall-agent:latest`)
 - `Start`: runs container with exposed port (simulates vsock)
 - `IsHealthy`: container inspect → running state
 - `Cleanup`: stops and removes container
@@ -210,11 +210,11 @@ orchestrator:
   reconcile_interval: "30s"
   max_consecutive_failures: 3
   firecracker:
-    kernel_path: "/var/lib/valinor/vmlinux"
-    root_drive: "/var/lib/valinor/rootfs.ext4"
+    kernel_path: "/var/lib/heimdall/vmlinux"
+    root_drive: "/var/lib/heimdall/rootfs.ext4"
     jailer_path: "/usr/bin/jailer"
   docker:
-    image: "valinor-agent:latest"
+    image: "heimdall-agent:latest"
 ```
 
 ## Error Handling

@@ -103,7 +103,7 @@ If LLM call fails (timeout, API error), fall through to allow — pattern matche
 
 ## 3. Tool Call Validator (Parameter-Level)
 
-**Location:** `cmd/valinor-agent/` (enhances existing `isToolAllowed`)
+**Location:** `cmd/heimdall-agent/` (enhances existing `isToolAllowed`)
 
 ### Current State
 
@@ -132,7 +132,7 @@ Agent validates tool name AND parsed arguments. Blocked calls send existing `Typ
 
 ## 4. Canary Tokens
 
-**Location:** `cmd/valinor-agent/` (in-guest detection)
+**Location:** `cmd/heimdall-agent/` (in-guest detection)
 
 ### Injection
 

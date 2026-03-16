@@ -2,7 +2,7 @@
 
 ## Summary
 
-Valinor should have two architecture pages with different jobs:
+Heimdall should have two architecture pages with different jobs:
 
 - a buyer-facing marketing page that explains why the architecture makes AI agents safer to trust
 - a technical docs page that explains how the system is structured and where the trust boundaries live
@@ -13,7 +13,7 @@ These pages should share the same core vocabulary and high-level diagram, but th
 
 - Add a first-class marketing architecture page under the existing marketing site
 - Add a technical architecture reference page in docs
-- Keep both pages aligned with Valinor's current security-first positioning
+- Keep both pages aligned with Heimdall's current security-first positioning
 - Make the architecture easy to understand for both buyers and technical evaluators
 
 ## Recommended Approach
@@ -24,7 +24,7 @@ Route:
 - `dashboard/src/app/(marketing)/architecture/page.tsx`
 
 Purpose:
-- explain why Valinor's architecture is trustworthy
+- explain why Heimdall's architecture is trustworthy
 - support sales, fundraising, and product evaluation conversations
 
 Tone:
@@ -48,7 +48,7 @@ File:
 - `docs/architecture.md`
 
 Purpose:
-- serve as the canonical reference for how Valinor is structured
+- serve as the canonical reference for how Heimdall is structured
 - explain the control plane, runtime, security, and event model clearly
 
 Tone:
@@ -66,7 +66,7 @@ Content structure:
 - event and ledger model
 - channels and integrations
 - product tiers
-- what Valinor does not try to own
+- what Heimdall does not try to own
 
 ## Shared Vocabulary
 
@@ -92,7 +92,7 @@ Headline direction:
 - Architecture built for broad-access AI agents
 
 Subheadline:
-- explain that Valinor is designed to keep high-access agents observable, isolated, governable, and auditable
+- explain that Heimdall is designed to keep high-access agents observable, isolated, governable, and auditable
 
 ### System Diagram
 
@@ -100,7 +100,7 @@ A layered diagram should show:
 
 - users and operators
 - channels and external systems
-- Valinor control plane
+- Heimdall control plane
 - policy, approvals, activity, audit, and security layers
 - runtime tiers
 - agent runtime
@@ -149,7 +149,7 @@ Secondary:
 
 ### Overview
 
-Explain that Valinor is the security, observability, and governance layer above the agent runtime.
+Explain that Heimdall is the security, observability, and governance layer above the agent runtime.
 
 ### Core Components
 
@@ -194,7 +194,7 @@ Explain that Valinor is the security, observability, and governance layer above 
 - governed actions
 - approvals for sensitive behavior
 
-### What Valinor Does Not Try to Own
+### What Heimdall Does Not Try to Own
 
 - OpenClaw's own session-centric UX
 - low-level runtime/provider configuration UX
@@ -237,7 +237,7 @@ Build both pages now, but keep them intentionally different:
 - marketing page = why this architecture is trustworthy
 - docs page = how this architecture works
 
-That gives Valinor a cleaner narrative ladder:
+That gives Heimdall a cleaner narrative ladder:
 
 - homepage
 - architecture page

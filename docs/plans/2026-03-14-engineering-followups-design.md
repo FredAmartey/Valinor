@@ -101,10 +101,10 @@ We will add focused scanner tests showing:
 
 - Delete merged remote branch `feat/trust-platform-foundation`.
 - Remove merged helper worktrees:
-  - `/Users/fred/Documents/Valinor/.worktrees/master-merge-fixes`
-  - `/Users/fred/Documents/Valinor/.worktrees/security-trust-platform`
+  - `/Users/fred/Documents/Heimdall/.worktrees/master-merge-fixes`
+  - `/Users/fred/Documents/Heimdall/.worktrees/security-trust-platform`
 - Remove matching local helper branches.
 - Preserve the main dirty workspace on `feat/trust-platform-foundation` untouched.
 - Execute this slice in the fresh worktree:
-  - `/Users/fred/Documents/Valinor/.worktrees/trust-platform-followups`
+  - `/Users/fred/Documents/Heimdall/.worktrees/trust-platform-followups`
   - branch: `codex/trust-platform-followups`

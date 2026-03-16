@@ -87,8 +87,8 @@ git commit -m "refactor(proxy): route handler replies by frame id"
 ### Task 3: Migrate Channel Execution Dispatch Path
 
 **Files:**
-- Modify: `cmd/valinor/channels_execution.go`
-- Test: `cmd/valinor/channels_execution_test.go`
+- Modify: `cmd/heimdall/channels_execution.go`
+- Test: `cmd/heimdall/channels_execution_test.go`
 
 **Step 1: Add/adjust failing tests**
 
@@ -96,7 +96,7 @@ Add or update tests for `dispatchChannelMessageToAgent` path to assert response 
 
 **Step 2: Run targeted tests to verify RED**
 
-Run: `go test ./cmd/valinor -run 'Test(ChannelExecutor|DispatchChannelMessageToAgent)' -v`
+Run: `go test ./cmd/heimdall -run 'Test(ChannelExecutor|DispatchChannelMessageToAgent)' -v`
 Expected: FAIL until migrated.
 
 **Step 3: Implement migration to conn.Request**
@@ -107,13 +107,13 @@ Update dispatch loop:
 
 **Step 4: Run targeted tests to verify GREEN**
 
-Run: `go test ./cmd/valinor -run 'Test(ChannelExecutor|DispatchChannelMessageToAgent)' -v`
+Run: `go test ./cmd/heimdall -run 'Test(ChannelExecutor|DispatchChannelMessageToAgent)' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/channels_execution.go cmd/valinor/channels_execution_test.go
+git add cmd/heimdall/channels_execution.go cmd/heimdall/channels_execution_test.go
 git commit -m "refactor(channels): use frame-id multiplexed dispatch path"
 ```
 
@@ -131,7 +131,7 @@ Remove or revise deferred item in execution path doc that says frame-ID multiple
 
 Run:
 - `go test ./internal/proxy -v`
-- `go test ./cmd/valinor -v`
+- `go test ./cmd/heimdall -v`
 - `go test ./...`
 
 Expected: PASS.

@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build the vsock communication layer, proxy module, and in-guest valinor-agent binary so that clients can send messages to agents, receive streaming responses, and push config updates to running VMs.
+**Goal:** Build the vsock communication layer, proxy module, and in-guest heimdall-agent binary so that clients can send messages to agents, receive streaming responses, and push config updates to running VMs.
 
-**Architecture:** A shared `internal/proxy` package implements the length-prefixed JSON wire protocol, transport abstraction (vsock/TCP), connection pooling, and HTTP handlers for messaging. A separate `cmd/valinor-agent` binary runs inside each MicroVM, bridging control plane commands to OpenClaw via HTTP proxy at localhost:8081. All tests use TCPTransport or net.Pipe() — no vsock required.
+**Architecture:** A shared `internal/proxy` package implements the length-prefixed JSON wire protocol, transport abstraction (vsock/TCP), connection pooling, and HTTP handlers for messaging. A separate `cmd/heimdall-agent` binary runs inside each MicroVM, bridging control plane commands to OpenClaw via HTTP proxy at localhost:8081. All tests use TCPTransport or net.Pipe() — no vsock required.
 
 **Tech Stack:** Go 1.25, net.Pipe() for unit tests, httptest for handler tests, SSE for streaming, length-prefixed JSON wire protocol.
 
@@ -31,7 +31,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestEncodeFrame(t *testing.T) {
@@ -231,7 +231,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestTCPTransport_DialAndListen(t *testing.T) {
@@ -368,7 +368,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestAgentConn_SendRecv(t *testing.T) {
@@ -571,7 +571,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestConnPool_GetCreatesConnection(t *testing.T) {
@@ -826,7 +826,7 @@ Add defaults to `Load()`:
 Run: `go test ./internal/platform/config/... -v -short -count=1`
 Expected: PASS (or no tests — either way, no compile error)
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: SUCCESS
 
 **Step 3: Commit**
@@ -863,8 +863,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 // mockAgentStore implements the interface proxy.Handler needs to look up agents.
@@ -1032,7 +1032,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
 )
 
 // AgentLookup provides agent instance lookups for the proxy handler.
@@ -1630,7 +1630,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestPushConfig_Success(t *testing.T) {
@@ -1895,7 +1895,7 @@ if h.configPusher != nil && inst.Status == StatusRunning && inst.VsockCID != nil
 
 **Step 2: Update main.go to pass nil for now**
 
-In `cmd/valinor/main.go`, change:
+In `cmd/heimdall/main.go`, change:
 
 ```go
 agentHandler = orchestrator.NewHandler(orchManager, nil) // no proxy push yet
@@ -1908,13 +1908,13 @@ The proxy push will be wired in Task 14.
 Run: `go test ./internal/orchestrator/... -v -short -count=1`
 Expected: PASS
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: SUCCESS
 
 **Step 4: Commit**
 
 ```bash
-git add internal/orchestrator/handler.go cmd/valinor/main.go
+git add internal/orchestrator/handler.go cmd/heimdall/main.go
 git commit -m "feat(orchestrator): add optional ConfigPusher for vsock config push"
 ```
 
@@ -1923,7 +1923,7 @@ git commit -m "feat(orchestrator): add optional ConfigPusher for vsock config pu
 ### Task 11: In-Guest Agent — Main Binary Scaffold
 
 **Files:**
-- Create: `cmd/valinor-agent/main.go`
+- Create: `cmd/heimdall-agent/main.go`
 
 **Step 1: Create the binary entrypoint**
 
@@ -1942,7 +1942,7 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "valinor-agent: %v\n", err)
+		fmt.Fprintf(os.Stderr, "heimdall-agent: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -1953,7 +1953,7 @@ func run() error {
 	openclawURL := flag.String("openclaw-url", "http://localhost:8081", "OpenClaw API URL")
 	flag.Parse()
 
-	slog.Info("valinor-agent starting",
+	slog.Info("heimdall-agent starting",
 		"transport", *transportFlag,
 		"port", *portFlag,
 		"openclaw_url", *openclawURL,
@@ -1974,7 +1974,7 @@ func run() error {
 
 **Step 2: Verify it compiles**
 
-Run: `go build ./cmd/valinor-agent`
+Run: `go build ./cmd/heimdall-agent`
 Expected: FAIL — `NewAgent` and `AgentConfig` not defined (yet — we build them in the next task)
 
 **Step 3: Commit (scaffold only)**
@@ -1986,12 +1986,12 @@ We'll commit this in the next task once Agent struct exists.
 ### Task 12: In-Guest Agent — Core Agent Loop
 
 **Files:**
-- Create: `cmd/valinor-agent/agent.go`
-- Create: `cmd/valinor-agent/agent_test.go`
+- Create: `cmd/heimdall-agent/agent.go`
+- Create: `cmd/heimdall-agent/agent_test.go`
 
 **Step 1: Write the failing test**
 
-Create `cmd/valinor-agent/agent_test.go`:
+Create `cmd/heimdall-agent/agent_test.go`:
 
 ```go
 package main
@@ -2005,7 +2005,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestAgent_PingPong(t *testing.T) {
@@ -2104,12 +2104,12 @@ func TestAgent_ToolAllowList(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/valinor-agent/... -v -run TestAgent`
+Run: `go test ./cmd/heimdall-agent/... -v -run TestAgent`
 Expected: FAIL — `Agent`, `AgentConfig`, `handleConnection`, `isToolAllowed` not defined
 
 **Step 3: Write minimal implementation**
 
-Create `cmd/valinor-agent/agent.go`:
+Create `cmd/heimdall-agent/agent.go`:
 
 ```go
 package main
@@ -2124,7 +2124,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 // AgentConfig holds in-guest agent configuration.
@@ -2134,7 +2134,7 @@ type AgentConfig struct {
 	OpenClawURL string
 }
 
-// Agent is the in-guest valinor-agent that bridges the control plane to OpenClaw.
+// Agent is the in-guest heimdall-agent that bridges the control plane to OpenClaw.
 type Agent struct {
 	cfg           AgentConfig
 	toolAllowlist []string
@@ -2337,19 +2337,19 @@ func (a *Agent) isToolAllowed(toolName string) bool {
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test ./cmd/valinor-agent/... -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -v -count=1`
 Expected: PASS (all 3 tests)
 
 **Step 5: Verify binary compiles**
 
-Run: `go build ./cmd/valinor-agent`
+Run: `go build ./cmd/heimdall-agent`
 Expected: SUCCESS
 
 **Step 6: Commit**
 
 ```bash
-git add cmd/valinor-agent/main.go cmd/valinor-agent/agent.go cmd/valinor-agent/agent_test.go
-git commit -m "feat(agent): add in-guest valinor-agent binary with core loop"
+git add cmd/heimdall-agent/main.go cmd/heimdall-agent/agent.go cmd/heimdall-agent/agent_test.go
+git commit -m "feat(agent): add in-guest heimdall-agent binary with core loop"
 ```
 
 ---
@@ -2357,12 +2357,12 @@ git commit -m "feat(agent): add in-guest valinor-agent binary with core loop"
 ### Task 13: In-Guest Agent — OpenClaw HTTP Proxy
 
 **Files:**
-- Create: `cmd/valinor-agent/openclaw.go`
-- Create: `cmd/valinor-agent/openclaw_test.go`
+- Create: `cmd/heimdall-agent/openclaw.go`
+- Create: `cmd/heimdall-agent/openclaw_test.go`
 
 **Step 1: Write the failing test**
 
-Create `cmd/valinor-agent/openclaw_test.go`:
+Create `cmd/heimdall-agent/openclaw_test.go`:
 
 ```go
 package main
@@ -2378,7 +2378,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestOpenClawProxy_Message(t *testing.T) {
@@ -2509,12 +2509,12 @@ func TestOpenClawProxy_ToolBlocked(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `go test ./cmd/valinor-agent/... -v -run TestOpenClaw`
+Run: `go test ./cmd/heimdall-agent/... -v -run TestOpenClaw`
 Expected: FAIL — the existing `handleMessage` is a stub that echoes
 
 **Step 3: Write implementation**
 
-Create `cmd/valinor-agent/openclaw.go`:
+Create `cmd/heimdall-agent/openclaw.go`:
 
 ```go
 package main
@@ -2529,7 +2529,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 // openClawResponse models the OpenClaw chat completions response.
@@ -2671,7 +2671,7 @@ func mustMarshal(v any) json.RawMessage {
 
 Now update `agent.go` to use the real `forwardToOpenClaw` instead of the stub:
 
-Replace the `handleMessage` method in `cmd/valinor-agent/agent.go`:
+Replace the `handleMessage` method in `cmd/heimdall-agent/agent.go`:
 
 ```go
 func (a *Agent) handleMessage(ctx context.Context, conn *proxy.AgentConn, frame proxy.Frame) {
@@ -2681,13 +2681,13 @@ func (a *Agent) handleMessage(ctx context.Context, conn *proxy.AgentConn, frame 
 
 **Step 4: Run test to verify it passes**
 
-Run: `go test ./cmd/valinor-agent/... -v -count=1`
+Run: `go test ./cmd/heimdall-agent/... -v -count=1`
 Expected: PASS (all tests including OpenClaw proxy tests)
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor-agent/openclaw.go cmd/valinor-agent/openclaw_test.go cmd/valinor-agent/agent.go
+git add cmd/heimdall-agent/openclaw.go cmd/heimdall-agent/openclaw_test.go cmd/heimdall-agent/agent.go
 git commit -m "feat(agent): add OpenClaw HTTP proxy with tool allow-list enforcement"
 ```
 
@@ -2697,7 +2697,7 @@ git commit -m "feat(agent): add OpenClaw HTTP proxy with tool allow-list enforce
 
 **Files:**
 - Modify: `internal/platform/server/server.go` (add ProxyHandler to Dependencies, register routes)
-- Modify: `cmd/valinor/main.go` (create proxy handler, pass to server)
+- Modify: `cmd/heimdall/main.go` (create proxy handler, pass to server)
 
 **Step 1: Add ProxyHandler to Dependencies**
 
@@ -2746,7 +2746,7 @@ if deps.ProxyHandler != nil && deps.RBAC != nil {
 
 **Step 2: Wire in main.go**
 
-In `cmd/valinor/main.go`, after the orchestrator block, add proxy wiring:
+In `cmd/heimdall/main.go`, after the orchestrator block, add proxy wiring:
 
 ```go
 // Proxy — agent messaging and config push
@@ -2812,7 +2812,7 @@ Add import for proxy package.
 
 **Step 3: Verify compile**
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: SUCCESS
 
 **Step 4: Run all tests**
@@ -2823,7 +2823,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add internal/platform/server/server.go cmd/valinor/main.go
+git add internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat: wire proxy handler into server routes and main.go"
 ```
 
@@ -2848,7 +2848,7 @@ WriteTimeout: 0, // SSE streams have no server-side timeout; client disconnects 
 
 **Step 2: Verify compile and tests**
 
-Run: `go build ./cmd/valinor && go test ./... -short -count=1`
+Run: `go build ./cmd/heimdall && go test ./... -short -count=1`
 Expected: PASS
 
 **Step 3: Commit**
@@ -2865,7 +2865,7 @@ git commit -m "fix(server): disable WriteTimeout for SSE streaming support"
 **Files:**
 - Create: `internal/proxy/integration_test.go`
 
-This test starts a mock valinor-agent on TCP, creates a proxy handler, sends a message, and verifies the full round-trip.
+This test starts a mock heimdall-agent on TCP, creates a proxy handler, sends a message, and verifies the full round-trip.
 
 **Step 1: Write integration test**
 
@@ -2887,8 +2887,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 func TestEndToEnd_MessageRoundTrip(t *testing.T) {
@@ -2965,7 +2965,7 @@ func TestEndToEnd_MessageRoundTrip(t *testing.T) {
 	assert.Contains(t, w2.Body.String(), "event: done")
 }
 
-// runMockAgent simulates a valinor-agent that replies to messages.
+// runMockAgent simulates a heimdall-agent that replies to messages.
 func runMockAgent(t *testing.T, ctx context.Context, ln net.Listener) {
 	t.Helper()
 	conn, err := ln.Accept()
@@ -3062,29 +3062,29 @@ git commit -m "test: add end-to-end integration test for proxy + mock agent"
 
 **Files:**
 - Delete: `internal/proxy/.gitkeep`
-- Delete: `valinor-agent/.gitkeep` (the old placeholder — code now lives in `cmd/valinor-agent/`)
+- Delete: `heimdall-agent/.gitkeep` (the old placeholder — code now lives in `cmd/heimdall-agent/`)
 
 **Step 1: Remove placeholders**
 
 ```bash
 rm internal/proxy/.gitkeep
-rm valinor-agent/.gitkeep
+rm heimdall-agent/.gitkeep
 ```
 
-Note: If `valinor-agent/` is expected to hold agent code per the original plan, leave it. But per our implementation, the agent binary is at `cmd/valinor-agent/`, so the top-level `valinor-agent/` dir is now unused.
+Note: If `heimdall-agent/` is expected to hold agent code per the original plan, leave it. But per our implementation, the agent binary is at `cmd/heimdall-agent/`, so the top-level `heimdall-agent/` dir is now unused.
 
 **Step 2: Full test suite**
 
 Run: `go test ./... -short -count=1`
 Expected: PASS
 
-Run: `go build ./cmd/valinor && go build ./cmd/valinor-agent`
+Run: `go build ./cmd/heimdall && go build ./cmd/heimdall-agent`
 Expected: Both compile successfully
 
 **Step 3: Commit**
 
 ```bash
-git rm internal/proxy/.gitkeep valinor-agent/.gitkeep
+git rm internal/proxy/.gitkeep heimdall-agent/.gitkeep
 git commit -m "chore: remove placeholder .gitkeep files replaced by actual code"
 ```
 
@@ -3103,10 +3103,10 @@ git commit -m "chore: remove placeholder .gitkeep files replaced by actual code"
 | 7 | HandleStream SSE endpoint | `internal/proxy/handler.go`, `handler_test.go` |
 | 8 | HandleContext endpoint | `internal/proxy/handler.go`, `handler_test.go` |
 | 9 | PushConfig function | `internal/proxy/push.go`, `push_test.go` |
-| 10 | ConfigPusher integration | `internal/orchestrator/handler.go`, `cmd/valinor/main.go` |
-| 11-12 | In-guest agent binary + core loop | `cmd/valinor-agent/main.go`, `agent.go`, `agent_test.go` |
-| 13 | OpenClaw HTTP proxy + tool allow-list | `cmd/valinor-agent/openclaw.go`, `openclaw_test.go` |
-| 14 | Server wiring + main.go composition | `internal/platform/server/server.go`, `cmd/valinor/main.go` |
+| 10 | ConfigPusher integration | `internal/orchestrator/handler.go`, `cmd/heimdall/main.go` |
+| 11-12 | In-guest agent binary + core loop | `cmd/heimdall-agent/main.go`, `agent.go`, `agent_test.go` |
+| 13 | OpenClaw HTTP proxy + tool allow-list | `cmd/heimdall-agent/openclaw.go`, `openclaw_test.go` |
+| 14 | Server wiring + main.go composition | `internal/platform/server/server.go`, `cmd/heimdall/main.go` |
 | 15 | SSE timeout fix | `internal/platform/server/server.go` |
 | 16 | End-to-end integration test | `internal/proxy/integration_test.go` |
 | 17 | Cleanup + final verification | Remove `.gitkeep` files |

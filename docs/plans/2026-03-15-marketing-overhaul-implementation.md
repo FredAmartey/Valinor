@@ -45,7 +45,7 @@ Replace `dashboard/src/app/(marketing)/layout.tsx` with a layout that:
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Valinor — Security, observability, and governance for AI agents",
+  title: "Heimdall — Security, observability, and governance for AI agents",
   description:
     "Trust AI agents with real access using visibility, isolation, governance, and auditability built for teams and enterprises.",
 }
@@ -373,13 +373,13 @@ Expected: FAIL.
 
 Create `dashboard/src/components/marketing/feature-cards.tsx`:
 
-- Section heading: "Why Valinor" eyebrow in gold + main heading in white (Afacad)
+- Section heading: "Why Heimdall" eyebrow in gold + main heading in white (Afacad)
 - Three glass cards in a horizontal row (`grid-cols-1 md:grid-cols-3`)
 - Each card uses `GlassCard` with `hover={true}`:
   - Gold SVG line-art icon at top (quadrants/shield/lightning — same concepts as current icons)
   - White title in Afacad 600, ~20px
   - Silver-gray description in Geist 400, ~15px
-- Copy is identical to current `why-valinor.tsx` cards array
+- Copy is identical to current `why-heimdall.tsx` cards array
 - Cards have `gap-6`, max-width 1200px container
 
 **Step 4: Run test to verify it passes**
@@ -516,7 +516,7 @@ describe("Footer", () => {
       "href",
       expect.stringContaining("github.com"),
     )
-    expect(screen.getByText(/© 2026 Valinor/)).toBeInTheDocument()
+    expect(screen.getByText(/© 2026 Heimdall/)).toBeInTheDocument()
   })
 })
 ```
@@ -547,7 +547,7 @@ Create `dashboard/src/components/marketing/footer.tsx`:
 - Black background, full-width, subtle top border (gold-tinted `rgba(255, 215, 0, 0.08)`)
 - Left column: "VALINOR" wordmark (Afacad, uppercase, tracking-wide) + one-line brand description in gray
 - Right columns (3): Product (Architecture, Docs), Company (About), Socials (GitHub, LinkedIn)
-- Bottom bar: "© 2026 Valinor. All rights reserved." left, Privacy + Terms links right
+- Bottom bar: "© 2026 Heimdall. All rights reserved." left, Privacy + Terms links right
 - All links: silver-gray, hover to white
 
 **Step 5: Run test to verify it passes**
@@ -643,7 +643,7 @@ describe("ArchitectureDiagram", () => {
     render(<ArchitectureDiagram />)
 
     expect(screen.getByText("Users and operators")).toBeInTheDocument()
-    expect(screen.getByText("Valinor control plane")).toBeInTheDocument()
+    expect(screen.getByText("Heimdall control plane")).toBeInTheDocument()
     expect(screen.getByText("Teams runtime")).toBeInTheDocument()
     expect(screen.getByText("Enterprise runtime")).toBeInTheDocument()
     expect(screen.getByText("OpenClaw runtime")).toBeInTheDocument()
@@ -721,7 +721,7 @@ git commit -m "feat(marketing): rebuild architecture page with dark cosmic aesth
 - Delete: `dashboard/src/components/landing/theme.tsx`
 - Delete: `dashboard/src/components/landing/landing-toolbar.tsx`
 - Delete: `dashboard/src/components/landing/hero.tsx`
-- Delete: `dashboard/src/components/landing/why-valinor.tsx`
+- Delete: `dashboard/src/components/landing/why-heimdall.tsx`
 - Delete: `dashboard/src/components/landing/features.tsx`
 - Delete: `dashboard/src/components/landing/tiers.tsx`
 - Delete: `dashboard/src/components/landing/footer.tsx`
@@ -747,7 +747,7 @@ Expected: Only the old files themselves (no imports from dashboard pages or othe
 rm dashboard/src/components/landing/theme.tsx \
    dashboard/src/components/landing/landing-toolbar.tsx \
    dashboard/src/components/landing/hero.tsx \
-   dashboard/src/components/landing/why-valinor.tsx \
+   dashboard/src/components/landing/why-heimdall.tsx \
    dashboard/src/components/landing/features.tsx \
    dashboard/src/components/landing/tiers.tsx \
    dashboard/src/components/landing/footer.tsx \

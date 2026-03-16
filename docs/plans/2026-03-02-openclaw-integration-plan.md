@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a Docker-based VMDriver that runs OpenClaw inside containers with valinor-agent as the security sidecar, enabling the "Teams" tier alongside the existing Firecracker "Enterprise" tier.
+**Goal:** Add a Docker-based VMDriver that runs OpenClaw inside containers with heimdall-agent as the security sidecar, enabling the "Teams" tier alongside the existing Firecracker "Enterprise" tier.
 
-**Architecture:** New `DockerDriver` implementing `VMDriver` interface. Each agent = one Docker container running valinor-agent (entrypoint) + OpenClaw Gateway (child process). Control plane communicates via TCP transport (same protocol). Hierarchical memory via volume mounts. Per-tenant Docker networks for isolation.
+**Architecture:** New `DockerDriver` implementing `VMDriver` interface. Each agent = one Docker container running heimdall-agent (entrypoint) + OpenClaw Gateway (child process). Control plane communicates via TCP transport (same protocol). Hierarchical memory via volume mounts. Per-tenant Docker networks for isolation.
 
 **Tech Stack:** Go 1.25, `github.com/docker/docker` client SDK (already in go.mod via testcontainers), Docker Engine API, existing proxy/orchestrator packages.
 
@@ -14,23 +14,23 @@
 
 **Files:**
 - Modify: `internal/platform/config/config.go:109-111`
-- Modify: `cmd/valinor/driver.go:29-58`
-- Test: `cmd/valinor/driver_test.go`
+- Modify: `cmd/heimdall/driver.go:29-58`
+- Test: `cmd/heimdall/driver_test.go`
 
 **Step 1: Write the failing test**
 
-Add to `cmd/valinor/driver_test.go`:
+Add to `cmd/heimdall/driver_test.go`:
 
 ```go
 func TestSelectVMDriver_Docker(t *testing.T) {
 	cfg := config.OrchestratorConfig{
 		Driver: "docker",
 		Docker: config.DockerConfig{
-			Image:            "valinor/agent:latest",
+			Image:            "heimdall/agent:latest",
 			NetworkMode:      "per-tenant",
 			DefaultCPUs:      1,
 			DefaultMemoryMB:  512,
-			MemoryBasePath:   "/var/lib/valinor/memory",
+			MemoryBasePath:   "/var/lib/heimdall/memory",
 			WorkspaceQuotaMB: 1024,
 		},
 	}
@@ -59,7 +59,7 @@ func TestSelectVMDriver_Docker_MissingImage(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./cmd/valinor/ -run 'TestSelectVMDriver_Docker' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./cmd/heimdall/ -run 'TestSelectVMDriver_Docker' -v`
 Expected: FAIL — `DockerDriver` type doesn't exist yet.
 
 **Step 3: Expand DockerConfig**
@@ -83,7 +83,7 @@ Add defaults in `Load()` after the existing docker image default:
 "orchestrator.docker.network_mode":      "per-tenant",
 "orchestrator.docker.default_cpus":      1,
 "orchestrator.docker.default_memory_mb": 512,
-"orchestrator.docker.memory_base_path":  "/var/lib/valinor/memory",
+"orchestrator.docker.memory_base_path":  "/var/lib/heimdall/memory",
 "orchestrator.docker.workspace_quota_mb": 1024,
 ```
 
@@ -142,7 +142,7 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 
 **Step 5: Wire into selectVMDriver**
 
-Add a `"docker"` case in `cmd/valinor/driver.go` inside the switch:
+Add a `"docker"` case in `cmd/heimdall/driver.go` inside the switch:
 
 ```go
 case "docker":
@@ -166,18 +166,18 @@ case "docker":
 
 **Step 6: Run tests to verify they pass**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./cmd/valinor/ -run 'TestSelectVMDriver_Docker' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./cmd/heimdall/ -run 'TestSelectVMDriver_Docker' -v`
 Expected: PASS
 
 **Step 7: Run full test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... -count=1 -short`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... -count=1 -short`
 Expected: All existing tests still pass.
 
 **Step 8: Commit**
 
 ```bash
-git add internal/platform/config/config.go internal/orchestrator/docker_driver.go cmd/valinor/driver.go cmd/valinor/driver_test.go
+git add internal/platform/config/config.go internal/orchestrator/docker_driver.go cmd/heimdall/driver.go cmd/heimdall/driver_test.go
 git commit -m "feat: add DockerDriver stub and wire into selectVMDriver"
 ```
 
@@ -202,7 +202,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
 )
 
 // TestDockerDriver_Start_Integration requires Docker daemon.
@@ -247,7 +247,7 @@ func TestDockerDriver_Start_Integration(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver_Start_Integration' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver_Start_Integration' -v`
 Expected: FAIL — "docker driver: not yet implemented"
 
 **Step 3: Implement DockerDriver with Docker client**
@@ -274,8 +274,8 @@ import (
 
 const (
 	dockerAgentPort      = 9100
-	dockerContainerLabel = "valinor.agent"
-	dockerTenantLabel    = "valinor.tenant"
+	dockerContainerLabel = "heimdall.agent"
+	dockerTenantLabel    = "heimdall.tenant"
 	dockerStopTimeout    = 10 // seconds
 )
 
@@ -318,7 +318,7 @@ func (d *DockerDriver) Start(ctx context.Context, spec VMSpec) (VMHandle, error)
 		return VMHandle{}, fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", spec.VMID)
+	containerName := fmt.Sprintf("heimdall-%s", spec.VMID)
 	hostPort := strconv.Itoa(dockerAgentPort + int(spec.VsockCID))
 	agentPort := nat.Port(fmt.Sprintf("%d/tcp", dockerAgentPort))
 
@@ -396,7 +396,7 @@ func (d *DockerDriver) Stop(ctx context.Context, id string) error {
 		return fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", id)
+	containerName := fmt.Sprintf("heimdall-%s", id)
 	timeout := dockerStopTimeout
 	err := d.cli.ContainerStop(ctx, containerName, container.StopOptions{Timeout: &timeout})
 	if err != nil {
@@ -412,7 +412,7 @@ func (d *DockerDriver) IsHealthy(ctx context.Context, id string) (bool, error) {
 		return false, fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", id)
+	containerName := fmt.Sprintf("heimdall-%s", id)
 	info, err := d.cli.ContainerInspect(ctx, containerName)
 	if err != nil {
 		return false, fmt.Errorf("inspecting container %s: %w", containerName, err)
@@ -426,7 +426,7 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 		return fmt.Errorf("docker client: %w", err)
 	}
 
-	containerName := fmt.Sprintf("valinor-%s", id)
+	containerName := fmt.Sprintf("heimdall-%s", id)
 	err := d.cli.ContainerRemove(ctx, containerName, container.RemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
@@ -442,12 +442,12 @@ func (d *DockerDriver) Cleanup(ctx context.Context, id string) error {
 
 **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver_Start_Integration' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver_Start_Integration' -v`
 Expected: PASS (requires Docker daemon running)
 
 **Step 5: Run full test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./... -count=1 -short`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./... -count=1 -short`
 Expected: All tests pass (Docker tests skipped in short mode)
 
 **Step 6: Commit**
@@ -503,7 +503,7 @@ func TestDockerDriver_PerTenantNetwork(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver_PerTenantNetwork' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver_PerTenantNetwork' -v`
 Expected: FAIL or PASS depending on current NetworkMode handling — verify behavior.
 
 **Step 3: Add network management methods to DockerDriver**
@@ -514,7 +514,7 @@ Add to `docker_driver.go`:
 // ensureTenantNetwork creates a Docker network for the tenant if it doesn't exist.
 // Returns the network ID.
 func (d *DockerDriver) ensureTenantNetwork(ctx context.Context, tenantID string) (string, error) {
-	networkName := fmt.Sprintf("valinor-net-%s", tenantID)
+	networkName := fmt.Sprintf("heimdall-net-%s", tenantID)
 
 	// Check if network already exists
 	networks, err := d.cli.NetworkList(ctx, network.ListOptions{})
@@ -549,7 +549,7 @@ Update `Start()` to attach to a tenant network when `NetworkMode == "per-tenant"
 
 **Step 4: Run tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver' -v`
 Expected: PASS
 
 **Step 5: Commit**
@@ -604,7 +604,7 @@ func TestDockerDriver_MemoryVolumeMounts(t *testing.T) {
 
 **Step 2: Run test to verify baseline**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver_MemoryVolumeMounts' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver_MemoryVolumeMounts' -v`
 
 **Step 3: Add memory volume mount logic**
 
@@ -631,7 +631,7 @@ Note: Department/tenant/shared memory mounts will be added in Task 6 when the kn
 
 **Step 4: Run tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver' -v`
 Expected: PASS
 
 **Step 5: Commit**
@@ -643,16 +643,16 @@ git commit -m "feat: add personal memory volume mount to DockerDriver"
 
 ---
 
-## Task 5: valinor-agent spawns OpenClaw as child process
+## Task 5: heimdall-agent spawns OpenClaw as child process
 
 **Files:**
-- Modify: `cmd/valinor-agent/agent.go`
-- Create: `cmd/valinor-agent/subprocess.go`
-- Test: `cmd/valinor-agent/subprocess_test.go`
+- Modify: `cmd/heimdall-agent/agent.go`
+- Create: `cmd/heimdall-agent/subprocess.go`
+- Test: `cmd/heimdall-agent/subprocess_test.go`
 
 **Step 1: Write the failing test**
 
-Create `cmd/valinor-agent/subprocess_test.go`:
+Create `cmd/heimdall-agent/subprocess_test.go`:
 
 ```go
 package main
@@ -709,12 +709,12 @@ func TestSubprocess_WaitForReady(t *testing.T) {
 
 **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./cmd/valinor-agent/ -run 'TestSubprocess' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./cmd/heimdall-agent/ -run 'TestSubprocess' -v`
 Expected: FAIL — `Subprocess` type doesn't exist.
 
 **Step 3: Implement Subprocess manager**
 
-Create `cmd/valinor-agent/subprocess.go`:
+Create `cmd/heimdall-agent/subprocess.go`:
 
 ```go
 package main
@@ -848,12 +848,12 @@ func (s *Subprocess) Running() bool {
 
 **Step 4: Run tests**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./cmd/valinor-agent/ -run 'TestSubprocess' -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./cmd/heimdall-agent/ -run 'TestSubprocess' -v`
 Expected: PASS
 
 **Step 5: Wire subprocess into Agent.Run()**
 
-Modify `cmd/valinor-agent/agent.go` — in `Run()`, before listening, start OpenClaw as a subprocess:
+Modify `cmd/heimdall-agent/agent.go` — in `Run()`, before listening, start OpenClaw as a subprocess:
 
 ```go
 func (a *Agent) Run(ctx context.Context) error {
@@ -882,14 +882,14 @@ Add `SkipOpenClawSpawn bool` to `AgentConfig` and a `--skip-openclaw-spawn` flag
 
 **Step 6: Run full agent test suite**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./cmd/valinor-agent/ -v`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./cmd/heimdall-agent/ -v`
 Expected: PASS (existing tests use mock HTTP, not real OpenClaw)
 
 **Step 7: Commit**
 
 ```bash
-git add cmd/valinor-agent/subprocess.go cmd/valinor-agent/subprocess_test.go cmd/valinor-agent/agent.go cmd/valinor-agent/main.go
-git commit -m "feat: valinor-agent spawns OpenClaw gateway as child process"
+git add cmd/heimdall-agent/subprocess.go cmd/heimdall-agent/subprocess_test.go cmd/heimdall-agent/agent.go cmd/heimdall-agent/main.go
+git commit -m "feat: heimdall-agent spawns OpenClaw gateway as child process"
 ```
 
 ---
@@ -964,12 +964,12 @@ DROP TABLE IF EXISTS knowledge_bases;
 
 **Step 4: Apply migration**
 
-Run: `cd /Users/fred/Documents/Valinor && /usr/local/Cellar/postgresql@15/15.13/bin/psql postgres://valinor:valinor@localhost:5432/valinor -f migrations/000017_knowledge_bases.up.sql`
+Run: `cd /Users/fred/Documents/Heimdall && /usr/local/Cellar/postgresql@15/15.13/bin/psql postgres://heimdall:heimdall@localhost:5432/heimdall -f migrations/000017_knowledge_bases.up.sql`
 Expected: CREATE TABLE, CREATE INDEX, etc.
 
 **Step 5: Verify**
 
-Run: `cd /Users/fred/Documents/Valinor && /usr/local/Cellar/postgresql@15/15.13/bin/psql postgres://valinor:valinor@localhost:5432/valinor -c '\dt knowledge*'`
+Run: `cd /Users/fred/Documents/Heimdall && /usr/local/Cellar/postgresql@15/15.13/bin/psql postgres://heimdall:heimdall@localhost:5432/heimdall -c '\dt knowledge*'`
 Expected: Shows both tables.
 
 **Step 6: Commit**
@@ -1020,13 +1020,13 @@ Create `configs/openclaw-guest.json`:
 Create `Dockerfile.agent`:
 
 ```dockerfile
-# Stage 1: Build valinor-agent
+# Stage 1: Build heimdall-agent
 FROM golang:1.25 AS agent-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /valinor-agent ./cmd/valinor-agent
+RUN CGO_ENABLED=0 go build -o /heimdall-agent ./cmd/heimdall-agent
 
 # Stage 2: OpenClaw runtime
 FROM node:22-slim
@@ -1034,8 +1034,8 @@ FROM node:22-slim
 # Install OpenClaw (pin version for reproducibility)
 RUN npm install -g openclaw@latest
 
-# Copy valinor-agent binary
-COPY --from=agent-builder /valinor-agent /usr/local/bin/valinor-agent
+# Copy heimdall-agent binary
+COPY --from=agent-builder /heimdall-agent /usr/local/bin/heimdall-agent
 
 # Copy OpenClaw hardened config
 COPY configs/openclaw-guest.json /etc/openclaw/openclaw.json
@@ -1046,7 +1046,7 @@ RUN mkdir -p /memory/personal /memory/department /memory/tenant /memory/shared
 # Agent listens on port 9100 for control plane connections
 EXPOSE 9100
 
-ENTRYPOINT ["/usr/local/bin/valinor-agent", \
+ENTRYPOINT ["/usr/local/bin/heimdall-agent", \
   "--transport", "tcp", \
   "--port", "9100", \
   "--openclaw-url", "http://127.0.0.1:8081"]
@@ -1054,13 +1054,13 @@ ENTRYPOINT ["/usr/local/bin/valinor-agent", \
 
 **Step 3: Build the image**
 
-Run: `cd /Users/fred/Documents/Valinor && docker build -f Dockerfile.agent -t valinor/agent:dev .`
+Run: `cd /Users/fred/Documents/Heimdall && docker build -f Dockerfile.agent -t heimdall/agent:dev .`
 Expected: Successful build.
 
 **Step 4: Smoke test**
 
-Run: `docker run --rm -d --name valinor-agent-test -p 19100:9100 valinor/agent:dev --skip-openclaw-spawn && sleep 2 && docker logs valinor-agent-test && docker stop valinor-agent-test`
-Expected: Agent starts, logs "valinor-agent starting" and "agent listening".
+Run: `docker run --rm -d --name heimdall-agent-test -p 19100:9100 heimdall/agent:dev --skip-openclaw-spawn && sleep 2 && docker logs heimdall-agent-test && docker stop heimdall-agent-test`
+Expected: Agent starts, logs "heimdall-agent starting" and "agent listening".
 
 **Step 5: Commit**
 
@@ -1088,19 +1088,19 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/proxy"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/proxy"
 )
 
 // TestDockerDriver_E2E tests the full flow: start container, connect via proxy, send ping, stop.
-// Requires Docker daemon and valinor/agent:dev image built.
+// Requires Docker daemon and heimdall/agent:dev image built.
 func TestDockerDriver_E2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping Docker E2E test in short mode")
 	}
 
 	driver := orchestrator.NewDockerDriver(orchestrator.DockerDriverConfig{
-		Image:           "valinor/agent:dev",
+		Image:           "heimdall/agent:dev",
 		NetworkMode:     "none",
 		DefaultCPUs:     1,
 		DefaultMemoryMB: 256,
@@ -1157,7 +1157,7 @@ func TestDockerDriver_E2E(t *testing.T) {
 
 **Step 2: Run the test**
 
-Run: `cd /Users/fred/Documents/Valinor && go test ./internal/orchestrator/ -run 'TestDockerDriver_E2E' -v -timeout 120s`
+Run: `cd /Users/fred/Documents/Heimdall && go test ./internal/orchestrator/ -run 'TestDockerDriver_E2E' -v -timeout 120s`
 Expected: PASS (requires Docker + built image)
 
 **Step 3: Commit**
@@ -1177,15 +1177,15 @@ git commit -m "test: add Docker driver end-to-end integration test"
 | 2 | DockerDriver.Start/Stop/IsHealthy/Cleanup with Docker Engine API |
 | 3 | Per-tenant Docker network isolation |
 | 4 | Personal memory volume mounts |
-| 5 | valinor-agent spawns OpenClaw as child process |
+| 5 | heimdall-agent spawns OpenClaw as child process |
 | 6 | knowledge_bases + knowledge_base_grants DB tables with RLS |
 | 7 | Dockerfile.agent + OpenClaw guest config |
 | 8 | End-to-end integration test |
 
 **Not in this plan (future tasks):**
 - Department/tenant/shared memory volume mount wiring (needs knowledge base store + grant resolution)
-- `valinor_publish_memory` MCP connector
-- `valinor_query_memory` MCP connector
+- `heimdall_publish_memory` MCP connector
+- `heimdall_query_memory` MCP connector
 - Dashboard UI for knowledge base management
 - Firecracker guest image pipeline (parallel track)
 - Warm pool optimization for Docker (works but can be tuned)

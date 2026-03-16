@@ -194,7 +194,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
 )
 
 func TestMockDriver_StartAndHealth(t *testing.T) {
@@ -406,7 +406,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // Store handles agent_instances database operations for the orchestrator.
@@ -638,8 +638,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 func setupTestDB(t *testing.T) (*database.Pool, func()) {
@@ -648,7 +648,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -886,7 +886,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -1271,7 +1271,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
 )
 
 func newTestManager(t *testing.T) (*orchestrator.Manager, *orchestrator.MockDriver, func()) {
@@ -1604,7 +1604,7 @@ Add defaults in the `Load` function's confmap:
 "orchestrator.health_interval_secs":     10,
 "orchestrator.reconcile_interval_secs":  30,
 "orchestrator.max_consecutive_failures": 3,
-"orchestrator.docker.image":             "valinor-agent:latest",
+"orchestrator.docker.image":             "heimdall-agent:latest",
 ```
 
 **Step 2: Verify it compiles**
@@ -1639,8 +1639,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // Handler handles HTTP requests for agent lifecycle.
@@ -1878,9 +1878,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 func withIdentity(r *http.Request, tenantID string, platformAdmin bool) *http.Request {
@@ -2086,7 +2086,7 @@ git commit -m "test: add orchestrator handler tests with tenant isolation"
 In `internal/platform/server/server.go`, add to imports:
 
 ```go
-"github.com/valinor-ai/valinor/internal/orchestrator"
+"github.com/heimdall-ai/heimdall/internal/orchestrator"
 ```
 
 Add to Dependencies struct:
@@ -2145,7 +2145,7 @@ Remove the entire `handleListAgents` method (lines 256-300 of the current file).
 
 **Step 4: Verify it compiles**
 
-Run: `go build ./cmd/valinor/...`
+Run: `go build ./cmd/heimdall/...`
 Expected: May fail if main.go doesn't wire AgentHandler yet — that's Task 13. For now:
 
 Run: `go build ./internal/platform/server/...`
@@ -2163,17 +2163,17 @@ git commit -m "feat: wire orchestrator handler routes into server"
 ### Task 13: Main.go wiring
 
 **Files:**
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Context:** Wire the orchestrator Manager + Handler in the composition root. Start background loops with `go manager.Run(ctx)`. Import the orchestrator package. Build the ManagerConfig from the config.
 
 **Step 1: Add orchestrator wiring**
 
-In `cmd/valinor/main.go`, add to imports:
+In `cmd/heimdall/main.go`, add to imports:
 
 ```go
 "time"
-"github.com/valinor-ai/valinor/internal/orchestrator"
+"github.com/heimdall-ai/heimdall/internal/orchestrator"
 ```
 
 After the RBAC section (after line 132), before the dev mode identity section, add:
@@ -2225,7 +2225,7 @@ srv := server.New(addr, server.Dependencies{
 
 **Step 2: Verify the full binary compiles**
 
-Run: `go build ./cmd/valinor/...`
+Run: `go build ./cmd/heimdall/...`
 Expected: Success
 
 **Step 3: Run all existing tests to check nothing is broken**
@@ -2236,7 +2236,7 @@ Expected: PASS (all unit tests pass; integration tests skipped with -short)
 **Step 4: Commit**
 
 ```bash
-git add cmd/valinor/main.go
+git add cmd/heimdall/main.go
 git commit -m "feat: wire orchestrator into main.go composition root"
 ```
 
@@ -2261,7 +2261,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
 )
 
 func TestIntegration_FullLifecycle(t *testing.T) {
@@ -2458,6 +2458,6 @@ git commit -m "feat: add FirecrackerDriver stub with Linux build tag"
 | 10 | HTTP Handler | `internal/orchestrator/handler.go` |
 | 11 | Handler tests | `internal/orchestrator/handler_test.go` |
 | 12 | Server wiring (Dependencies, routes) | `internal/platform/server/server.go` |
-| 13 | Main.go wiring | `cmd/valinor/main.go` |
+| 13 | Main.go wiring | `cmd/heimdall/main.go` |
 | 14 | End-to-end integration test | `internal/orchestrator/integration_test.go` |
 | 15 | FirecrackerDriver stub (Linux) | `internal/orchestrator/firecracker_driver.go` |

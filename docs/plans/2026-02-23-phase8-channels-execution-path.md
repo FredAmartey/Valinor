@@ -16,14 +16,14 @@ Implement the first production-safe execution path after ingress acceptance:
   - `denied_no_agent`
   - `denied_sentinel`
   - `dispatch_failed`
-- Add `cmd/valinor/channels_execution.go`:
+- Add `cmd/heimdall/channels_execution.go`:
   - linked user identity lookup from auth store
   - RBAC authorization for `channels:messages:write`
   - running-agent selection with department preference
   - sentinel enforcement before dispatch
   - proxy frame dispatch to selected agent
   - channel execution audit events
-- Wire executor into server bootstrap in `cmd/valinor/main.go`.
+- Wire executor into server bootstrap in `cmd/heimdall/main.go`.
 - Add tests for channel handler execution hook and executor decisions.
 - Add conversation continuity context:
   - persist request/response turn metadata per channel message
@@ -38,5 +38,5 @@ Implement the first production-safe execution path after ingress acceptance:
 ## Verification
 
 - `go test ./internal/channels -v`
-- `go test ./cmd/valinor -v`
+- `go test ./cmd/heimdall -v`
 - `go test ./...`

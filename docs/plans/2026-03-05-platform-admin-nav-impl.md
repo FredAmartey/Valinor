@@ -33,7 +33,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 func TestTenantProxy_NoPlatformAdmin(t *testing.T) {
@@ -122,8 +122,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 // TenantProxy wraps handlers to extract tenant ID from the URL path
@@ -220,7 +220,7 @@ if deps.Pool != nil {
 }
 ```
 
-Add the import: `"github.com/valinor-ai/valinor/internal/platform/admin"`
+Add the import: `"github.com/heimdall-ai/heimdall/internal/platform/admin"`
 
 **Step 6: Verify build**
 
@@ -325,7 +325,7 @@ export function TenantSidebar({ tenantId, tenantName }: TenantSidebarProps) {
   return (
     <aside className="flex h-full w-60 flex-col border-r border-zinc-200 bg-white">
       <div className="flex h-14 items-center border-b border-zinc-200 px-4">
-        <span className="text-lg font-semibold tracking-tight text-zinc-900">Valinor</span>
+        <span className="text-lg font-semibold tracking-tight text-zinc-900">Heimdall</span>
       </div>
       <nav className="flex flex-1 flex-col p-3">
         <Link
@@ -697,7 +697,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 func TestHandleImpersonate_NotPlatformAdmin(t *testing.T) {
@@ -744,7 +744,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 type ImpersonateHandler struct {
@@ -946,7 +946,7 @@ banner during impersonation. Exit button drops session."
 
 **Step 1: Start backend**
 
-Run: `go run ./cmd/valinor`
+Run: `go run ./cmd/heimdall`
 
 **Step 2: Start dashboard**
 

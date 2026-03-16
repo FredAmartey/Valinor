@@ -49,7 +49,7 @@ git commit -m "migration: add is_platform_admin column to users"
 
 **Files:**
 - Modify: `internal/auth/auth.go:19-30` (Identity struct)
-- Modify: `internal/auth/token.go:11-22` (valinorClaims struct)
+- Modify: `internal/auth/token.go:11-22` (heimdallClaims struct)
 - Modify: `internal/auth/token.go:49-72` (createToken)
 - Modify: `internal/auth/token.go:94-105` (ValidateToken return)
 - Modify: `internal/auth/token_test.go` (add test)
@@ -63,7 +63,7 @@ func TestTokenService_PlatformAdminClaim(t *testing.T) {
 	svc := newTestTokenService()
 	identity := &auth.Identity{
 		UserID:          "admin-1",
-		Email:           "admin@valinor.com",
+		Email:           "admin@heimdall.com",
 		IsPlatformAdmin: true,
 	}
 
@@ -104,9 +104,9 @@ In `internal/auth/auth.go`, add to the Identity struct after `Generation`:
 IsPlatformAdmin bool `json:"is_platform_admin,omitempty"`
 ```
 
-**Step 4: Add claim to valinorClaims**
+**Step 4: Add claim to heimdallClaims**
 
-In `internal/auth/token.go`, add to valinorClaims after `Generation`:
+In `internal/auth/token.go`, add to heimdallClaims after `Generation`:
 
 ```go
 IsPlatformAdmin bool `json:"pa,omitempty"`
@@ -164,7 +164,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 func TestRequirePlatformAdmin_Allows(t *testing.T) {
@@ -293,7 +293,7 @@ func TestStore_GetIdentityWithRoles_PlatformAdmin(t *testing.T) {
 	err = pool.QueryRow(ctx,
 		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer, is_platform_admin)
 		 VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
-		tenantID, "admin@valinor.com", "Admin", "google-admin", "https://accounts.google.com",
+		tenantID, "admin@heimdall.com", "Admin", "google-admin", "https://accounts.google.com",
 	).Scan(&userID)
 	require.NoError(t, err)
 
@@ -384,7 +384,7 @@ func TestHandler_Callback_PlatformAdminNoTenant(t *testing.T) {
 	_, err = pool.Exec(ctx,
 		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer, is_platform_admin)
 		 VALUES ($1, $2, $3, $4, $5, true)`,
-		tenantID, "admin@valinor.com", "Admin", "google-admin", "https://accounts.google.com",
+		tenantID, "admin@heimdall.com", "Admin", "google-admin", "https://accounts.google.com",
 	)
 	require.NoError(t, err)
 
@@ -396,7 +396,7 @@ func TestHandler_Callback_PlatformAdminNoTenant(t *testing.T) {
 		userInfo: &auth.OIDCUserInfo{
 			Issuer:  "https://accounts.google.com",
 			Subject: "google-admin",
-			Email:   "admin@valinor.com",
+			Email:   "admin@heimdall.com",
 			Name:    "Admin",
 		},
 	}
@@ -668,8 +668,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func setupTestDB(t *testing.T) (*database.Pool, func()) {
@@ -678,7 +678,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -958,8 +958,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/tenant"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/tenant"
 )
 
 func withPlatformAdmin(req *http.Request) *http.Request {
@@ -1214,13 +1214,13 @@ git commit -m "feat: add tenant HTTP handler (create, get, list)"
 **Files:**
 - Modify: `internal/platform/server/server.go:20-28` (Dependencies)
 - Modify: `internal/platform/server/server.go:37-94` (New function)
-- Modify: `cmd/valinor/main.go` (create tenant handler, pass to server)
+- Modify: `cmd/heimdall/main.go` (create tenant handler, pass to server)
 
 **Step 1: Add TenantHandler to Dependencies**
 
 In `internal/platform/server/server.go`, add import:
 ```go
-"github.com/valinor-ai/valinor/internal/tenant"
+"github.com/heimdall-ai/heimdall/internal/tenant"
 ```
 
 Add to Dependencies struct:
@@ -1249,9 +1249,9 @@ In `server.go`, after the RBAC route block (line 80), add:
 
 **Step 3: Wire in main.go**
 
-In `cmd/valinor/main.go`, add import:
+In `cmd/heimdall/main.go`, add import:
 ```go
-"github.com/valinor-ai/valinor/internal/tenant"
+"github.com/heimdall-ai/heimdall/internal/tenant"
 ```
 
 After the `authHandler` creation, add:
@@ -1276,7 +1276,7 @@ Expected: all PASS
 **Step 5: Commit**
 
 ```bash
-git add internal/platform/server/server.go cmd/valinor/main.go
+git add internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat: wire tenant provisioning routes into server"
 ```
 
@@ -1303,7 +1303,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // setupRLSTestDB creates a test database with a non-superuser role.
@@ -1314,7 +1314,7 @@ func setupRLSTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -1559,7 +1559,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 
 Add import for `database`:
 ```go
-"github.com/valinor-ai/valinor/internal/platform/database"
+"github.com/heimdall-ai/heimdall/internal/platform/database"
 ```
 
 **Step 2: Build and test**

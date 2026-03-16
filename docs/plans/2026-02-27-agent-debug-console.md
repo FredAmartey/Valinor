@@ -13,7 +13,7 @@
 - Frame protocol: `internal/proxy/protocol.go`
 - Connection multiplexing: `internal/proxy/conn.go` (SendRequest/RequestStream)
 - Route registration: `internal/platform/server/server.go`
-- Handler construction: `cmd/valinor/main.go` (lines 241-258)
+- Handler construction: `cmd/heimdall/main.go` (lines 241-258)
 - Auth token validation: `internal/auth/token.go` (TokenService.ValidateToken)
 - Agent detail page: `dashboard/src/components/agents/agent-detail.tsx`
 - Agent queries: `dashboard/src/lib/queries/agents.ts`
@@ -63,7 +63,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/auth"
 )
 
 // mockTokenService implements just enough for WS auth testing
@@ -141,8 +141,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/valinor-ai/valinor/internal/auth"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/auth"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
@@ -442,7 +442,7 @@ git commit -m "feat(proxy): add WebSocket handler with auth validation"
 
 **Files:**
 - Modify: `internal/platform/server/server.go` — add WS route
-- Modify: `cmd/valinor/main.go` — pass TokenService to proxy handler
+- Modify: `cmd/heimdall/main.go` — pass TokenService to proxy handler
 - Modify: `internal/proxy/handler.go` — add `WithTokenValidator` method
 
 **Step 1: Add `WithTokenValidator` to Handler**
@@ -490,7 +490,7 @@ proxyHandler = proxy.NewHandler(...).WithUserContextStore(userContextStore).With
 
 **Step 4: Verify**
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: Clean build
 
 Run: `go test ./internal/proxy/ -v`
@@ -499,7 +499,7 @@ Expected: All tests pass
 **Step 5: Commit**
 
 ```bash
-git add internal/proxy/handler.go internal/platform/server/server.go cmd/valinor/main.go
+git add internal/proxy/handler.go internal/platform/server/server.go cmd/heimdall/main.go
 git commit -m "feat(proxy): wire WebSocket handler into server routes"
 ```
 
@@ -1140,7 +1140,7 @@ git commit -m "feat(dashboard): add WebSocket audit event labels"
 
 **Step 1: Build backend**
 
-Run: `go build ./cmd/valinor`
+Run: `go build ./cmd/heimdall`
 Expected: Clean build
 
 **Step 2: Run Go tests**
@@ -1155,7 +1155,7 @@ Expected: All tests pass
 
 **Step 4: Manual E2E test**
 
-1. Start backend: `go run ./cmd/valinor`
+1. Start backend: `go run ./cmd/heimdall`
 2. Start dashboard: `cd dashboard && npm run dev`
 3. Login as `turgon@gondolin.fc` (org_admin)
 4. Provision an agent at `/agents/new`

@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add User Management and Department Management views to the Valinor admin dashboard with inline role assignment.
+**Goal:** Add User Management and Department Management views to the Heimdall admin dashboard with inline role assignment.
 
 **Architecture:** Extends the existing Next.js 15 dashboard (`dashboard/`) with new route groups, components, and TanStack Query hooks. Server Components for initial data, `"use client"` leaves for interactive sections. All data from the existing Go API — no backend changes.
 

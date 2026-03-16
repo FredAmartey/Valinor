@@ -147,8 +147,8 @@ Added to default roles:
 
 - **`proxy/push.go`** — `PushConfig` extended with `connectors []map[string]any`
 - **`orchestrator/handler.go`** — `HandleConfigure` queries connectors, includes in push
-- **`cmd/valinor-agent/agent.go`** — `handleConfigUpdate` stores connector configs
-- **`cmd/valinor-agent/openclaw.go`** — Writes connector configs to OpenClaw MCP config
+- **`cmd/heimdall-agent/agent.go`** — `handleConfigUpdate` stores connector configs
+- **`cmd/heimdall-agent/openclaw.go`** — Writes connector configs to OpenClaw MCP config
 
 ### No Auto-Sync
 

@@ -5,15 +5,15 @@
 
 ## Goal
 
-Integrate OpenClaw as the agent runtime inside Valinor's isolation boundary, with two product tiers (Teams: Docker, Enterprise: Firecracker) and a hierarchical memory model that enforces multi-tenant, multi-department, and per-user isolation with controlled sharing.
+Integrate OpenClaw as the agent runtime inside Heimdall's isolation boundary, with two product tiers (Teams: Docker, Enterprise: Firecracker) and a hierarchical memory model that enforces multi-tenant, multi-department, and per-user isolation with controlled sharing.
 
 ## Context
 
-Valinor is an enterprise AI agent control plane. OpenClaw is an open-source AI agent runtime (247k GitHub stars) with a single-trust-boundary model. Valinor wraps OpenClaw in secure infrastructure so companies can deploy isolated agent workforces.
+Heimdall is an enterprise AI agent control plane. OpenClaw is an open-source AI agent runtime (247k GitHub stars) with a single-trust-boundary model. Heimdall wraps OpenClaw in secure infrastructure so companies can deploy isolated agent workforces.
 
 The existing codebase already has:
 - `VMDriver` interface with Firecracker and Mock implementations
-- `valinor-agent` in-guest sidecar (`cmd/valinor-agent/`) with OpenClaw HTTP proxy, tool allowlist enforcement, canary token detection, MCP connector integration
+- `heimdall-agent` in-guest sidecar (`cmd/heimdall-agent/`) with OpenClaw HTTP proxy, tool allowlist enforcement, canary token detection, MCP connector integration
 - Proxy module with TCP/vsock transport abstraction
 - Runtime policy enforcement for OpenClaw config
 - Loopback-only security guard for OpenClaw URLs
@@ -33,7 +33,7 @@ Both tiers use the same `VMDriver` interface. Config selects the driver.
 ## Architecture
 
 ```
-                    Valinor Control Plane (Go)
+                    Heimdall Control Plane (Go)
                     ┌──────────────────────────────┐
                     │  Auth · RBAC · Sentinel       │
                     │  Proxy · Audit · Channels     │
@@ -47,7 +47,7 @@ Both tiers use the same `VMDriver` interface. Config selects the driver.
     │ Docker Container │       │      │ Firecracker MicroVM  │
     │ (Teams tier)     │       │      │ (Enterprise tier)    │
     │                  │       │      │                      │
-    │ valinor-agent    │       │      │ valinor-agent        │
+    │ heimdall-agent    │       │      │ heimdall-agent        │
     │   ↕ HTTP :8081   │       │      │   ↕ HTTP :8081       │
     │ OpenClaw Gateway │       │      │ OpenClaw Gateway     │
     │                  │       │      │                      │
@@ -70,9 +70,9 @@ Client → POST /agents/:id/message
   → Sentinel scan (prompt injection detection)
   → Proxy: inject dynamic context (recent alerts, conversation summaries)
   → Proxy: dial agent via TCP (Docker) or vsock (Firecracker)
-  → valinor-agent: validate, forward to OpenClaw at localhost:8081
+  → heimdall-agent: validate, forward to OpenClaw at localhost:8081
   → OpenClaw: process message, read memory from /memory/*, call MCP tools
-  → valinor-agent: enforce tool allowlist, check canary tokens, relay chunks
+  → heimdall-agent: enforce tool allowlist, check canary tokens, relay chunks
   → Proxy: stream response back to client via SSE
 ```
 
@@ -83,7 +83,7 @@ New `DockerDriver` in `internal/orchestrator/` implementing the existing `VMDriv
 ```go
 type DockerDriver struct {
     client       *docker.Client
-    image        string           // "valinor/agent:latest"
+    image        string           // "heimdall/agent:latest"
     stateDir     string           // persist container metadata for recovery
     memoryBase   string           // base path for memory volumes
 }
@@ -101,9 +101,9 @@ type DockerDriver struct {
 
 ### Key Behaviors
 
-- `Start`: creates per-tenant Docker network (if not exists), runs container with isolated network, CPU/memory limits, memory volume mounts, valinor-agent as entrypoint, published TCP port
+- `Start`: creates per-tenant Docker network (if not exists), runs container with isolated network, CPU/memory limits, memory volume mounts, heimdall-agent as entrypoint, published TCP port
 - `Stop`: `docker stop` with grace period, then `docker rm`
-- `IsHealthy`: `docker inspect` for container status + TCP ping to valinor-agent
+- `IsHealthy`: `docker inspect` for container status + TCP ping to heimdall-agent
 - `Cleanup`: remove container + orphaned volumes
 - Warm pool: pre-started containers with no tenant (claimed atomically on provision, same as Firecracker)
 
@@ -112,11 +112,11 @@ type DockerDriver struct {
 Each tenant gets a dedicated Docker network:
 
 ```
-Tenant A network (valinor-net-<tenant-a-id>)
+Tenant A network (heimdall-net-<tenant-a-id>)
 ├── agent-a1 (container, port 9100)
 ├── agent-a2 (container, port 9101)
 
-Tenant B network (valinor-net-<tenant-b-id>)
+Tenant B network (heimdall-net-<tenant-b-id>)
 ├── agent-b1 (container, port 9200)
 
 Control plane connects to all networks to reach agents.
@@ -129,27 +129,27 @@ Containers within a tenant network can only reach each other (if needed) and the
 Single Dockerfile producing the agent container:
 
 ```dockerfile
-# Stage 1: Build valinor-agent
+# Stage 1: Build heimdall-agent
 FROM golang:1.25 AS agent-builder
 COPY . /src
-RUN cd /src && go build -o /valinor-agent ./cmd/valinor-agent
+RUN cd /src && go build -o /heimdall-agent ./cmd/heimdall-agent
 
 # Stage 2: OpenClaw runtime
 FROM node:22-slim
 RUN npm install -g openclaw@<pinned-version>
-COPY --from=agent-builder /valinor-agent /usr/local/bin/valinor-agent
+COPY --from=agent-builder /heimdall-agent /usr/local/bin/heimdall-agent
 COPY configs/openclaw-guest.json /etc/openclaw/openclaw.json
 
-ENTRYPOINT ["/usr/local/bin/valinor-agent", \
+ENTRYPOINT ["/usr/local/bin/heimdall-agent", \
   "--transport", "tcp", \
   "--openclaw-url", "http://localhost:8081"]
 ```
 
 ### Startup Sequence
 
-1. `valinor-agent` starts as PID 1
-2. valinor-agent spawns `openclaw gateway` as a child process on port 8081
-3. valinor-agent listens on its TCP port for control plane connections
+1. `heimdall-agent` starts as PID 1
+2. heimdall-agent spawns `openclaw gateway` as a child process on port 8081
+3. heimdall-agent listens on its TCP port for control plane connections
 4. Control plane pushes config (tool allowlist, connectors, canary tokens)
 5. Agent sends initial heartbeat — ready for messages
 
@@ -183,12 +183,12 @@ ENTRYPOINT ["/usr/local/bin/valinor-agent", \
 }
 ```
 
-Version pinning: OpenClaw version pinned in Dockerfile, Node.js pinned via base image tag, valinor-agent built from same monorepo commit. CI builds and tags image on every merge to master.
+Version pinning: OpenClaw version pinned in Dockerfile, Node.js pinned via base image tag, heimdall-agent built from same monorepo commit. CI builds and tags image on every merge to master.
 
 ## Four-Layer Isolation Model
 
 ```
-Layer 0: Platform       │ Valinor control plane (manages all tenants)
+Layer 0: Platform       │ Heimdall control plane (manages all tenants)
 Layer 1: Tenant         │ Hard wall — separate containers/VMs, separate Docker
                         │ networks, PostgreSQL RLS by tenant_id
 Layer 2: Department     │ Separate agent instances per user, scoped memory
@@ -251,11 +251,11 @@ Scout A's agent mounts: personal + Scouting dept + tenant + Transfer Targets (de
 
 ### Publishing to Shared Memory
 
-Agents publish to shared memory via a Valinor-provided MCP tool: `valinor_publish_memory`.
+Agents publish to shared memory via a Heimdall-provided MCP tool: `heimdall_publish_memory`.
 
 Flow:
-1. Agent calls `valinor_publish_memory(layer="department", content="...")` via MCP
-2. valinor-agent forwards to control plane
+1. Agent calls `heimdall_publish_memory(layer="department", content="...")` via MCP
+2. heimdall-agent forwards to control plane
 3. Control plane validates: does this user have write permission to this layer?
 4. Control plane acquires mutex for the target volume
 5. Control plane writes content to the appropriate shared volume
@@ -263,7 +263,7 @@ Flow:
 
 ### Dynamic Context Injection
 
-At message dispatch time, Valinor prepends small dynamic context to the message:
+At message dispatch time, Heimdall prepends small dynamic context to the message:
 - Recent conversation summaries
 - Dynamic alerts ("budget updated to £180M")
 - RAG-retrieved relevant chunks (when knowledge bases grow large)
@@ -301,15 +301,15 @@ No changes to `agent_instances` — `tenant_id`, `department_id`, `user_id` alre
 
 ## Built-In MCP Connectors
 
-Two Valinor-provided MCP tools available to every agent:
+Two Heimdall-provided MCP tools available to every agent:
 
-### `valinor_publish_memory`
+### `heimdall_publish_memory`
 
 Writes a memory entry to a shared layer (department or tenant). Validates permissions in the control plane. Handles concurrency with per-volume mutex.
 
 ```json
 {
-  "name": "valinor_publish_memory",
+  "name": "heimdall_publish_memory",
   "parameters": {
     "layer": "department | tenant",
     "title": "string",
@@ -318,13 +318,13 @@ Writes a memory entry to a shared layer (department or tenant). Validates permis
 }
 ```
 
-### `valinor_query_memory`
+### `heimdall_query_memory`
 
 Searches across accessible memory layers. Returns relevant chunks. Used for RAG-style retrieval when knowledge bases grow large.
 
 ```json
 {
-  "name": "valinor_query_memory",
+  "name": "heimdall_query_memory",
   "parameters": {
     "query": "string",
     "layers": ["personal", "department", "tenant", "shared"],
@@ -336,15 +336,15 @@ Searches across accessible memory layers. Returns relevant chunks. Used for RAG-
 ## Firecracker Tier (Parallel Track)
 
 Same architecture, different packaging:
-- Rootfs image instead of Docker image (same binaries: valinor-agent + OpenClaw + Node.js)
+- Rootfs image instead of Docker image (same binaries: heimdall-agent + OpenClaw + Node.js)
 - Vsock transport instead of TCP
 - Memory volumes as virtio block devices instead of Docker volumes
 - Per-user writable workspace disk mount with quotas
 - Version pinning in CI image build pipeline
 
 Remaining P0 work:
-- [ ] Build rootfs with Node.js 22 + OpenClaw + valinor-agent
-- [ ] Init system starts valinor-agent → spawns OpenClaw gateway
+- [ ] Build rootfs with Node.js 22 + OpenClaw + heimdall-agent
+- [ ] Init system starts heimdall-agent → spawns OpenClaw gateway
 - [ ] Pin and verify runtime versions in CI
 - [ ] Per-user writable workspace disk mount with quotas
 
@@ -358,12 +358,12 @@ Orchestrator:
   ReconcileIntervalSecs: 30
   MaxConsecutiveFailures: 3
   Docker:
-    Image: "valinor/agent:latest"
+    Image: "heimdall/agent:latest"
     NetworkMode: "per-tenant"  # "none" | "per-tenant" | "bridge"
     DefaultCPUs: 1
     DefaultMemoryMB: 512
     WorkspaceQuotaMB: 1024
-    MemoryBasePath: "/var/lib/valinor/memory"
+    MemoryBasePath: "/var/lib/heimdall/memory"
   Firecracker:
     Workspace:
       Enabled: true
@@ -378,7 +378,7 @@ Orchestrator:
 | Cross-department memory leak | Read-only volume mounts, write-only via MCP tool with permission checks |
 | Agent escape (container) | Upgrade to Firecracker tier; Teams tier relies on container + network isolation |
 | Prompt injection | Sentinel scan before message reaches agent |
-| Tool abuse | Tool allowlist in valinor-agent, runtime policy enforcement |
+| Tool abuse | Tool allowlist in heimdall-agent, runtime policy enforcement |
 | Canary token exfiltration | Canary detection in agent responses and tool results |
 | OpenClaw misconfiguration | Infrastructure-enforced config (loopback-only, sandbox enabled, workspace-only) |
 
@@ -387,7 +387,7 @@ Orchestrator:
 | Decision | Choice | Reasoning |
 |---|---|---|
 | Two tiers vs one | Two (Docker + Firecracker) | Teams need easy deployment; enterprises need hardware isolation. VMDriver interface already abstracts this. |
-| Container model | Single container (valinor-agent + OpenClaw) | Mirrors Firecracker model. Simplest to operate. One Dockerfile. |
+| Container model | Single container (heimdall-agent + OpenClaw) | Mirrors Firecracker model. Simplest to operate. One Dockerfile. |
 | Memory sharing | Hierarchical with admin overrides | Zero-config defaults from org hierarchy + flexibility for cross-dept sharing. |
 | Shared memory writability | Read-only mounts + write via MCP tool | Prevents concurrent write conflicts. Control plane handles concurrency. |
 | Dynamic context | Injection at message time | Handles ephemeral data without filesystem overhead. ~5ms added latency. |
@@ -395,6 +395,6 @@ Orchestrator:
 ## Verification
 
 - `go test ./internal/orchestrator -run 'TestDockerDriver' -v`
-- `go test ./cmd/valinor-agent -run 'TestOpenClaw' -v`
-- `docker build -f Dockerfile.agent -t valinor/agent:test .`
+- `go test ./cmd/heimdall-agent -run 'TestOpenClaw' -v`
+- `docker build -f Dockerfile.agent -t heimdall/agent:test .`
 - Integration: start agent container, send message via proxy, verify response + memory isolation

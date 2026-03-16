@@ -78,15 +78,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 func requireTestDB(t *testing.T) *database.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://valinor:valinor@localhost:5432/valinor?sslmode=disable"
+		dsn = "postgres://heimdall:heimdall@localhost:5432/heimdall?sslmode=disable"
 	}
 	pool, err := database.Connect(context.Background(), dsn)
 	if err != nil {
@@ -127,7 +127,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 // KBStore queries knowledge_bases and knowledge_base_grants.
@@ -196,7 +196,7 @@ git commit -m "feat: add KnowledgeBaseStore with GrantsForUser query"
 
 **Files:**
 - Modify: `internal/orchestrator/manager.go:28-34,52,111-131`
-- Modify: `cmd/valinor/main.go:239`
+- Modify: `cmd/heimdall/main.go:239`
 
 **Step 1: Add kbStore field to Manager and update NewManager**
 
@@ -250,7 +250,7 @@ In `coldStart()` (around line 126), after building the spec, resolve grants and 
 
 **Step 3: Update main.go to pass kbStore**
 
-In `cmd/valinor/main.go`, around line 239:
+In `cmd/heimdall/main.go`, around line 239:
 
 ```go
 	orchKBStore := orchestrator.NewKBStore()
@@ -270,7 +270,7 @@ Expected: All 16 packages pass
 **Step 6: Commit**
 
 ```bash
-git add internal/orchestrator/manager.go cmd/valinor/main.go
+git add internal/orchestrator/manager.go cmd/heimdall/main.go
 git commit -m "feat: wire KBStore into Manager and populate VMSpec with identity"
 ```
 
@@ -417,7 +417,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/orchestrator"
+	"github.com/heimdall-ai/heimdall/internal/orchestrator"
 )
 ```
 

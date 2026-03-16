@@ -32,7 +32,7 @@ Single PR. All backend APIs exist — this is purely frontend.
 |--------|-------|---------|
 | Platform | `100px` | Icon + name badge (Slack/WhatsApp/Telegram) |
 | Platform User ID | `1fr` | Monospace, truncated |
-| Valinor User | `1fr` | Truncated user_id |
+| Heimdall User | `1fr` | Truncated user_id |
 | State | `140px` | Pill: verified=emerald, pending=amber, revoked=zinc |
 | Created | `120px` | `formatTimeAgo` |
 | Actions | `80px` | Revoke button (disabled if already revoked) |

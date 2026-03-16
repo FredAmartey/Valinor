@@ -6,12 +6,12 @@
 
 ## Goal
 
-Build the vsock communication layer, proxy module, and in-guest valinor-agent binary so that clients can send messages to agents, receive streaming responses, and push config updates to running VMs.
+Build the vsock communication layer, proxy module, and in-guest heimdall-agent binary so that clients can send messages to agents, receive streaming responses, and push config updates to running VMs.
 
 ## Architecture Overview
 
 ```
-Control Plane (existing Valinor binary)
+Control Plane (existing Heimdall binary)
   ├── proxy/              ← NEW: message relay + SSE streaming
   │     ├── VsockDialer   — connects to VMs via vsock CID
   │     ├── AgentConn     — per-VM connection with length-prefixed JSON protocol
@@ -21,8 +21,8 @@ Control Plane (existing Valinor binary)
   └── orchestrator/       ← MODIFIED: config push delegates to proxy
         └── Handler       — HandleConfigure calls proxy.PushConfig()
 
-In-Guest (separate binary: cmd/valinor-agent)
-  └── valinor-agent       ← NEW: runs inside each MicroVM
+In-Guest (separate binary: cmd/heimdall-agent)
+  └── heimdall-agent       ← NEW: runs inside each MicroVM
         ├── VsockListener — accepts control plane connections on vsock port 1024
         ├── OpenClawProxy — HTTP reverse proxy to localhost:8081
         ├── AllowList     — intercepts tool calls, enforces allow-list
@@ -35,9 +35,9 @@ In-Guest (separate binary: cmd/valinor-agent)
 Client → POST /agents/:id/message
   → proxy.Handler validates tenant, looks up vsock CID
   → proxy.AgentConn dials vsock CID, sends message frame
-  → valinor-agent receives, forwards to OpenClaw at localhost:8081
+  → heimdall-agent receives, forwards to OpenClaw at localhost:8081
   → OpenClaw processes, streams response chunks
-  → valinor-agent relays chunks back over vsock
+  → heimdall-agent relays chunks back over vsock
   → proxy.Handler streams via SSE to client
 ```
 
@@ -165,14 +165,14 @@ if inst.Status == StatusRunning {
 
 Orchestrator handler owns the endpoint; proxy module handles the vsock push.
 
-## In-Guest Valinor Agent (`cmd/valinor-agent`)
+## In-Guest Heimdall Agent (`cmd/heimdall-agent`)
 
 A standalone Go binary that runs inside each MicroVM.
 
 ### Startup Sequence
 
 1. Listen on vsock port 1024 (or TCP port from flag for local dev)
-2. Load initial config from `/etc/valinor/agent.json` (baked into rootfs)
+2. Load initial config from `/etc/heimdall/agent.json` (baked into rootfs)
 3. Start heartbeat goroutine (sends `heartbeat` every 10s)
 4. Accept connection from control plane
 5. Read frames in a loop, dispatch by type
@@ -219,8 +219,8 @@ If blocked, sends `tool_blocked` frame instead of forwarding the tool call.
 ### Flags
 
 ```
-valinor-agent --transport vsock --port 1024
-valinor-agent --transport tcp --port 9100  # local dev
+heimdall-agent --transport vsock --port 1024
+heimdall-agent --transport tcp --port 9100  # local dev
 ```
 
 ## Error Handling
@@ -251,10 +251,10 @@ valinor-agent --transport tcp --port 9100  # local dev
 | AgentConn (Send/Recv) | net.Pipe() — two in-memory connected sockets |
 | ConnPool | TCPTransport + mock agent listener on localhost |
 | Proxy Handler (HTTP) | httptest + mock ConnPool with pre-canned frames |
-| valinor-agent core loop | net.Pipe() — send frames, assert responses |
+| heimdall-agent core loop | net.Pipe() — send frames, assert responses |
 | Tool allow-list | Unit tests, pure logic |
 | OpenClaw proxy | httptest mock server simulating streaming responses |
-| End-to-end | Integration: start valinor-agent on TCP, proxy connects, send message, receive streamed chunks |
+| End-to-end | Integration: start heimdall-agent on TCP, proxy connects, send message, receive streamed chunks |
 
 No vsock required for any test. Everything uses TCPTransport or net.Pipe().
 

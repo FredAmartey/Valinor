@@ -128,10 +128,10 @@ git commit -m "feat(channels): encrypt provider credentials at rest in store"
 ### Task 4: Wire Runtime Components to Keyed Store
 
 **Files:**
-- Modify: `cmd/valinor/main.go`
-- Modify: `cmd/valinor/channels_outbox_worker.go`
-- Modify: `cmd/valinor/main_test.go`
-- Modify: `cmd/valinor/channels_outbox_sender_whatsapp_test.go`
+- Modify: `cmd/heimdall/main.go`
+- Modify: `cmd/heimdall/channels_outbox_worker.go`
+- Modify: `cmd/heimdall/main_test.go`
+- Modify: `cmd/heimdall/channels_outbox_sender_whatsapp_test.go`
 
 **Step 1: Write failing tests**
 
@@ -142,12 +142,12 @@ Add/extend tests asserting:
 
 **Step 2: Run tests to verify fail**
 
-Run: `go test ./cmd/valinor -run 'TestBuildChannel(Handler|OutboxWorker)' -v`
+Run: `go test ./cmd/heimdall -run 'TestBuildChannel(Handler|OutboxWorker)' -v`
 Expected: FAIL until store wiring and key validation are implemented.
 
 **Step 3: Minimal implementation**
 
-Implement helper in `cmd/valinor` to:
+Implement helper in `cmd/heimdall` to:
 - parse key (if provided)
 - build `channels.Store` with crypto option
 - return explicit config error for invalid key
@@ -158,13 +158,13 @@ Use helper in:
 
 **Step 4: Re-run tests**
 
-Run: `go test ./cmd/valinor -run 'TestBuildChannel(Handler|OutboxWorker)' -v`
+Run: `go test ./cmd/heimdall -run 'TestBuildChannel(Handler|OutboxWorker)' -v`
 Expected: PASS.
 
 **Step 5: Commit**
 
 ```bash
-git add cmd/valinor/main.go cmd/valinor/channels_outbox_worker.go cmd/valinor/main_test.go cmd/valinor/channels_outbox_sender_whatsapp_test.go
+git add cmd/heimdall/main.go cmd/heimdall/channels_outbox_worker.go cmd/heimdall/main_test.go cmd/heimdall/channels_outbox_sender_whatsapp_test.go
 git commit -m "feat(channels): wire keyed credential store for runtime components"
 ```
 
@@ -178,7 +178,7 @@ git commit -m "feat(channels): wire keyed credential store for runtime component
 Run:
 - `go test ./internal/platform/config -v`
 - `go test ./internal/channels -v`
-- `go test ./cmd/valinor -v`
+- `go test ./cmd/heimdall -v`
 - `go test ./internal/platform/server -v`
 - `go test ./internal/platform/database -run TestRLS_TenantIsolation -v`
 

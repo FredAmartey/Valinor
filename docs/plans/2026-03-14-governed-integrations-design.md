@@ -1,7 +1,7 @@
 # Governed Integrations Design
 
 ## Summary
-Valinor should extend its trust layer from governed channel delivery to governed connector execution.
+Heimdall should extend its trust layer from governed channel delivery to governed connector execution.
 
 The first slice will cover agent-initiated connector write actions during a run. Read-only connector calls remain observable but are not approval-gated in V1. Connector CRUD remains a separate administrative governance problem and is out of scope for this slice.
 
@@ -16,18 +16,18 @@ The core product goal is to make connector writes subject to the same trust mode
 The recommended design is inline governed connector execution.
 
 When an agent attempts a connector tool call:
-1. Valinor checks explicit governance metadata on the connector tool
-2. If the tool is a governed write, Valinor evaluates policy for the declared risk class
-3. Valinor then either:
+1. Heimdall checks explicit governance metadata on the connector tool
+2. If the tool is a governed write, Heimdall evaluates policy for the declared risk class
+3. Heimdall then either:
    - allows execution
    - blocks execution
    - creates an approval request and pauses the run
-4. After approval, Valinor resumes that connector action without replaying the entire run
+4. After approval, Heimdall resumes that connector action without replaying the entire run
 
 This approach keeps governance in the execution path instead of bolting it on afterward.
 
 ## System shape
-Valinor needs a governed connector action path between the agent runtime and external execution.
+Heimdall needs a governed connector action path between the agent runtime and external execution.
 
 For V1:
 - only connector tools explicitly marked as write actions enter this path
@@ -70,7 +70,7 @@ V1 recommendation:
 - default governed connector writes to `external_writes`
 - allow richer connector-specific risk classes later
 
-This keeps connectors aligned with the rest of Valinor instead of creating a separate policy system.
+This keeps connectors aligned with the rest of Heimdall instead of creating a separate policy system.
 
 ## Pause and resume behavior
 When a connector write requires approval:
@@ -80,7 +80,7 @@ When a connector write requires approval:
 - the timeline shows the run paused on that connector action
 
 If approved:
-- Valinor resumes the paused connector action from the connector boundary
+- Heimdall resumes the paused connector action from the connector boundary
 - the write executes
 - the run continues
 
@@ -148,4 +148,4 @@ Audit coverage should include:
 ## Recommendation
 Implement governed integrations parity as the next product slice.
 
-This closes the biggest trust gap left on top of the current platform: channels are already governed, but connector writes are not. Once this slice lands, Valinor will have a much more credible story for governed external actions across both channels and integrations.
+This closes the biggest trust gap left on top of the current platform: channels are already governed, but connector writes are not. Once this slice lands, Heimdall will have a much more credible story for governed external actions across both channels and integrations.

@@ -4,11 +4,11 @@
 
 **Goal:** Establish the Go project scaffold with PostgreSQL connectivity, migrations, HTTP server, structured logging, and graceful shutdown — the base everything else builds on.
 
-**Architecture:** Modular monolith in Go 1.26. Single binary entry point at `cmd/valinor/main.go`. Shared platform infrastructure in `internal/platform/`. Configuration via environment variables with YAML fallback (koanf). PostgreSQL via pgx/v5 connection pool. stdlib `net/http` router (Go 1.22+ patterns). Structured JSON logging via slog.
+**Architecture:** Modular monolith in Go 1.26. Single binary entry point at `cmd/heimdall/main.go`. Shared platform infrastructure in `internal/platform/`. Configuration via environment variables with YAML fallback (koanf). PostgreSQL via pgx/v5 connection pool. stdlib `net/http` router (Go 1.22+ patterns). Structured JSON logging via slog.
 
 **Tech Stack:** Go 1.26, PostgreSQL 16, pgx/v5, golang-migrate/v4, koanf/v2, slog, testify, testcontainers-go
 
-**Design Doc:** `docs/plans/2026-02-21-valinor-design.md`
+**Design Doc:** `docs/plans/2026-02-21-heimdall-design.md`
 
 ---
 
@@ -16,23 +16,23 @@
 
 **Files:**
 - Create: `go.mod`
-- Create: `cmd/valinor/main.go`
+- Create: `cmd/heimdall/main.go`
 - Create: `.gitignore`
 
 **Step 1: Initialize module**
 
 ```bash
-cd /Users/fred/Documents/Valinor
-go mod init github.com/valinor-ai/valinor
+cd /Users/fred/Documents/Heimdall
+go mod init github.com/heimdall-ai/heimdall
 ```
 
 **Step 2: Create directory structure**
 
 ```bash
-mkdir -p cmd/valinor
+mkdir -p cmd/heimdall
 mkdir -p internal/platform/{config,database,server,middleware,telemetry,errors,events}
 mkdir -p internal/{auth,rbac,tenant,orchestrator,proxy,audit,lifecycle,channels,connectors}
-mkdir -p valinor-agent
+mkdir -p heimdall-agent
 mkdir -p api/openapi
 mkdir -p migrations
 mkdir -p deploy/{docker,systemd,terraform}
@@ -49,8 +49,8 @@ Create `.gitignore`:
 *.dll
 *.so
 *.dylib
-valinor
-valinor-agent
+heimdall
+heimdall-agent
 
 # Test
 *.test
@@ -77,7 +77,7 @@ Thumbs.db
 
 **Step 4: Create minimal main.go**
 
-Create `cmd/valinor/main.go`:
+Create `cmd/heimdall/main.go`:
 ```go
 package main
 
@@ -87,7 +87,7 @@ import (
 )
 
 func main() {
-	fmt.Println("valinor starting...")
+	fmt.Println("heimdall starting...")
 	os.Exit(0)
 }
 ```
@@ -95,15 +95,15 @@ func main() {
 **Step 5: Verify it builds and runs**
 
 ```bash
-go build -o bin/valinor ./cmd/valinor
-./bin/valinor
+go build -o bin/heimdall ./cmd/heimdall
+./bin/heimdall
 ```
-Expected: prints "valinor starting..." and exits 0.
+Expected: prints "heimdall starting..." and exits 0.
 
 **Step 6: Commit**
 
 ```bash
-git add go.mod cmd/ internal/ valinor-agent/ api/ migrations/ deploy/ .gitignore
+git add go.mod cmd/ internal/ heimdall-agent/ api/ migrations/ deploy/ .gitignore
 git commit -m "feat: initialize Go module and project structure"
 ```
 
@@ -128,7 +128,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/config"
+	"github.com/heimdall-ai/heimdall/internal/platform/config"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -142,7 +142,7 @@ func TestLoad_Defaults(t *testing.T) {
 
 func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("VALINOR_SERVER_PORT", "9090")
-	os.Setenv("VALINOR_DATABASE_URL", "postgres://test:test@localhost:5432/valinor_test")
+	os.Setenv("VALINOR_DATABASE_URL", "postgres://test:test@localhost:5432/heimdall_test")
 	defer func() {
 		os.Unsetenv("VALINOR_SERVER_PORT")
 		os.Unsetenv("VALINOR_DATABASE_URL")
@@ -152,7 +152,7 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 9090, cfg.Server.Port)
-	assert.Equal(t, "postgres://test:test@localhost:5432/valinor_test", cfg.Database.URL)
+	assert.Equal(t, "postgres://test:test@localhost:5432/heimdall_test", cfg.Database.URL)
 }
 ```
 
@@ -277,7 +277,7 @@ server:
   host: "0.0.0.0"
 
 database:
-  url: "postgres://valinor:valinor@localhost:5432/valinor?sslmode=disable"
+  url: "postgres://heimdall:heimdall@localhost:5432/heimdall?sslmode=disable"
   max_conns: 25
   migrations_path: "migrations"
 
@@ -314,7 +314,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/heimdall-ai/heimdall/internal/platform/telemetry"
 )
 
 func TestNewLogger_JSON(t *testing.T) {
@@ -436,7 +436,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 func setupPostgres(t *testing.T) (string, func()) {
@@ -445,7 +445,7 @@ func setupPostgres(t *testing.T) (string, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -775,7 +775,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
 )
 
 func TestRunMigrations(t *testing.T) {
@@ -786,7 +786,7 @@ func TestRunMigrations(t *testing.T) {
 	connStr, cleanup := setupPostgres(t)
 	defer cleanup()
 
-	err := database.RunMigrations(connStr, "file:///Users/fred/Documents/Valinor/migrations")
+	err := database.RunMigrations(connStr, "file:///Users/fred/Documents/Heimdall/migrations")
 	require.NoError(t, err)
 
 	// Verify tables exist by connecting and querying
@@ -892,7 +892,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/server"
+	"github.com/heimdall-ai/heimdall/internal/platform/server"
 )
 
 func TestServer_HealthCheck(t *testing.T) {
@@ -1103,7 +1103,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
 )
 
 func TestRequestID_GeneratesID(t *testing.T) {
@@ -1226,8 +1226,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/valinor-ai/valinor/internal/platform/middleware"
-	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/heimdall-ai/heimdall/internal/platform/middleware"
+	"github.com/heimdall-ai/heimdall/internal/platform/telemetry"
 )
 
 func TestLogging_CapturesRequest(t *testing.T) {
@@ -1325,11 +1325,11 @@ git commit -m "feat: add HTTP request logging middleware"
 ### Task 9: Wire Everything in main.go
 
 **Files:**
-- Modify: `cmd/valinor/main.go`
+- Modify: `cmd/heimdall/main.go`
 
 **Step 1: Update main.go to wire all components**
 
-Replace `cmd/valinor/main.go` with:
+Replace `cmd/heimdall/main.go` with:
 ```go
 package main
 
@@ -1341,10 +1341,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/valinor-ai/valinor/internal/platform/config"
-	"github.com/valinor-ai/valinor/internal/platform/database"
-	"github.com/valinor-ai/valinor/internal/platform/server"
-	"github.com/valinor-ai/valinor/internal/platform/telemetry"
+	"github.com/heimdall-ai/heimdall/internal/platform/config"
+	"github.com/heimdall-ai/heimdall/internal/platform/database"
+	"github.com/heimdall-ai/heimdall/internal/platform/server"
+	"github.com/heimdall-ai/heimdall/internal/platform/telemetry"
 )
 
 func main() {
@@ -1365,7 +1365,7 @@ func run() error {
 	logger := telemetry.NewLogger(cfg.Log.Level, cfg.Log.Format)
 	telemetry.SetDefault(logger)
 
-	slog.Info("valinor starting",
+	slog.Info("heimdall starting",
 		"version", "0.1.0",
 		"port", cfg.Server.Port,
 	)
@@ -1418,16 +1418,16 @@ type Pool = pgxpool.Pool
 **Step 3: Build and verify**
 
 ```bash
-go build ./cmd/valinor
+go build ./cmd/heimdall
 ```
 Expected: builds successfully.
 
 **Step 4: Run without database to test graceful startup**
 
 ```bash
-timeout 3 ./bin/valinor 2>&1 || true
+timeout 3 ./bin/heimdall 2>&1 || true
 ```
-Expected: starts, logs "valinor starting", logs "server ready", shuts down on timeout.
+Expected: starts, logs "heimdall starting", logs "server ready", shuts down on timeout.
 
 **Step 5: Run all tests**
 
@@ -1439,7 +1439,7 @@ Expected: all unit tests pass (skips integration tests with `-short`).
 **Step 6: Commit**
 
 ```bash
-git add cmd/valinor/main.go internal/platform/database/postgres.go
+git add cmd/heimdall/main.go internal/platform/database/postgres.go
 git commit -m "feat: wire foundation components in main.go with graceful shutdown"
 ```
 
@@ -1450,22 +1450,22 @@ git commit -m "feat: wire foundation components in main.go with graceful shutdow
 **Step 1: Start PostgreSQL locally**
 
 ```bash
-docker run -d --name valinor-postgres \
-  -e POSTGRES_USER=valinor \
-  -e POSTGRES_PASSWORD=valinor \
-  -e POSTGRES_DB=valinor \
+docker run -d --name heimdall-postgres \
+  -e POSTGRES_USER=heimdall \
+  -e POSTGRES_PASSWORD=heimdall \
+  -e POSTGRES_DB=heimdall \
   -p 5432:5432 \
   postgres:16-alpine
 ```
 
-**Step 2: Run Valinor with database**
+**Step 2: Run Heimdall with database**
 
 ```bash
-VALINOR_DATABASE_URL="postgres://valinor:valinor@localhost:5432/valinor?sslmode=disable" \
-  go run ./cmd/valinor
+VALINOR_DATABASE_URL="postgres://heimdall:heimdall@localhost:5432/heimdall?sslmode=disable" \
+  go run ./cmd/heimdall
 ```
 Expected output (JSON logs):
-- "valinor starting"
+- "heimdall starting"
 - "connecting to database"
 - "migrations complete"
 - "server ready"
@@ -1494,7 +1494,7 @@ Expected: all tests pass (integration tests use testcontainers).
 **Step 6: Stop PostgreSQL**
 
 ```bash
-docker stop valinor-postgres && docker rm valinor-postgres
+docker stop heimdall-postgres && docker rm heimdall-postgres
 ```
 
 **Step 7: Final commit**
@@ -1512,7 +1512,7 @@ After completing all 10 tasks, Phase 1 delivers:
 
 | Component | Status |
 |-----------|--------|
-| Go module (`github.com/valinor-ai/valinor`) | Initialized |
+| Go module (`github.com/heimdall-ai/heimdall`) | Initialized |
 | Full directory structure (9 modules) | Created |
 | Configuration loading (env + YAML) | Working + tested |
 | Structured JSON logging (slog) | Working + tested |

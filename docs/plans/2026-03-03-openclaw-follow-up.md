@@ -10,7 +10,7 @@ Deferred items from internal and external code reviews on PR #70.
 
 ### 2. Tenant network cleanup on last container removal
 **File:** `internal/orchestrator/docker_driver.go` (Cleanup + cleanupTenantNetwork)
-**Resolution:** Cleanup now inspects the container for its tenant label, then removes the tenant network if no other valinor containers belong to that tenant.
+**Resolution:** Cleanup now inspects the container for its tenant label, then removes the tenant network if no other heimdall containers belong to that tenant.
 
 ### 3. OpenClaw guest config missing `memory.qmd.paths`
 **File:** `configs/openclaw-guest.json`
