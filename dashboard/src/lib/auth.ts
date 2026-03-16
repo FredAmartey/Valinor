@@ -282,6 +282,10 @@ export const authConfig: NextAuthConfig = {
         return token
       }
 
+      if (!token.refreshToken) {
+        return null
+      }
+
       // Token expired: refresh via Heimdall API
       try {
         const res = await fetch(`${HEIMDALL_API_URL}/auth/token/refresh`, {
@@ -297,9 +301,9 @@ export const authConfig: NextAuthConfig = {
         token.refreshToken = data.refresh_token ?? token.refreshToken
         token.expiresAt = Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
         return token
-      } catch (err) {
-        console.error("Token refresh failed:", err)
-        return { ...token, error: "RefreshTokenError" }
+      } catch {
+        // Returning null instructs Auth.js to clear the broken session cookie.
+        return null
       }
     },
     async session({ session, token }) {
