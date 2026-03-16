@@ -215,7 +215,7 @@ func TestHandler_Callback_PlatformAdminNoTenant(t *testing.T) {
 	_, err = pool.Exec(ctx,
 		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer, is_platform_admin)
 		 VALUES ($1, $2, $3, $4, $5, true)`,
-		tenantID, "admin@valinor.com", "Admin", "google-admin", "https://accounts.google.com",
+		tenantID, "admin@heimdall.com", "Admin", "google-admin", "https://accounts.google.com",
 	)
 	require.NoError(t, err)
 
@@ -227,7 +227,7 @@ func TestHandler_Callback_PlatformAdminNoTenant(t *testing.T) {
 		userInfo: &auth.OIDCUserInfo{
 			Issuer:  "https://accounts.google.com",
 			Subject: "google-admin",
-			Email:   "admin@valinor.com",
+			Email:   "admin@heimdall.com",
 			Name:    "Admin",
 		},
 	}

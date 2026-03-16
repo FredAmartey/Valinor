@@ -11,7 +11,7 @@ import (
 )
 
 func TestTokenService_CreateAndValidate(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{
 		UserID:      "user-123",
@@ -38,7 +38,7 @@ func TestTokenService_CreateAndValidate(t *testing.T) {
 }
 
 func TestTokenService_CreateRefreshToken(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{
 		UserID:   "user-123",
@@ -56,7 +56,7 @@ func TestTokenService_CreateRefreshToken(t *testing.T) {
 }
 
 func TestTokenService_ExpiredToken(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 0, 0) // 0 hours = expires immediately
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 0, 0) // 0 hours = expires immediately
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
 
@@ -71,8 +71,8 @@ func TestTokenService_ExpiredToken(t *testing.T) {
 }
 
 func TestTokenService_InvalidSignature(t *testing.T) {
-	svc1 := auth.NewTokenService("signing-key-one-must-be-32-chars!!", "valinor", 24, 168)
-	svc2 := auth.NewTokenService("signing-key-two-must-be-32-chars!!", "valinor", 24, 168)
+	svc1 := auth.NewTokenService("signing-key-one-must-be-32-chars!!", "heimdall", 24, 168)
+	svc2 := auth.NewTokenService("signing-key-two-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
 
@@ -86,7 +86,7 @@ func TestTokenService_InvalidSignature(t *testing.T) {
 
 func TestTokenService_WrongIssuer(t *testing.T) {
 	key := "test-signing-key-must-be-32-chars!!"
-	svc1 := auth.NewTokenService(key, "valinor", 24, 168)
+	svc1 := auth.NewTokenService(key, "heimdall", 24, 168)
 	svc2 := auth.NewTokenService(key, "other-service", 24, 168)
 
 	identity := &auth.Identity{UserID: "user-123", TenantID: "tenant-456"}
@@ -100,7 +100,7 @@ func TestTokenService_WrongIssuer(t *testing.T) {
 }
 
 func TestTokenService_MalformedToken(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	_, err := svc.ValidateToken("not.a.jwt")
 	assert.Error(t, err)
@@ -108,7 +108,7 @@ func TestTokenService_MalformedToken(t *testing.T) {
 }
 
 func TestTokenService_RefreshTokenWithFamilyClaims(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{
 		UserID:     "user-123",
@@ -128,10 +128,10 @@ func TestTokenService_RefreshTokenWithFamilyClaims(t *testing.T) {
 }
 
 func TestTokenService_PlatformAdminClaim(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 	identity := &auth.Identity{
 		UserID:          "admin-1",
-		Email:           "admin@valinor.com",
+		Email:           "admin@heimdall.com",
 		IsPlatformAdmin: true,
 	}
 
@@ -144,7 +144,7 @@ func TestTokenService_PlatformAdminClaim(t *testing.T) {
 }
 
 func TestTokenService_NonPlatformAdminOmitsClaim(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 	identity := &auth.Identity{
 		UserID:   "user-1",
 		TenantID: "tenant-1",
@@ -159,7 +159,7 @@ func TestTokenService_NonPlatformAdminOmitsClaim(t *testing.T) {
 }
 
 func TestTokenService_LegacyTokenLacksFamilyClaims(t *testing.T) {
-	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	svc := auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	identity := &auth.Identity{
 		UserID:   "user-123",
@@ -176,7 +176,7 @@ func TestTokenService_LegacyTokenLacksFamilyClaims(t *testing.T) {
 }
 
 func TestCreateImpersonationToken(t *testing.T) {
-	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "heimdall", 1, 24)
 
 	identity := &auth.Identity{
 		UserID:          "admin-user-id",
@@ -200,7 +200,7 @@ func TestCreateImpersonationToken(t *testing.T) {
 }
 
 func TestCreateImpersonationToken_ShortExpiry(t *testing.T) {
-	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "heimdall", 1, 24)
 
 	identity := &auth.Identity{
 		UserID:          "admin-user-id",
@@ -221,7 +221,7 @@ func TestCreateImpersonationToken_ShortExpiry(t *testing.T) {
 }
 
 func TestCreateImpersonationToken_RejectsNonAdmin(t *testing.T) {
-	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "valinor", 1, 24)
+	svc := auth.NewTokenService("test-secret-key-32-bytes-long!!", "heimdall", 1, 24)
 
 	identity := &auth.Identity{
 		UserID:          "regular-user",

@@ -31,7 +31,7 @@ func setupExchangeTestDB(t *testing.T) (*pgxpool.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -70,7 +70,7 @@ func setupExchangeTest(t *testing.T) (*Handler, *rsa.PrivateKey, string) {
 	}))
 	t.Cleanup(jwksSrv.Close)
 
-	tokenSvc := NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	tokenSvc := NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 
 	h := NewHandler(HandlerConfig{
 		TokenSvc:   tokenSvc,
@@ -164,7 +164,7 @@ func TestHandleExchange_TenantSlug_NoOrigin(t *testing.T) {
 	// Set up handler with TenantResolver and Store but NO Origin header.
 	h, priv, kid := setupExchangeTest(t)
 	h.store = NewStore(pool)
-	h.tenantResolver = NewTenantResolver(pool, "valinor.example.com")
+	h.tenantResolver = NewTenantResolver(pool, "heimdall.example.com")
 
 	tok := signIDToken(t, priv, kid, jwt.MapClaims{
 		"iss":   "https://clerk.example.com",
@@ -199,7 +199,7 @@ func TestHandleExchange_TenantSlug_NoOrigin(t *testing.T) {
 }
 
 func TestHandleExchange_NotConfigured(t *testing.T) {
-	tokenSvc := NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	tokenSvc := NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 	h := NewHandler(HandlerConfig{
 		TokenSvc:   tokenSvc,
 		StateStore: NewStateStore([]byte("test-signing-key-must-be-32-chars!!"), 10*time.Minute),

@@ -7,7 +7,7 @@ cors:
     - "http://localhost:3000"
 
 database:
-  url: "postgres://valinor:valinor@localhost:5432/valinor?sslmode=disable"
+  url: "postgres://heimdall:heimdall@localhost:5432/heimdall?sslmode=disable"
   max_conns: 25
   migrations_path: "migrations"
 
@@ -26,7 +26,7 @@ auth:
     redirecturl: "http://localhost:8080/auth/callback"
   jwt:
     signingkey: "dev-signing-key-change-in-production-must-be-32-chars"
-    issuer: "valinor"
+    issuer: "heimdall"
     expiryhours: 24
     refreshexpiryhours: 168
 

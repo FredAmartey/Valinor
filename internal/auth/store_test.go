@@ -19,7 +19,7 @@ func setupTestDB(t *testing.T) (*database.Pool, func()) {
 
 	container, err := postgres.Run(ctx,
 		"postgres:16-alpine",
-		postgres.WithDatabase("valinor_test"),
+		postgres.WithDatabase("heimdall_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
 		testcontainers.WithWaitStrategy(
@@ -364,7 +364,7 @@ func TestStore_GetIdentityWithRoles_PlatformAdmin(t *testing.T) {
 	err = pool.QueryRow(ctx,
 		`INSERT INTO users (tenant_id, email, display_name, oidc_subject, oidc_issuer, is_platform_admin)
 		 VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
-		tenantID, "admin@valinor.com", "Admin", "google-admin", "https://accounts.google.com",
+		tenantID, "admin@heimdall.com", "Admin", "google-admin", "https://accounts.google.com",
 	).Scan(&userID)
 	require.NoError(t, err)
 

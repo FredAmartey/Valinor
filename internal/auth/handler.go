@@ -186,7 +186,7 @@ func (h *Handler) HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleExchange validates an external OIDC id_token and returns Valinor tokens.
+// HandleExchange validates an external OIDC id_token and returns Heimdall tokens.
 // Used by the dashboard to exchange Clerk id_tokens for platform JWTs.
 func (h *Handler) HandleExchange(w http.ResponseWriter, r *http.Request) {
 	if h.idTokenValidator == nil {

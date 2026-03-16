@@ -12,7 +12,7 @@ import (
 )
 
 func newTestTokenService() *auth.TokenService {
-	return auth.NewTokenService("test-signing-key-must-be-32-chars!!", "valinor", 24, 168)
+	return auth.NewTokenService("test-signing-key-must-be-32-chars!!", "heimdall", 24, 168)
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {

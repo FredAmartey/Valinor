@@ -55,7 +55,7 @@ func TestIntegration_AuthRBACFlow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Auth services
-	tokenSvc := auth.NewTokenService("integration-test-key-must-be-32!!", "valinor", 24, 168)
+	tokenSvc := auth.NewTokenService("integration-test-key-must-be-32!!", "heimdall", 24, 168)
 	store := auth.NewStore(pool)
 
 	// Load identity and create tokens
@@ -155,7 +155,7 @@ func TestIntegration_RefreshTokenRotation(t *testing.T) {
 	).Scan(&userID)
 	require.NoError(t, err)
 
-	tokenSvc := auth.NewTokenService("integration-test-key-must-be-32!!", "valinor", 24, 168)
+	tokenSvc := auth.NewTokenService("integration-test-key-must-be-32!!", "heimdall", 24, 168)
 	authStore := auth.NewStore(pool)
 	refreshStore := auth.NewRefreshTokenStore(pool)
 	stateStore := auth.NewStateStore([]byte("integration-test-key-must-be-32!!"), 10*time.Minute)

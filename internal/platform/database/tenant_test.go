@@ -12,9 +12,9 @@ import (
 )
 
 func TestWithTenantConnection_SetsVariable(t *testing.T) {
-	dbURL := os.Getenv("VALINOR_DATABASE_URL")
+	dbURL := os.Getenv("HEIMDALL_DATABASE_URL")
 	if dbURL == "" {
-		t.Skip("VALINOR_DATABASE_URL not set, skipping integration test")
+		t.Skip("HEIMDALL_DATABASE_URL not set, skipping integration test")
 	}
 
 	ctx := context.Background()
